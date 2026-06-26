@@ -1,4 +1,5 @@
-import * as admin from "firebase-admin";
+import { initializeApp, cert } from "firebase-admin/app";
+import { getDatabase } from "firebase-admin/database";
 import * as dotenv from "dotenv";
 
 dotenv.config();
@@ -22,12 +23,12 @@ async function main() {
     throw new Error("FIREBASE_DATABASE_URL is not set in firebase/.env");
   }
 
-  admin.initializeApp({
-    credential: admin.credential.cert("./serviceAccountKey.json"),
+  initializeApp({
+    credential: cert("./serviceAccountKey.json"),
     databaseURL,
   });
 
-  const db = admin.database();
+  const db = getDatabase();
 
   await db.ref(`meters/${MOCK_WALLET}`).set({
     voltage: 231.4,
