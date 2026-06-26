@@ -1,0 +1,32 @@
+node_modules/
+.env
+.env.local
+
+# contract
+contract/cache/
+contract/artifacts/
+contract/typechain-types/
+contract/coverage/
+contract/coverage.json
+
+# app
+app/.expo/
+app/dist/
+app/web-build/
+app/src/config/contract.json
+app/src/config/firebase.ts
+app/src/config/privy.ts
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+
+# firebase
+firebase/firebase.config.ts
+
+# OS / editor
+.DS_Store
+.vscode/
+*.log
