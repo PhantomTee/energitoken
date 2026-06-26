@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, ScrollView } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable } from "react-native";
+import { router } from "expo-router";
 import { colors } from "../../src/theme/colors";
 import { typography, spacing, radius } from "../../src/theme/typography";
 import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
@@ -8,15 +9,23 @@ import { BudgetRing } from "../../src/components/BudgetRing";
 import { RelayIndicator } from "../../src/components/RelayIndicator";
 import { LiveMockBanner } from "../../src/components/LiveMockBanner";
 import { mockMeterReadingA, mockMeterReadingB } from "../../src/mock/mockMeterData";
+import { useWallet } from "../../src/hooks/useWallet";
 
 /**
- * Mock-only for now (build Step 4). Step 6 swaps the static readings below
- * for a real Firebase realtime listener behind the same mode toggle.
+ * Mock-only meter data for now (build Step 4). Step 6 swaps the static
+ * readings below for a real Firebase realtime listener behind the same mode
+ * toggle. Step 7 swaps the placeholder balance for a real on-chain read.
  */
 export default function DashboardScreen() {
   const [mode, setMode] = useState<"mock" | "live">("mock");
   const reading = mode === "live" ? mockMeterReadingB : mockMeterReadingA;
   const tokenBalanceWh = 9800; // placeholder; wired to on-chain balanceOf() in Step 7
+  const { walletAddress, logout } = useWallet();
+
+  const handleLogout = async () => {
+    await logout();
+    router.replace("/login");
+  };
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
@@ -24,6 +33,13 @@ export default function DashboardScreen() {
         <View>
           <Text style={[typography.label, styles.brandLabel]}>ENERGITOKEN</Text>
           <Text style={[typography.h1, styles.headerTitle]}>Your household</Text>
+          {walletAddress && (
+            <Pressable onPress={handleLogout}>
+              <Text style={[typography.caption, styles.walletAddress]}>
+                {walletAddress.slice(0, 6)}…{walletAddress.slice(-4)} · Log out
+              </Text>
+            </Pressable>
+          )}
         </View>
         <AdinkraAccent size={48} color={colors.indigo[500]} opacity={0.18} />
       </View>
@@ -58,6 +74,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
   brandLabel: { color: colors.terracotta[500], marginBottom: spacing.xs },
   headerTitle: { color: colors.textPrimary },
+  walletAddress: { color: colors.textSecondary, marginTop: spacing.xs, textDecorationLine: "underline" },
   ringWrap: { alignItems: "center", paddingVertical: spacing.md },
   tileRow: { flexDirection: "row", gap: spacing.sm },
   sectionTitle: { color: colors.textPrimary, marginTop: spacing.sm },

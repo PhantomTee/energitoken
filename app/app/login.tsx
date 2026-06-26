@@ -1,34 +1,56 @@
 import React, { useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform } from "react-native";
 import { useRouter } from "expo-router";
+import { useLoginWithEmail, useEmbeddedEthereumWallet } from "@privy-io/expo";
 import { colors } from "../src/theme/colors";
 import { typography, spacing, radius } from "../src/theme/typography";
 import { AdinkraAccent } from "../src/theme/motifs/AdinkraAccent";
 
 /**
- * Static login UI for now — Privy email magic-link wiring lands in build Step 5.
- * The fake delay mimics what a real magic-link round trip will feel like, so
- * the screen transitions are already correct.
+ * Privy's mobile SDK authenticates by emailing a one-time 6-digit code
+ * (not a clickable magic link — that's the web flow; codes are what work
+ * reliably inside a native app). On a successful first login Privy creates
+ * the embedded wallet automatically (config in app/_layout.tsx).
  */
 export default function LoginScreen() {
   const router = useRouter();
   const [email, setEmail] = useState("");
-  const [sending, setSending] = useState(false);
+  const [code, setCode] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
-  const handleContinue = () => {
-    if (!email.includes("@")) return;
-    setSending(true);
-    setTimeout(() => {
-      setSending(false);
+  const { create: createEthereumWallet } = useEmbeddedEthereumWallet();
+
+  const { sendCode, loginWithCode, state } = useLoginWithEmail({
+    onError: (err) => setError(err.message ?? "Something went wrong. Please try again."),
+    onLoginSuccess: async () => {
+      // createOnLogin: "users-without-wallets" already covers this, but calling
+      // create() again is a safe no-op if a wallet already exists.
+      try {
+        await createEthereumWallet();
+      } catch {
+        // wallet likely already exists — fine to ignore
+      }
       router.replace("/(tabs)/dashboard");
-    }, 900);
+    },
+  });
+
+  const awaitingCode = state.status === "awaiting-code-input" || state.status === "submitting-code";
+  const sendingCode = state.status === "sending-code";
+
+  const handleSendCode = async () => {
+    setError(null);
+    if (!email.includes("@")) return;
+    await sendCode({ email });
+  };
+
+  const handleSubmitCode = async () => {
+    setError(null);
+    if (code.length < 4) return;
+    await loginWithCode({ code, email });
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.screen}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
+    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={styles.accentTopRight}>
         <AdinkraAccent size={96} color={colors.terracotta[500]} />
       </View>
@@ -37,31 +59,61 @@ export default function LoginScreen() {
         <Text style={[typography.label, styles.brandLabel]}>ENERGITOKEN</Text>
         <Text style={[typography.display, styles.title]}>Power, budgeted{"\n"}and shared.</Text>
         <Text style={[typography.body, styles.subtitle]}>
-          Sign in with your email to see your household's energy budget and credit balance.
+          {awaitingCode
+            ? `Enter the code we sent to ${email}.`
+            : "Sign in with your email to see your household's energy budget and credit balance."}
         </Text>
 
-        <TextInput
-          style={styles.input}
-          placeholder="you@example.com"
-          placeholderTextColor={colors.neutral[500]}
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          editable={!sending}
-        />
+        {!awaitingCode ? (
+          <>
+            <TextInput
+              style={styles.input}
+              placeholder="you@example.com"
+              placeholderTextColor={colors.neutral[500]}
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              editable={!sendingCode}
+            />
+            <Pressable
+              style={[styles.button, (!email.includes("@") || sendingCode) && styles.buttonDisabled]}
+              onPress={handleSendCode}
+              disabled={!email.includes("@") || sendingCode}
+            >
+              {sendingCode ? (
+                <ActivityIndicator color={colors.neutral.white} />
+              ) : (
+                <Text style={[typography.bodyStrong, styles.buttonText]}>Continue with email</Text>
+              )}
+            </Pressable>
+          </>
+        ) : (
+          <>
+            <TextInput
+              style={styles.input}
+              placeholder="6-digit code"
+              placeholderTextColor={colors.neutral[500]}
+              value={code}
+              onChangeText={setCode}
+              keyboardType="number-pad"
+              editable={state.status !== "submitting-code"}
+            />
+            <Pressable
+              style={[styles.button, (code.length < 4 || state.status === "submitting-code") && styles.buttonDisabled]}
+              onPress={handleSubmitCode}
+              disabled={code.length < 4 || state.status === "submitting-code"}
+            >
+              {state.status === "submitting-code" ? (
+                <ActivityIndicator color={colors.neutral.white} />
+              ) : (
+                <Text style={[typography.bodyStrong, styles.buttonText]}>Verify & sign in</Text>
+              )}
+            </Pressable>
+          </>
+        )}
 
-        <Pressable
-          style={[styles.button, (!email.includes("@") || sending) && styles.buttonDisabled]}
-          onPress={handleContinue}
-          disabled={!email.includes("@") || sending}
-        >
-          {sending ? (
-            <ActivityIndicator color={colors.neutral.white} />
-          ) : (
-            <Text style={[typography.bodyStrong, styles.buttonText]}>Continue with email</Text>
-          )}
-        </Pressable>
+        {error && <Text style={[typography.caption, styles.errorText]}>{error}</Text>}
       </View>
     </KeyboardAvoidingView>
   );
@@ -90,4 +142,5 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.5 },
   buttonText: { color: colors.neutral.white },
+  errorText: { color: colors.terracotta[300], marginTop: spacing.md },
 });
