@@ -25,6 +25,7 @@ app/src/config/privy.ts
 
 # firebase
 firebase/firebase.config.ts
+firebase/serviceAccountKey.json
 
 # OS / editor
 .DS_Store

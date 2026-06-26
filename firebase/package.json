@@ -1,0 +1,20 @@
+{
+  "name": "energitoken-firebase",
+  "version": "1.0.0",
+  "description": "Firebase Realtime Database schema, security rules, and seed script for EnergiToken.",
+  "main": "index.js",
+  "scripts": {
+    "seed": "ts-node seed.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@types/node": "^26.0.1",
+    "dotenv": "^17.4.2",
+    "firebase": "^12.15.0",
+    "firebase-admin": "^14.1.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.3"
+  }
+}
