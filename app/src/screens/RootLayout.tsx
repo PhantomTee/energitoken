@@ -4,7 +4,7 @@ import { View, ActivityIndicator } from "react-native";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { PrivyProvider } from "@privy-io/expo";
-import { PRIVY_APP_ID, privySupportedChains } from "../config/privy";
+import { PRIVY_APP_ID, PRIVY_MOBILE_CLIENT_ID, privySupportedChains } from "../config/privy";
 import { colors } from "../theme/colors";
 import { useAppFonts } from "../theme/useAppFonts";
 
@@ -22,6 +22,7 @@ export default function RootLayout() {
   return (
     <PrivyProvider
       appId={PRIVY_APP_ID}
+      clientId={PRIVY_MOBILE_CLIENT_ID}
       supportedChains={privySupportedChains}
       config={{ embedded: { ethereum: { createOnLogin: "users-without-wallets" } } }}
     >
