@@ -10,6 +10,7 @@ import { RelayIndicator } from "../../src/components/RelayIndicator";
 import { LiveMockBanner } from "../../src/components/LiveMockBanner";
 import { mockMeterReadingA, mockMeterReadingB } from "../../src/mock/mockMeterData";
 import { useWallet } from "../../src/hooks/useWallet";
+import { TopUpModal } from "../../src/components/TopUpModal";
 
 /**
  * Mock-only meter data for now (build Step 4). Step 6 swaps the static
@@ -21,6 +22,7 @@ export default function DashboardScreen() {
   const reading = mode === "live" ? mockMeterReadingB : mockMeterReadingA;
   const tokenBalanceWh = 9800; // placeholder; wired to on-chain balanceOf() in Step 7
   const { walletAddress, logout } = useWallet();
+  const [topUpVisible, setTopUpVisible] = useState(false);
 
   const handleLogout = async () => {
     await logout();
@@ -63,7 +65,16 @@ export default function DashboardScreen() {
         <Text style={[typography.label, styles.balanceLabel]}>Available credit</Text>
         <Text style={[typography.display, styles.balanceValue]}>{tokenBalanceWh.toLocaleString()} Wh</Text>
         <Text style={[typography.caption, styles.balanceCaption]}>ENGY balance on Polygon Amoy</Text>
+        {walletAddress && (
+          <Pressable style={styles.topUpButton} onPress={() => setTopUpVisible(true)}>
+            <Text style={[typography.bodyStrong, styles.topUpButtonText]}>Top up with OPay</Text>
+          </Pressable>
+        )}
       </View>
+
+      {walletAddress && (
+        <TopUpModal visible={topUpVisible} onClose={() => setTopUpVisible(false)} walletAddress={walletAddress} />
+      )}
     </ScrollView>
   );
 }
@@ -87,4 +98,12 @@ const styles = StyleSheet.create({
   balanceLabel: { color: colors.indigo[100] },
   balanceValue: { color: colors.neutral.white, marginTop: spacing.xs },
   balanceCaption: { color: colors.indigo[100], opacity: 0.8, marginTop: spacing.xs },
+  topUpButton: {
+    backgroundColor: colors.terracotta[500],
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm,
+    alignItems: "center",
+    marginTop: spacing.md,
+  },
+  topUpButtonText: { color: colors.neutral.white },
 });
