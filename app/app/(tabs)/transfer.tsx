@@ -1,5 +1,15 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, Modal, ActivityIndicator } from "react-native";
+import {
+  View,
+  Text,
+  TextInput,
+  Pressable,
+  StyleSheet,
+  ScrollView,
+  Modal,
+  ActivityIndicator,
+  RefreshControl,
+} from "react-native";
 import { useFocusEffect } from "expo-router";
 import { isAddress } from "ethers";
 import { colors } from "../../src/theme/colors";
@@ -28,6 +38,7 @@ export default function TransferScreen() {
   const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
   const [resolving, setResolving] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const refreshBalance = useCallback(async () => {
     if (!walletAddress) return;
@@ -44,6 +55,12 @@ export default function TransferScreen() {
       refreshBalance();
     }, [refreshBalance])
   );
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await refreshBalance();
+    setRefreshing(false);
+  }, [refreshBalance]);
 
   const isEmailEntry = recipient.includes("@");
 
@@ -116,7 +133,18 @@ export default function TransferScreen() {
   };
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          tintColor={colors.indigo[400]}
+          colors={[colors.indigo[400]]}
+        />
+      }
+    >
       <View style={styles.titleRow}>
         <Text style={[typography.h1, styles.title]}>Send credit</Text>
         <AdinkraAccent size={28} color={colors.terracotta[400]} dotColor={colors.indigo[400]} opacity={1} />

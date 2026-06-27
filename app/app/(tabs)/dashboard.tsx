@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl } from "react-native";
 import { router, useFocusEffect, Link } from "expo-router";
 import { colors } from "../../src/theme/colors";
 import { typography, spacing, radius } from "../../src/theme/typography";
@@ -19,6 +19,7 @@ export default function DashboardScreen() {
   const { walletAddress, email, logout } = useWallet();
   const [topUpVisible, setTopUpVisible] = useState(false);
   const [balanceWh, setBalanceWh] = useState<bigint | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const {
     reading,
     loading: meterLoading,
@@ -26,22 +27,27 @@ export default function DashboardScreen() {
     hasDevice,
   } = useMeterData(walletAddress, mode);
 
+  const refreshBalance = useCallback(async () => {
+    if (!walletAddress) return;
+    try {
+      const balance = await getEngyBalance(walletAddress);
+      setBalanceWh(balance);
+    } catch {
+      // leave the previous balance on screen rather than clearing it on a transient RPC error
+    }
+  }, [walletAddress]);
+
   useFocusEffect(
     useCallback(() => {
-      if (!walletAddress) return;
-      let cancelled = false;
-      getEngyBalance(walletAddress)
-        .then((balance) => {
-          if (!cancelled) setBalanceWh(balance);
-        })
-        .catch(() => {
-          // leave the previous balance on screen rather than clearing it on a transient RPC error
-        });
-      return () => {
-        cancelled = true;
-      };
-    }, [walletAddress])
+      refreshBalance();
+    }, [refreshBalance])
   );
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await refreshBalance();
+    setRefreshing(false);
+  }, [refreshBalance]);
 
   // Lets the Transfer screen resolve "send to this email" to this wallet.
   useEffect(() => {
@@ -58,7 +64,18 @@ export default function DashboardScreen() {
   };
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          tintColor={colors.indigo[400]}
+          colors={[colors.indigo[400]]}
+        />
+      }
+    >
       <View style={styles.header}>
         <View style={styles.brandRow}>
           <AdinkraAccent size={32} color={colors.terracotta[400]} dotColor={colors.indigo[400]} opacity={1} />
