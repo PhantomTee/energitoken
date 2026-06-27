@@ -14,7 +14,7 @@ export function TxStatus({ state, hash, error }: { state: TxState; hash?: string
     <View style={styles.container}>
       {state === "pending" && (
         <View style={styles.row}>
-          <ActivityIndicator color={colors.indigo[500]} />
+          <ActivityIndicator color={colors.indigo[400]} />
           <Text style={[typography.bodyStrong, styles.pendingText]}>Sending transaction…</Text>
         </View>
       )}
@@ -23,7 +23,7 @@ export function TxStatus({ state, hash, error }: { state: TxState; hash?: string
           <Text style={[typography.bodyStrong, { color: colors.success }]}>Transfer confirmed</Text>
           {hash && (
             <Pressable onPress={() => Linking.openURL(`${AMOY_EXPLORER_TX}${hash}`)}>
-              <Text style={[typography.caption, styles.link]}>View on PolygonScan ↗</Text>
+              <Text style={[typography.dataXs, styles.link]}>{hash.slice(0, 10)}…{hash.slice(-6)} · view on PolygonScan ↗</Text>
             </Pressable>
           )}
         </View>
@@ -47,5 +47,5 @@ const styles = StyleSheet.create({
   },
   row: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   pendingText: { color: colors.textPrimary },
-  link: { color: colors.indigo[500], marginTop: spacing.xs, textDecorationLine: "underline" },
+  link: { color: colors.indigo[400], marginTop: spacing.xs, textDecorationLine: "underline" },
 });

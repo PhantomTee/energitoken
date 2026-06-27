@@ -32,24 +32,34 @@ export default function DashboardScreen() {
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <View style={styles.header}>
-        <View>
-          <Text style={[typography.label, styles.brandLabel]}>ENERGITOKEN</Text>
-          <Text style={[typography.h1, styles.headerTitle]}>Your household</Text>
-          {walletAddress && (
-            <Pressable onPress={handleLogout}>
-              <Text style={[typography.caption, styles.walletAddress]}>
-                {walletAddress.slice(0, 6)}…{walletAddress.slice(-4)} · Log out
-              </Text>
-            </Pressable>
-          )}
+        <View style={styles.brandRow}>
+          <AdinkraAccent size={32} color={colors.terracotta[400]} dotColor={colors.indigo[400]} opacity={1} />
+          <Text style={[typography.h2, styles.brandWordmark]}>ENERGITOKEN</Text>
         </View>
-        <AdinkraAccent size={48} color={colors.indigo[500]} opacity={0.18} />
+        {walletAddress && (
+          <Pressable onPress={handleLogout} style={styles.walletChip}>
+            <Text style={[typography.dataXs, styles.walletAddress]}>
+              {walletAddress.slice(0, 6)}…{walletAddress.slice(-4)}
+            </Text>
+            <Text style={[typography.caption, styles.logOut]}>Log out</Text>
+          </Pressable>
+        )}
       </View>
 
       <LiveMockBanner mode={mode} onToggle={setMode} />
 
-      <View style={styles.ringWrap}>
-        <BudgetRing percentUsed={reading.percentUsed} />
+      <View style={styles.balanceCard}>
+        <View style={styles.balanceMain}>
+          <Text style={[typography.label, styles.balanceLabel]}>Available credit</Text>
+          <Text style={[typography.data, styles.balanceValue]}>{tokenBalanceWh.toLocaleString()}</Text>
+          <Text style={[typography.dataSm, styles.balanceUnit]}>Wh · ENGY on Polygon Amoy</Text>
+          {walletAddress && (
+            <Pressable style={styles.topUpButton} onPress={() => setTopUpVisible(true)}>
+              <Text style={[typography.bodyStrong, styles.topUpButtonText]}>Top up with OPay</Text>
+            </Pressable>
+          )}
+        </View>
+        <BudgetRing percentUsed={reading.percentUsed} size={96} />
       </View>
 
       <View style={styles.tileRow}>
@@ -61,17 +71,6 @@ export default function DashboardScreen() {
       <Text style={[typography.h2, styles.sectionTitle]}>Load priority</Text>
       <RelayIndicator relays={reading.relays} />
 
-      <View style={styles.balanceCard}>
-        <Text style={[typography.label, styles.balanceLabel]}>Available credit</Text>
-        <Text style={[typography.display, styles.balanceValue]}>{tokenBalanceWh.toLocaleString()} Wh</Text>
-        <Text style={[typography.caption, styles.balanceCaption]}>ENGY balance on Polygon Amoy</Text>
-        {walletAddress && (
-          <Pressable style={styles.topUpButton} onPress={() => setTopUpVisible(true)}>
-            <Text style={[typography.bodyStrong, styles.topUpButtonText]}>Top up with OPay</Text>
-          </Pressable>
-        )}
-      </View>
-
       {walletAddress && (
         <TopUpModal visible={topUpVisible} onClose={() => setTopUpVisible(false)} walletAddress={walletAddress} />
       )}
@@ -82,28 +81,34 @@ export default function DashboardScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
-  brandLabel: { color: colors.terracotta[500], marginBottom: spacing.xs },
-  headerTitle: { color: colors.textPrimary },
-  walletAddress: { color: colors.textSecondary, marginTop: spacing.xs, textDecorationLine: "underline" },
-  ringWrap: { alignItems: "center", paddingVertical: spacing.md },
-  tileRow: { flexDirection: "row", gap: spacing.sm },
-  sectionTitle: { color: colors.textPrimary, marginTop: spacing.sm },
+  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  brandRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  brandWordmark: { color: colors.textPrimary, letterSpacing: 0.5 },
+  walletChip: { alignItems: "flex-end" },
+  walletAddress: { color: colors.textPrimary },
+  logOut: { color: colors.textSecondary, textDecorationLine: "underline", marginTop: 2 },
   balanceCard: {
-    backgroundColor: colors.indigo[900],
+    backgroundColor: colors.panelInset,
     borderRadius: radius.lg,
     padding: spacing.lg,
-    marginTop: spacing.sm,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
-  balanceLabel: { color: colors.indigo[100] },
-  balanceValue: { color: colors.neutral.white, marginTop: spacing.xs },
-  balanceCaption: { color: colors.indigo[100], opacity: 0.8, marginTop: spacing.xs },
+  balanceMain: { flex: 1, marginRight: spacing.md },
+  balanceLabel: { color: colors.terracotta[500] },
+  balanceValue: { color: colors.panelInsetText, marginTop: spacing.xs },
+  balanceUnit: { color: colors.indigo[700], marginTop: 2 },
   topUpButton: {
     backgroundColor: colors.terracotta[500],
     borderRadius: radius.md,
     paddingVertical: spacing.sm,
     alignItems: "center",
     marginTop: spacing.md,
+    alignSelf: "flex-start",
+    paddingHorizontal: spacing.md,
   },
   topUpButtonText: { color: colors.neutral.white },
+  tileRow: { flexDirection: "row", gap: spacing.sm },
+  sectionTitle: { color: colors.textPrimary, marginTop: spacing.sm },
 });

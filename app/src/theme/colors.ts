@@ -1,19 +1,25 @@
 /**
  * Adire indigo as the primary brand color (the deep blue of hand-dyed cloth),
  * laterite terracotta as the accent (the red-brown clay common across West
- * African soil and pottery). High contrast, no gradients, no neon.
+ * African soil and pottery). The canvas is dark — an indigo-tinted near-black
+ * rather than a neutral charcoal, so it still reads as "dyed cloth" rather
+ * than generic dashboard chrome. `panelInset` is the one warm, light surface
+ * in the system: raw, undyed cotton before it meets the indigo vat — used
+ * sparingly, for the one card per screen that should pull focus.
  */
 export const colors = {
   indigo: {
     900: "#161A4A",
     700: "#242A7A",
     500: "#2F3699",
+    400: "#6F77D6",
     300: "#5A62B8",
     100: "#E4E6F6",
   },
   terracotta: {
     700: "#7A331D",
     500: "#B5552E",
+    400: "#C2643A",
     300: "#D98A63",
     100: "#F6E4DA",
   },
@@ -26,15 +32,18 @@ export const colors = {
     100: "#F2F0F6",
     white: "#FFFFFF",
   },
-  success: "#3E8F5C",
-  warning: "#C9962E",
-  danger: "#B5302E",
+  success: "#4FB377",
+  warning: "#D9A53E",
+  danger: "#D1453F",
 
-  background: "#F7F5FA",
-  surface: "#FFFFFF",
-  textPrimary: "#15141A",
-  textSecondary: "#4A4756",
-  border: "#E2DFE9",
+  // Dark theme surfaces
+  background: "#121022",
+  surface: "#1B1830",
+  panelInset: "#EDE6DC",
+  panelInsetText: "#161A4A",
+  textPrimary: "#F3EFE6",
+  textSecondary: "#9590B0",
+  border: "#322C54",
 };
 
 export type RelayTier = "r1" | "r2" | "r3" | "r4";

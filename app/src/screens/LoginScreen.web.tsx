@@ -44,7 +44,10 @@ export default function LoginScreen() {
       </View>
 
       <View style={styles.content}>
-        <Text style={[typography.label, styles.brandLabel]}>ENERGITOKEN</Text>
+        <View style={styles.brandRow}>
+          <AdinkraAccent size={22} color={colors.terracotta[400]} dotColor={colors.indigo[400]} opacity={1} />
+          <Text style={[typography.label, styles.brandLabel]}>ENERGITOKEN</Text>
+        </View>
         <Text style={[typography.display, styles.title]}>Power, budgeted{"\n"}and shared.</Text>
         <Text style={[typography.body, styles.subtitle]}>
           {awaitingCode
@@ -79,7 +82,7 @@ export default function LoginScreen() {
         ) : (
           <>
             <TextInput
-              style={styles.input}
+              style={[styles.input, styles.codeInput]}
               placeholder="6-digit code"
               placeholderTextColor={colors.neutral[500]}
               value={code}
@@ -111,19 +114,23 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.indigo[900] },
   accentTopRight: { position: "absolute", top: spacing.xl, right: spacing.lg },
   content: { flex: 1, justifyContent: "center", paddingHorizontal: spacing.xl },
-  brandLabel: { color: colors.terracotta[300], marginBottom: spacing.md },
+  brandRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.md },
+  brandLabel: { color: colors.terracotta[300] },
   title: { color: colors.neutral.white, marginBottom: spacing.md },
   subtitle: { color: colors.indigo[100], marginBottom: spacing.xl, opacity: 0.85 },
   input: {
-    backgroundColor: colors.neutral.white,
+    backgroundColor: colors.panelInset,
+    color: colors.panelInsetText,
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
     fontSize: 16,
+    fontFamily: typography.body.fontFamily,
     marginBottom: spacing.md,
   },
+  codeInput: { fontFamily: typography.dataMd.fontFamily, fontSize: 22, letterSpacing: 4 },
   button: {
-    backgroundColor: colors.terracotta[500],
+    backgroundColor: colors.terracotta[400],
     borderRadius: radius.md,
     paddingVertical: spacing.md,
     alignItems: "center",

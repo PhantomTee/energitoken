@@ -2,6 +2,7 @@ import React from "react";
 import { Tabs } from "expo-router";
 import { Text, ColorValue } from "react-native";
 import { colors } from "../../src/theme/colors";
+import { fonts } from "../../src/theme/typography";
 
 function TabIcon({ symbol, color }: { symbol: string; color: ColorValue }) {
   return <Text style={{ fontSize: 20, color }}>{symbol}</Text>;
@@ -12,9 +13,10 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.indigo[700],
-        tabBarInactiveTintColor: colors.neutral[500],
+        tabBarActiveTintColor: colors.terracotta[400],
+        tabBarInactiveTintColor: colors.textSecondary,
         tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border },
+        tabBarLabelStyle: { fontFamily: fonts.displayMedium, fontSize: 11 },
       }}
     >
       <Tabs.Screen

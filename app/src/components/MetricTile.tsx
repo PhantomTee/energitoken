@@ -8,8 +8,8 @@ export function MetricTile({ label, value, unit }: { label: string; value: strin
     <View style={styles.tile}>
       <Text style={[typography.label, styles.label]}>{label}</Text>
       <View style={styles.valueRow}>
-        <Text style={[typography.h1, styles.value]}>{value}</Text>
-        <Text style={[typography.caption, styles.unit]}>{unit}</Text>
+        <Text style={[typography.dataMd, styles.value]}>{value}</Text>
+        <Text style={[typography.dataXs, styles.unit]}>{unit}</Text>
       </View>
     </View>
   );

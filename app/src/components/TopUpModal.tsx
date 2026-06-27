@@ -89,23 +89,25 @@ export function TopUpModal({ visible, onClose, walletAddress }: Props) {
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: "rgba(21,20,26,0.5)", justifyContent: "center", padding: spacing.lg },
+  overlay: { flex: 1, backgroundColor: "rgba(8,7,15,0.7)", justifyContent: "center", padding: spacing.lg },
   card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg },
   title: { color: colors.textPrimary, marginBottom: spacing.xs },
   subtitle: { color: colors.textSecondary, marginBottom: spacing.md },
   fieldLabel: { color: colors.textSecondary, marginBottom: spacing.xs },
   input: {
     backgroundColor: colors.background,
+    color: colors.textPrimary,
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
-    fontSize: 16,
+    fontSize: 18,
+    fontFamily: typography.dataMd.fontFamily,
     borderWidth: 1,
     borderColor: colors.border,
   },
   errorText: { color: colors.danger, marginTop: spacing.xs },
   actions: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.lg },
-  button: { backgroundColor: colors.indigo[700], borderRadius: radius.md, paddingVertical: spacing.md, alignItems: "center" },
+  button: { backgroundColor: colors.indigo[500], borderRadius: radius.md, paddingVertical: spacing.md, alignItems: "center" },
   buttonText: { color: colors.neutral.white },
   secondaryButton: { borderRadius: radius.md, paddingVertical: spacing.md, alignItems: "center", borderWidth: 1, borderColor: colors.border },
   secondaryButtonText: { color: colors.textPrimary },

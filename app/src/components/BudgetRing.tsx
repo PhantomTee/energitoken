@@ -15,7 +15,7 @@ export function BudgetRing({ percentUsed, size = 160 }: { percentUsed: number; s
   const radiusPx = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radiusPx;
   const dashOffset = circumference * (1 - clamped / 100);
-  const ringColor = clamped >= 80 ? colors.terracotta[500] : colors.indigo[500];
+  const ringColor = clamped >= 80 ? colors.terracotta[400] : colors.indigo[400];
 
   return (
     <View style={[styles.container, { width: size, height: size }]}>
@@ -24,7 +24,7 @@ export function BudgetRing({ percentUsed, size = 160 }: { percentUsed: number; s
           cx={size / 2}
           cy={size / 2}
           r={radiusPx}
-          stroke={colors.neutral[100]}
+          stroke={colors.border}
           strokeWidth={strokeWidth}
           fill="none"
         />
@@ -43,8 +43,8 @@ export function BudgetRing({ percentUsed, size = 160 }: { percentUsed: number; s
         />
       </Svg>
       <View style={styles.center}>
-        <Text style={[typography.display, { color: ringColor }]}>{Math.round(clamped)}%</Text>
-        <Text style={[typography.caption, styles.caption]}>budget used</Text>
+        <Text style={[typography.data, { color: ringColor }]}>{Math.round(clamped)}%</Text>
+        <Text style={[typography.label, styles.caption]}>budget used</Text>
       </View>
     </View>
   );

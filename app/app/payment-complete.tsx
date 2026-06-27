@@ -34,6 +34,6 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background, justifyContent: "center", padding: spacing.xl },
   title: { color: colors.textPrimary, marginBottom: spacing.md },
   subtitle: { color: colors.textSecondary, marginBottom: spacing.xl },
-  button: { backgroundColor: colors.indigo[700], borderRadius: radius.md, paddingVertical: spacing.md, alignItems: "center" },
+  button: { backgroundColor: colors.indigo[500], borderRadius: radius.md, paddingVertical: spacing.md, alignItems: "center" },
   buttonText: { color: colors.neutral.white },
 });

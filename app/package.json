@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "main": "expo-router/entry",
   "dependencies": {
+    "@expo-google-fonts/inter": "^0.4.2",
+    "@expo-google-fonts/space-grotesk": "^0.4.1",
+    "@expo-google-fonts/space-mono": "^0.4.2",
     "@expo/metro-runtime": "~56.0.15",
     "@privy-io/chains": "^0.3.0",
     "@privy-io/expo": "^0.69.4",
@@ -18,6 +21,7 @@
     "expo-constants": "~56.0.18",
     "expo-crypto": "~56.0.4",
     "expo-dev-client": "~56.0.20",
+    "expo-font": "~56.0.7",
     "expo-linking": "~56.0.14",
     "expo-router": "~56.2.11",
     "expo-secure-store": "~56.0.4",
