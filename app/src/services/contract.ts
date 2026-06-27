@@ -14,6 +14,7 @@ export const CONTRACT_ADDRESS: string = contractInfo.address;
 export const CONTRACT_ABI = contractInfo.abi as ethers.InterfaceAbi;
 
 const AMOY_RPC_URL = process.env.EXPO_PUBLIC_AMOY_RPC_URL ?? "https://rpc-amoy.polygon.technology";
+export const AMOY_CHAIN_ID = 80002n;
 
 let readProvider: ethers.JsonRpcProvider | null = null;
 
@@ -38,4 +39,35 @@ export async function getEngyBalance(walletAddress: string): Promise<bigint> {
 /** A contract instance bound to a signer, for sending transfer() through the user's wallet. */
 export function getWritableContract(signer: ethers.Signer): ethers.Contract {
   return new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+}
+
+/**
+ * Checked right before calling transfer() -- not just at form-validation time --
+ * since the wallet's actual network/gas state can change between when the
+ * form was filled and when the user taps confirm. Returns a specific error
+ * string for whichever check fails, or null if it's safe to proceed.
+ */
+export async function runTransferPreflight(
+  signer: ethers.Signer,
+  amountWh: number,
+  engyBalanceWh: bigint
+): Promise<string | null> {
+  if (amountWh <= 0) return "Enter an amount greater than 0.";
+  if (BigInt(Math.floor(amountWh)) > engyBalanceWh) return "Amount exceeds your available ENGY balance.";
+
+  const provider = signer.provider;
+  if (!provider) return "No network connection available from your wallet.";
+
+  const network = await provider.getNetwork();
+  if (network.chainId !== AMOY_CHAIN_ID) {
+    return `Your wallet is on the wrong network (chain ${network.chainId}). Switch to Polygon Amoy.`;
+  }
+
+  const address = await signer.getAddress();
+  const gasBalance = await provider.getBalance(address);
+  if (gasBalance === 0n) {
+    return "Your wallet has no POL for gas. Fund it from the Polygon Amoy faucet first.";
+  }
+
+  return null;
 }

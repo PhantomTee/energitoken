@@ -7,7 +7,7 @@ import { typography, spacing, radius } from "../../src/theme/typography";
 import { TxStatus, TxState } from "../../src/components/TxStatus";
 import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
 import { useWallet } from "../../src/hooks/useWallet";
-import { getEngyBalance, getWritableContract } from "../../src/services/contract";
+import { getEngyBalance, getWritableContract, runTransferPreflight } from "../../src/services/contract";
 import { resolveEmailToAddress } from "../../src/services/directory";
 
 /**
@@ -79,13 +79,23 @@ export default function TransferScreen() {
   const handleSend = async () => {
     if (!effectiveAddress) return;
     setShowConfirm(false);
-    setTxState("pending");
+    setTxHash(undefined);
     setTxError(undefined);
+    setTxState("signing");
     try {
       const signer = await getSigner();
+
+      const preflightError = await runTransferPreflight(signer, amountWh, balanceWh ?? 0n);
+      if (preflightError) {
+        setTxState("failed");
+        setTxError(preflightError);
+        return;
+      }
+
       const contract = getWritableContract(signer);
       const tx = await contract.transfer(effectiveAddress, BigInt(Math.floor(amountWh)));
       setTxHash(tx.hash);
+      setTxState("submitted");
       await tx.wait();
       setTxState("confirmed");
       await refreshBalance();
