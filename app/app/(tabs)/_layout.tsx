@@ -31,6 +31,10 @@ export default function TabsLayout() {
         name="history"
         options={{ title: "History", tabBarIcon: ({ color }) => <TabIcon symbol="≡" color={color} /> }}
       />
+      <Tabs.Screen
+        name="profile"
+        options={{ title: "Profile", tabBarIcon: ({ color }) => <TabIcon symbol="◎" color={color} /> }}
+      />
     </Tabs>
   );
 }

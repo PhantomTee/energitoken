@@ -30,7 +30,14 @@
       "expo-status-bar",
       "expo-secure-store",
       "expo-web-browser",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#121022",
+          "dark": { "backgroundColor": "#121022" }
+        }
+      ]
     ],
     "extra": {
       "router": {},

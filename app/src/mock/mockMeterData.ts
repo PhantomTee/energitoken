@@ -33,3 +33,10 @@ export const mockMeterReadingB: MeterReading = {
   relays: { r1: true, r2: true, r3: false, r4: false },
   updatedAt: Date.now(),
 };
+
+/**
+ * The household's ESP32 meter identifies itself by MAC address — this is
+ * what binds a physical device to a wallet during pairing. Mocked for now,
+ * same as the readings above, until Step 6 wires the real Firebase record.
+ */
+export const mockEspMacAddress = "24:6F:28:AB:3C:91";
