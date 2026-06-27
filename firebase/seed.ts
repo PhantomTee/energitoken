@@ -5,17 +5,18 @@ import * as dotenv from "dotenv";
 dotenv.config();
 
 /**
- * Writes one mock meter record so the app's Dashboard has live-shaped data to
- * read before the ESP32 meter is connected. Uses the Admin SDK (service
- * account), which bypasses database.rules.json — that's expected, since rules
- * only govern client access, not trusted server-side scripts.
+ * Writes one mock meter record under a device ID, so the app's onboarding +
+ * Dashboard flow has something real to bind to and read before the ESP32
+ * meter exists. Uses the Admin SDK (service account), which bypasses
+ * database.rules.json -- that's expected, since rules only govern client
+ * access, not trusted server-side scripts.
  *
  * Requires a Firebase service account key. Generate one in the Firebase
  * console: Project settings -> Service accounts -> Generate new private key,
  * save it as firebase/serviceAccountKey.json (gitignored), and set
  * FIREBASE_DATABASE_URL in firebase/.env.
  */
-const MOCK_WALLET = process.env.SEED_WALLET_ADDRESS || "0xDC86E1E8A5C72cce432E99483A20B19802A47ccD";
+const MOCK_DEVICE_ID = process.env.SEED_DEVICE_ID || "3B9D88";
 
 async function main() {
   const databaseURL = process.env.FIREBASE_DATABASE_URL;
@@ -30,7 +31,7 @@ async function main() {
 
   const db = getDatabase();
 
-  await db.ref(`meters/${MOCK_WALLET}`).set({
+  await db.ref(`meters/${MOCK_DEVICE_ID}`).set({
     voltage: 231.4,
     current: 2.8,
     power: 648,
@@ -41,7 +42,8 @@ async function main() {
     updatedAt: Date.now(),
   });
 
-  console.log(`Seeded mock meter data for ${MOCK_WALLET}`);
+  console.log(`Seeded mock meter data for device ${MOCK_DEVICE_ID}`);
+  console.log(`Enter "${MOCK_DEVICE_ID}" as the device code during onboarding to bind to it.`);
   process.exit(0);
 }
 

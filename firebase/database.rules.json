@@ -6,10 +6,22 @@
         ".write": "auth != null && auth.uid == $uid && (!data.exists() || data.val() == newData.val())"
       }
     },
-    "meters": {
+    "walletToDevice": {
       "$wallet": {
         ".read": "auth != null && root.child('uidToWallet').child(auth.uid).val() == $wallet",
-        ".write": "auth != null && root.child('uidToWallet').child(auth.uid).val() == $wallet"
+        ".write": "auth != null && root.child('uidToWallet').child(auth.uid).val() == $wallet && (!data.exists() || data.val() == newData.val())"
+      }
+    },
+    "deviceToWallet": {
+      "$deviceId": {
+        ".read": "auth != null",
+        ".write": "auth != null && newData.val() == root.child('uidToWallet').child(auth.uid).val() && (!data.exists() || data.val() == newData.val())"
+      }
+    },
+    "meters": {
+      "$deviceId": {
+        ".read": "auth != null && root.child('deviceToWallet').child($deviceId).val() == root.child('uidToWallet').child(auth.uid).val()",
+        ".write": "auth != null && root.child('deviceToWallet').child($deviceId).val() == root.child('uidToWallet').child(auth.uid).val()"
       }
     },
     "directory": {
