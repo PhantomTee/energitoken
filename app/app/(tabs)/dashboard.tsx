@@ -1,5 +1,5 @@
-import React, { useState, useCallback } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable } from "react-native";
+import React, { useState, useCallback, useEffect } from "react";
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { colors } from "../../src/theme/colors";
 import { typography, spacing, radius } from "../../src/theme/typography";
@@ -8,22 +8,18 @@ import { MetricTile } from "../../src/components/MetricTile";
 import { BudgetRing } from "../../src/components/BudgetRing";
 import { RelayIndicator } from "../../src/components/RelayIndicator";
 import { LiveMockBanner } from "../../src/components/LiveMockBanner";
-import { mockMeterReadingA, mockMeterReadingB } from "../../src/mock/mockMeterData";
 import { useWallet } from "../../src/hooks/useWallet";
 import { TopUpModal } from "../../src/components/TopUpModal";
 import { getEngyBalance } from "../../src/services/contract";
+import { useMeterData, MeterMode } from "../../src/hooks/useMeterData";
+import { writeDirectoryEntry } from "../../src/services/directory";
 
-/**
- * Mock-only meter data for now (build Step 4). Step 6 swaps the static
- * readings below for a real Firebase realtime listener behind the same mode
- * toggle. The token balance below is real — read live from the contract.
- */
 export default function DashboardScreen() {
-  const [mode, setMode] = useState<"mock" | "live">("mock");
-  const reading = mode === "live" ? mockMeterReadingB : mockMeterReadingA;
-  const { walletAddress, logout } = useWallet();
+  const [mode, setMode] = useState<MeterMode>("mock");
+  const { walletAddress, email, logout } = useWallet();
   const [topUpVisible, setTopUpVisible] = useState(false);
   const [balanceWh, setBalanceWh] = useState<bigint | null>(null);
+  const { reading, loading: meterLoading, error: meterError } = useMeterData(walletAddress, mode);
 
   useFocusEffect(
     useCallback(() => {
@@ -41,6 +37,15 @@ export default function DashboardScreen() {
       };
     }, [walletAddress])
   );
+
+  // Lets the Transfer screen resolve "send to this email" to this wallet.
+  useEffect(() => {
+    if (walletAddress && email) {
+      writeDirectoryEntry(email, walletAddress).catch(() => {
+        // non-critical: the user can still be reached by raw wallet address
+      });
+    }
+  }, [walletAddress, email]);
 
   const handleLogout = async () => {
     await logout();
@@ -79,17 +84,32 @@ export default function DashboardScreen() {
             </Pressable>
           )}
         </View>
-        <BudgetRing percentUsed={reading.percentUsed} size={96} />
+        <BudgetRing percentUsed={reading?.percentUsed ?? 0} size={96} />
       </View>
 
+      {meterLoading && (
+        <View style={styles.meterStatusRow}>
+          <ActivityIndicator color={colors.indigo[400]} />
+          <Text style={[typography.caption, styles.meterStatusText]}>Loading live meter data…</Text>
+        </View>
+      )}
+      {meterError && (
+        <Text style={[typography.caption, styles.meterErrorText]}>Couldn't load live data: {meterError}</Text>
+      )}
+      {!meterLoading && mode === "live" && !meterError && !reading && (
+        <Text style={[typography.caption, styles.meterErrorText]}>
+          No live meter data yet for this wallet.
+        </Text>
+      )}
+
       <View style={styles.tileRow}>
-        <MetricTile label="Voltage" value={reading.voltage.toFixed(1)} unit="V" />
-        <MetricTile label="Current" value={reading.current.toFixed(1)} unit="A" />
-        <MetricTile label="Power" value={reading.power.toFixed(0)} unit="W" />
+        <MetricTile label="Voltage" value={reading ? reading.voltage.toFixed(1) : "—"} unit="V" />
+        <MetricTile label="Current" value={reading ? reading.current.toFixed(1) : "—"} unit="A" />
+        <MetricTile label="Power" value={reading ? reading.power.toFixed(0) : "—"} unit="W" />
       </View>
 
       <Text style={[typography.h2, styles.sectionTitle]}>Load priority</Text>
-      <RelayIndicator relays={reading.relays} />
+      <RelayIndicator relays={reading?.relays ?? { r1: false, r2: false, r3: false, r4: false }} />
 
       {walletAddress && (
         <TopUpModal visible={topUpVisible} onClose={() => setTopUpVisible(false)} walletAddress={walletAddress} />
@@ -119,6 +139,9 @@ const styles = StyleSheet.create({
   balanceLabel: { color: colors.terracotta[500] },
   balanceValue: { color: colors.panelInsetText, marginTop: spacing.xs },
   balanceUnit: { color: colors.indigo[700], marginTop: 2 },
+  meterStatusRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  meterStatusText: { color: colors.textSecondary },
+  meterErrorText: { color: colors.danger },
   topUpButton: {
     backgroundColor: colors.terracotta[500],
     borderRadius: radius.md,

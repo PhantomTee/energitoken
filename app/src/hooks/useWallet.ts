@@ -11,6 +11,7 @@ export function useWallet() {
 
   const wallet = wallets[0];
   const walletAddress = wallet?.address ?? null;
+  const email = user?.linked_accounts.find((account) => account.type === "email")?.address ?? null;
 
   /**
    * Wraps the embedded wallet's EIP-1193 provider in an ethers signer, so
@@ -28,6 +29,7 @@ export function useWallet() {
     isReady,
     isAuthenticated: !!user,
     walletAddress,
+    email,
     getSigner,
     logout,
   };

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, Modal } from "react-native";
+import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, Modal, ActivityIndicator } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { isAddress } from "ethers";
 import { colors } from "../../src/theme/colors";
@@ -8,13 +8,13 @@ import { TxStatus, TxState } from "../../src/components/TxStatus";
 import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
 import { useWallet } from "../../src/hooks/useWallet";
 import { getEngyBalance, getWritableContract } from "../../src/services/contract";
+import { resolveEmailToAddress } from "../../src/services/directory";
 
 /**
- * Email -> wallet resolution (the /directory lookup) lands in build Step 8.
- * For now, recipients must be entered as a raw wallet address — the input
- * still accepts an email-looking string so the UI doesn't have to change
- * shape later, but submission is blocked with an explicit message rather
- * than silently failing.
+ * Recipients can be a raw wallet address or an email -- emails are resolved
+ * against the /directory node (written by the Dashboard after login). If an
+ * email hasn't logged in yet there's nothing to resolve to, so that's
+ * surfaced explicitly rather than silently blocking the form.
  */
 export default function TransferScreen() {
   const { walletAddress, getSigner } = useWallet();
@@ -25,6 +25,9 @@ export default function TransferScreen() {
   const [txHash, setTxHash] = useState<string | undefined>();
   const [txError, setTxError] = useState<string | undefined>();
   const [balanceWh, setBalanceWh] = useState<bigint | null>(null);
+  const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
+  const [resolving, setResolving] = useState(false);
+  const [resolveError, setResolveError] = useState<string | null>(null);
 
   const refreshBalance = useCallback(async () => {
     if (!walletAddress) return;
@@ -42,20 +45,46 @@ export default function TransferScreen() {
     }, [refreshBalance])
   );
 
-  const amountWh = Number(amount);
   const isEmailEntry = recipient.includes("@");
-  const isValidRecipient = isAddress(recipient);
+
+  // Debounced email -> wallet lookup against the /directory node.
+  useEffect(() => {
+    setResolvedAddress(null);
+    setResolveError(null);
+    if (!isEmailEntry || recipient.trim().length < 5) return;
+
+    setResolving(true);
+    const timer = setTimeout(() => {
+      resolveEmailToAddress(recipient)
+        .then((address) => {
+          if (address) {
+            setResolvedAddress(address);
+          } else {
+            setResolveError("No wallet found for that email yet -- they need to log into EnergiToken at least once.");
+          }
+        })
+        .catch(() => setResolveError("Couldn't look up that email right now."))
+        .finally(() => setResolving(false));
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [recipient, isEmailEntry]);
+
+  const effectiveAddress = isEmailEntry ? resolvedAddress : isAddress(recipient) ? recipient : null;
+  const amountWh = Number(amount);
+  const isValidRecipient = effectiveAddress !== null;
   const isValidAmount = balanceWh !== null && amountWh > 0 && BigInt(Math.floor(amountWh)) <= balanceWh;
-  const canSubmit = isValidAmount && isValidRecipient;
+  const canSubmit = isValidAmount && isValidRecipient && !resolving;
 
   const handleSend = async () => {
+    if (!effectiveAddress) return;
     setShowConfirm(false);
     setTxState("pending");
     setTxError(undefined);
     try {
       const signer = await getSigner();
       const contract = getWritableContract(signer);
-      const tx = await contract.transfer(recipient, BigInt(Math.floor(amountWh)));
+      const tx = await contract.transfer(effectiveAddress, BigInt(Math.floor(amountWh)));
       setTxHash(tx.hash);
       await tx.wait();
       setTxState("confirmed");
@@ -72,6 +101,8 @@ export default function TransferScreen() {
     setTxState("idle");
     setTxHash(undefined);
     setTxError(undefined);
+    setResolvedAddress(null);
+    setResolveError(null);
   };
 
   return (
@@ -81,23 +112,32 @@ export default function TransferScreen() {
         <AdinkraAccent size={28} color={colors.terracotta[400]} dotColor={colors.indigo[400]} opacity={1} />
       </View>
       <Text style={[typography.body, styles.subtitle]}>
-        Share surplus watt-hours with another household's wallet address.
+        Share surplus watt-hours with another household, by email or wallet address.
       </Text>
 
-      <Text style={[typography.label, styles.fieldLabel]}>RECIPIENT WALLET ADDRESS</Text>
+      <Text style={[typography.label, styles.fieldLabel]}>RECIPIENT</Text>
       <TextInput
         style={styles.input}
-        placeholder="0x..."
+        placeholder="email@example.com or 0x..."
         placeholderTextColor={colors.neutral[500]}
         value={recipient}
         onChangeText={setRecipient}
         autoCapitalize="none"
         editable={txState === "idle"}
       />
-      {isEmailEntry && (
-        <Text style={[typography.caption, styles.errorHint]}>
-          Sending by email isn't wired up yet — enter the recipient's wallet address (0x...).
+      {isEmailEntry && resolving && (
+        <View style={styles.resolveRow}>
+          <ActivityIndicator size="small" color={colors.indigo[400]} />
+          <Text style={[typography.caption, styles.resolveText]}>Looking up that email…</Text>
+        </View>
+      )}
+      {isEmailEntry && !resolving && resolvedAddress && (
+        <Text style={[typography.caption, styles.resolveSuccess]}>
+          Resolved to {resolvedAddress.slice(0, 6)}…{resolvedAddress.slice(-4)}
         </Text>
+      )}
+      {isEmailEntry && !resolving && resolveError && (
+        <Text style={[typography.caption, styles.errorHint]}>{resolveError}</Text>
       )}
       {recipient.length > 0 && !isEmailEntry && !isValidRecipient && (
         <Text style={[typography.caption, styles.errorHint]}>That doesn't look like a valid wallet address.</Text>
@@ -149,8 +189,18 @@ export default function TransferScreen() {
             <Text style={[typography.h2, styles.modalTitle]}>Confirm transfer</Text>
             <View style={styles.summaryRow}>
               <Text style={[typography.body, styles.summaryLabel]}>To</Text>
-              <Text style={[typography.dataXs, styles.summaryValue]}>{recipient}</Text>
+              <Text style={[typography.dataXs, styles.summaryValue]}>
+                {isEmailEntry ? recipient : effectiveAddress}
+              </Text>
             </View>
+            {isEmailEntry && effectiveAddress && (
+              <View style={styles.summaryRow}>
+                <Text style={[typography.body, styles.summaryLabel]}>Wallet</Text>
+                <Text style={[typography.dataXs, styles.summaryValue]}>
+                  {effectiveAddress.slice(0, 6)}…{effectiveAddress.slice(-4)}
+                </Text>
+              </View>
+            )}
             <View style={styles.summaryRow}>
               <Text style={[typography.body, styles.summaryLabel]}>Amount</Text>
               <Text style={[typography.dataSm, styles.summaryValue]}>{amountWh.toLocaleString()} Wh</Text>
@@ -190,6 +240,9 @@ const styles = StyleSheet.create({
   },
   balanceHint: { color: colors.textSecondary, marginTop: spacing.xs },
   errorHint: { color: colors.danger, marginTop: spacing.xs },
+  resolveRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs, marginTop: spacing.xs },
+  resolveText: { color: colors.textSecondary },
+  resolveSuccess: { color: colors.success, marginTop: spacing.xs },
   button: {
     backgroundColor: colors.indigo[500],
     borderRadius: radius.md,

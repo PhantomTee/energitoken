@@ -11,6 +11,7 @@ export function useWallet() {
 
   const embeddedWallet = wallets.find((wallet) => wallet.walletClientType === "privy");
   const walletAddress = embeddedWallet?.address ?? null;
+  const email = user?.email?.address ?? null;
 
   /**
    * Wraps the embedded wallet's EIP-1193 provider in an ethers signer, so
@@ -28,6 +29,7 @@ export function useWallet() {
     isReady: ready,
     isAuthenticated: !!user,
     walletAddress,
+    email,
     getSigner,
     logout,
   };

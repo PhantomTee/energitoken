@@ -18,14 +18,14 @@ const AMOY_RPC_URL = process.env.EXPO_PUBLIC_AMOY_RPC_URL ?? "https://rpc-amoy.p
 let readProvider: ethers.JsonRpcProvider | null = null;
 
 /** Read-only provider against the public Amoy RPC — no wallet/signer needed. */
-function getReadProvider(): ethers.JsonRpcProvider {
+export function getReadProvider(): ethers.JsonRpcProvider {
   if (!readProvider) {
     readProvider = new ethers.JsonRpcProvider(AMOY_RPC_URL);
   }
   return readProvider;
 }
 
-function getReadContract(): ethers.Contract {
+export function getReadContract(): ethers.Contract {
   return new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, getReadProvider());
 }
 
