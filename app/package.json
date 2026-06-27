@@ -52,7 +52,8 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "typecheck": "node --stack-size=8000 ./node_modules/typescript/bin/tsc --noEmit"
   },
   "private": true
 }

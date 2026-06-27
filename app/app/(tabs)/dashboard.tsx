@@ -1,6 +1,6 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable } from "react-native";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { colors } from "../../src/theme/colors";
 import { typography, spacing, radius } from "../../src/theme/typography";
 import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
@@ -11,18 +11,36 @@ import { LiveMockBanner } from "../../src/components/LiveMockBanner";
 import { mockMeterReadingA, mockMeterReadingB } from "../../src/mock/mockMeterData";
 import { useWallet } from "../../src/hooks/useWallet";
 import { TopUpModal } from "../../src/components/TopUpModal";
+import { getEngyBalance } from "../../src/services/contract";
 
 /**
  * Mock-only meter data for now (build Step 4). Step 6 swaps the static
  * readings below for a real Firebase realtime listener behind the same mode
- * toggle. Step 7 swaps the placeholder balance for a real on-chain read.
+ * toggle. The token balance below is real — read live from the contract.
  */
 export default function DashboardScreen() {
   const [mode, setMode] = useState<"mock" | "live">("mock");
   const reading = mode === "live" ? mockMeterReadingB : mockMeterReadingA;
-  const tokenBalanceWh = 9800; // placeholder; wired to on-chain balanceOf() in Step 7
   const { walletAddress, logout } = useWallet();
   const [topUpVisible, setTopUpVisible] = useState(false);
+  const [balanceWh, setBalanceWh] = useState<bigint | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!walletAddress) return;
+      let cancelled = false;
+      getEngyBalance(walletAddress)
+        .then((balance) => {
+          if (!cancelled) setBalanceWh(balance);
+        })
+        .catch(() => {
+          // leave the previous balance on screen rather than clearing it on a transient RPC error
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [walletAddress])
+  );
 
   const handleLogout = async () => {
     await logout();
@@ -51,7 +69,9 @@ export default function DashboardScreen() {
       <View style={styles.balanceCard}>
         <View style={styles.balanceMain}>
           <Text style={[typography.label, styles.balanceLabel]}>Available credit</Text>
-          <Text style={[typography.data, styles.balanceValue]}>{tokenBalanceWh.toLocaleString()}</Text>
+          <Text style={[typography.data, styles.balanceValue]}>
+            {balanceWh === null ? "···" : balanceWh.toLocaleString()}
+          </Text>
           <Text style={[typography.dataSm, styles.balanceUnit]}>Wh · ENGY on Polygon Amoy</Text>
           {walletAddress && (
             <Pressable style={styles.topUpButton} onPress={() => setTopUpVisible(true)}>

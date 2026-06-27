@@ -1,4 +1,5 @@
 import { usePrivy, useWallets } from "@privy-io/react-auth";
+import { ethers } from "ethers";
 
 /**
  * Single place the rest of the app reads "who is logged in and what's their
@@ -11,10 +12,23 @@ export function useWallet() {
   const embeddedWallet = wallets.find((wallet) => wallet.walletClientType === "privy");
   const walletAddress = embeddedWallet?.address ?? null;
 
+  /**
+   * Wraps the embedded wallet's EIP-1193 provider in an ethers signer, so
+   * screens can send real transactions (e.g. transfer()) through Privy
+   * without touching Privy's API shape directly.
+   */
+  const getSigner = async (): Promise<ethers.Signer> => {
+    if (!embeddedWallet) throw new Error("No embedded wallet available");
+    const eip1193Provider = await embeddedWallet.getEthereumProvider();
+    const browserProvider = new ethers.BrowserProvider(eip1193Provider);
+    return browserProvider.getSigner();
+  };
+
   return {
     isReady: ready,
     isAuthenticated: !!user,
     walletAddress,
+    getSigner,
     logout,
   };
 }

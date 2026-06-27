@@ -1,35 +1,69 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, Modal } from "react-native";
+import { useFocusEffect } from "expo-router";
+import { isAddress } from "ethers";
 import { colors } from "../../src/theme/colors";
 import { typography, spacing, radius } from "../../src/theme/typography";
 import { TxStatus, TxState } from "../../src/components/TxStatus";
 import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
-
-const MOCK_BALANCE_WH = 9800;
+import { useWallet } from "../../src/hooks/useWallet";
+import { getEngyBalance, getWritableContract } from "../../src/services/contract";
 
 /**
- * Mock-only for now (build Step 4). Recipient resolution (email -> wallet via
- * the /directory node) and the real ERC-20 transfer() call land in Steps 7-8.
+ * Email -> wallet resolution (the /directory lookup) lands in build Step 8.
+ * For now, recipients must be entered as a raw wallet address — the input
+ * still accepts an email-looking string so the UI doesn't have to change
+ * shape later, but submission is blocked with an explicit message rather
+ * than silently failing.
  */
 export default function TransferScreen() {
+  const { walletAddress, getSigner } = useWallet();
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
   const [showConfirm, setShowConfirm] = useState(false);
   const [txState, setTxState] = useState<TxState>("idle");
   const [txHash, setTxHash] = useState<string | undefined>();
+  const [txError, setTxError] = useState<string | undefined>();
+  const [balanceWh, setBalanceWh] = useState<bigint | null>(null);
+
+  const refreshBalance = useCallback(async () => {
+    if (!walletAddress) return;
+    try {
+      const balance = await getEngyBalance(walletAddress);
+      setBalanceWh(balance);
+    } catch {
+      // leave balance as-is; the UI shows a loading state until a read succeeds
+    }
+  }, [walletAddress]);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshBalance();
+    }, [refreshBalance])
+  );
 
   const amountWh = Number(amount);
-  const isValidAmount = amountWh > 0 && amountWh <= MOCK_BALANCE_WH;
-  const isValidRecipient = recipient.includes("@") || recipient.startsWith("0x");
+  const isEmailEntry = recipient.includes("@");
+  const isValidRecipient = isAddress(recipient);
+  const isValidAmount = balanceWh !== null && amountWh > 0 && BigInt(Math.floor(amountWh)) <= balanceWh;
   const canSubmit = isValidAmount && isValidRecipient;
 
-  const handleSend = () => {
+  const handleSend = async () => {
     setShowConfirm(false);
     setTxState("pending");
-    setTimeout(() => {
+    setTxError(undefined);
+    try {
+      const signer = await getSigner();
+      const contract = getWritableContract(signer);
+      const tx = await contract.transfer(recipient, BigInt(Math.floor(amountWh)));
+      setTxHash(tx.hash);
+      await tx.wait();
       setTxState("confirmed");
-      setTxHash("0x" + Math.random().toString(16).slice(2).padEnd(64, "0"));
-    }, 1200);
+      await refreshBalance();
+    } catch (err) {
+      setTxState("failed");
+      setTxError(err instanceof Error ? err.message : "Something went wrong.");
+    }
   };
 
   const reset = () => {
@@ -37,6 +71,7 @@ export default function TransferScreen() {
     setAmount("");
     setTxState("idle");
     setTxHash(undefined);
+    setTxError(undefined);
   };
 
   return (
@@ -46,19 +81,27 @@ export default function TransferScreen() {
         <AdinkraAccent size={28} color={colors.terracotta[400]} dotColor={colors.indigo[400]} opacity={1} />
       </View>
       <Text style={[typography.body, styles.subtitle]}>
-        Share surplus watt-hours with another household, by email or wallet address.
+        Share surplus watt-hours with another household's wallet address.
       </Text>
 
-      <Text style={[typography.label, styles.fieldLabel]}>RECIPIENT</Text>
+      <Text style={[typography.label, styles.fieldLabel]}>RECIPIENT WALLET ADDRESS</Text>
       <TextInput
         style={styles.input}
-        placeholder="email@example.com or 0x..."
+        placeholder="0x..."
         placeholderTextColor={colors.neutral[500]}
         value={recipient}
         onChangeText={setRecipient}
         autoCapitalize="none"
         editable={txState === "idle"}
       />
+      {isEmailEntry && (
+        <Text style={[typography.caption, styles.errorHint]}>
+          Sending by email isn't wired up yet — enter the recipient's wallet address (0x...).
+        </Text>
+      )}
+      {recipient.length > 0 && !isEmailEntry && !isValidRecipient && (
+        <Text style={[typography.caption, styles.errorHint]}>That doesn't look like a valid wallet address.</Text>
+      )}
 
       <Text style={[typography.label, styles.fieldLabel]}>AMOUNT (Wh)</Text>
       <TextInput
@@ -71,9 +114,9 @@ export default function TransferScreen() {
         editable={txState === "idle"}
       />
       <Text style={[typography.dataXs, styles.balanceHint]}>
-        Available: {MOCK_BALANCE_WH.toLocaleString()} Wh
+        Available: {balanceWh === null ? "loading…" : `${balanceWh.toLocaleString()} Wh`}
       </Text>
-      {amount.length > 0 && !isValidAmount && (
+      {amount.length > 0 && balanceWh !== null && !isValidAmount && (
         <Text style={[typography.caption, styles.errorHint]}>
           {amountWh <= 0 ? "Enter an amount greater than 0." : "Amount exceeds your available balance."}
         </Text>
@@ -89,10 +132,12 @@ export default function TransferScreen() {
         </Pressable>
       ) : (
         <View style={styles.statusWrap}>
-          <TxStatus state={txState} hash={txHash} />
-          {txState === "confirmed" && (
+          <TxStatus state={txState} hash={txHash} error={txError} />
+          {(txState === "confirmed" || txState === "failed") && (
             <Pressable style={styles.secondaryButton} onPress={reset}>
-              <Text style={[typography.bodyStrong, styles.secondaryButtonText]}>Send another</Text>
+              <Text style={[typography.bodyStrong, styles.secondaryButtonText]}>
+                {txState === "confirmed" ? "Send another" : "Try again"}
+              </Text>
             </Pressable>
           )}
         </View>
