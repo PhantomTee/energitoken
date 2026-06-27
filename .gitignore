@@ -13,7 +13,6 @@ contract/coverage.json
 app/.expo/
 app/dist/
 app/web-build/
-app/src/config/firebase.ts
 *.jks
 *.p8
 *.p12
