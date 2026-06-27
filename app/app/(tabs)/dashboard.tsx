@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from "react-native";
-import { router, useFocusEffect } from "expo-router";
+import { router, useFocusEffect, Link } from "expo-router";
 import { colors } from "../../src/theme/colors";
 import { typography, spacing, radius } from "../../src/theme/typography";
 import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
@@ -19,7 +19,12 @@ export default function DashboardScreen() {
   const { walletAddress, email, logout } = useWallet();
   const [topUpVisible, setTopUpVisible] = useState(false);
   const [balanceWh, setBalanceWh] = useState<bigint | null>(null);
-  const { reading, loading: meterLoading, error: meterError } = useMeterData(walletAddress, mode);
+  const {
+    reading,
+    loading: meterLoading,
+    error: meterError,
+    hasDevice,
+  } = useMeterData(walletAddress, mode);
 
   useFocusEffect(
     useCallback(() => {
@@ -87,19 +92,32 @@ export default function DashboardScreen() {
         <BudgetRing percentUsed={reading?.percentUsed ?? 0} size={96} />
       </View>
 
-      {meterLoading && (
+      {mode === "live" && (
         <View style={styles.meterStatusRow}>
-          <ActivityIndicator color={colors.indigo[400]} />
-          <Text style={[typography.caption, styles.meterStatusText]}>Loading live meter data…</Text>
+          <View
+            style={[
+              styles.statusDot,
+              { backgroundColor: meterError ? colors.danger : hasDevice ? colors.success : colors.warning },
+            ]}
+          />
+          <Text style={[typography.caption, styles.meterStatusText]}>
+            {meterLoading
+              ? "Loading live meter data…"
+              : meterError
+                ? `Couldn't load live data: ${meterError}`
+                : !hasDevice
+                  ? "No device paired yet"
+                  : reading
+                    ? "Live"
+                    : "Device paired — waiting for first reading"}
+          </Text>
+          {meterLoading && <ActivityIndicator color={colors.indigo[400]} style={styles.meterStatusSpinner} />}
+          {!meterLoading && !hasDevice && (
+            <Link href="/onboarding" style={styles.pairLink}>
+              <Text style={[typography.dataXs, styles.pairLinkText]}>Pair a device →</Text>
+            </Link>
+          )}
         </View>
-      )}
-      {meterError && (
-        <Text style={[typography.caption, styles.meterErrorText]}>Couldn't load live data: {meterError}</Text>
-      )}
-      {!meterLoading && mode === "live" && !meterError && !reading && (
-        <Text style={[typography.caption, styles.meterErrorText]}>
-          No live meter data yet for this wallet.
-        </Text>
       )}
 
       <View style={styles.tileRow}>
@@ -140,8 +158,11 @@ const styles = StyleSheet.create({
   balanceValue: { color: colors.panelInsetText, marginTop: spacing.xs },
   balanceUnit: { color: colors.indigo[700], marginTop: 2 },
   meterStatusRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  meterStatusText: { color: colors.textSecondary },
-  meterErrorText: { color: colors.danger },
+  statusDot: { width: 8, height: 8, borderRadius: 4 },
+  meterStatusText: { color: colors.textSecondary, flex: 1 },
+  meterStatusSpinner: { marginLeft: spacing.xs },
+  pairLink: { marginLeft: spacing.sm },
+  pairLinkText: { color: colors.indigo[400] },
   topUpButton: {
     backgroundColor: colors.terracotta[500],
     borderRadius: radius.md,
