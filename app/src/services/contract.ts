@@ -18,10 +18,16 @@ export const AMOY_CHAIN_ID = 80002n;
 
 let readProvider: ethers.JsonRpcProvider | null = null;
 
-/** Read-only provider against the public Amoy RPC — no wallet/signer needed. */
+/**
+ * Read-only provider against the public Amoy RPC — no wallet/signer needed.
+ * batchMaxCount: 1 disables ethers' default JSON-RPC batching: the public
+ * Amoy endpoint doesn't reliably support batched requests, and sending the
+ * 4 concurrent getLogs calls in getTransactionHistory as one batch produces
+ * a "could not coalesce error" (code -32000) instead of real results.
+ */
 export function getReadProvider(): ethers.JsonRpcProvider {
   if (!readProvider) {
-    readProvider = new ethers.JsonRpcProvider(AMOY_RPC_URL);
+    readProvider = new ethers.JsonRpcProvider(AMOY_RPC_URL, undefined, { batchMaxCount: 1 });
   }
   return readProvider;
 }

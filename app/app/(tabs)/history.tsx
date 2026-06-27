@@ -70,7 +70,7 @@ export default function HistoryScreen() {
 
       {!loading && error && (
         <View style={styles.statusRow}>
-          <Text style={[typography.caption, styles.errorText]}>Couldn't load history: {error}</Text>
+          <Text style={[typography.caption, styles.errorText]}>Can't load right now.</Text>
           <Pressable onPress={refresh}>
             <Text style={[typography.caption, styles.retryText]}>Retry</Text>
           </Pressable>
