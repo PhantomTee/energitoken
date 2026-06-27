@@ -1,15 +1,16 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, KeyboardAvoidingView } from "react-native";
+import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform } from "react-native";
 import { useRouter } from "expo-router";
-import { useLoginWithEmail } from "@privy-io/react-auth";
-import { colors } from "../src/theme/colors";
-import { typography, spacing, radius } from "../src/theme/typography";
-import { AdinkraAccent } from "../src/theme/motifs/AdinkraAccent";
+import { useLoginWithEmail, useEmbeddedEthereumWallet } from "@privy-io/expo";
+import { colors } from "../theme/colors";
+import { typography, spacing, radius } from "../theme/typography";
+import { AdinkraAccent } from "../theme/motifs/AdinkraAccent";
 
 /**
- * Privy's web SDK creates the embedded wallet (config in app/_layout.web.tsx)
- * before onComplete fires, so unlike the native screen there's no separate
- * create-wallet call needed here.
+ * Privy's mobile SDK authenticates by emailing a one-time 6-digit code
+ * (not a clickable magic link — that's the web flow; codes are what work
+ * reliably inside a native app). On a successful first login Privy creates
+ * the embedded wallet automatically (config in src/screens/RootLayout.tsx).
  */
 export default function LoginScreen() {
   const router = useRouter();
@@ -17,9 +18,20 @@ export default function LoginScreen() {
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
 
+  const { create: createEthereumWallet } = useEmbeddedEthereumWallet();
+
   const { sendCode, loginWithCode, state } = useLoginWithEmail({
-    onError: (err) => setError(err ?? "Something went wrong. Please try again."),
-    onComplete: () => router.replace("/(tabs)/dashboard"),
+    onError: (err) => setError(err.message ?? "Something went wrong. Please try again."),
+    onLoginSuccess: async () => {
+      // createOnLogin: "users-without-wallets" already covers this, but calling
+      // create() again is a safe no-op if a wallet already exists.
+      try {
+        await createEthereumWallet();
+      } catch {
+        // wallet likely already exists — fine to ignore
+      }
+      router.replace("/(tabs)/dashboard");
+    },
   });
 
   const awaitingCode = state.status === "awaiting-code-input" || state.status === "submitting-code";
@@ -34,11 +46,11 @@ export default function LoginScreen() {
   const handleSubmitCode = async () => {
     setError(null);
     if (code.length < 4) return;
-    await loginWithCode({ code });
+    await loginWithCode({ code, email });
   };
 
   return (
-    <KeyboardAvoidingView style={styles.screen}>
+    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={styles.accentTopRight}>
         <AdinkraAccent size={96} color={colors.terracotta[500]} />
       </View>

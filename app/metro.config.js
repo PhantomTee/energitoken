@@ -12,9 +12,19 @@ const config = getDefaultConfig(__dirname);
  * On web, the opposite is true: @privy-io/react-auth's "x402/client" subpath
  * import only exists via x402's "exports" map (no matching file at the
  * package root), so package-exports resolution must stay enabled for web.
+ *
+ * Expo Router's app/ directory require.context pulls in every route file
+ * (including .web.tsx variants) into every platform's bundle for the route
+ * manifest, even though only one variant ever actually renders per platform.
+ * That drags @privy-io/react-auth — and its unresolvable-without-exports
+ * "x402/client" subpath — into native bundles too. It's dead code there, so
+ * stub it out instead of trying to resolve it for real.
  */
 const defaultResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (moduleName === "x402/client" && platform !== "web") {
+    return { type: "empty" };
+  }
   const resolverContext = { ...context, unstable_enablePackageExports: platform === "web" };
   return (defaultResolveRequest ?? resolverContext.resolveRequest)(resolverContext, moduleName, platform);
 };
