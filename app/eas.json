@@ -9,12 +9,24 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_PRIVY_APP_ID": "cmqurd9a501040cl47ym5mzpr",
+        "EXPO_PUBLIC_PRIVY_MOBILE_CLIENT_ID": "client-WY6aUXfrm42pwKPCD9EQwyNYEdtNf6kfnhcQNqpdCcCw5",
+        "EXPO_PUBLIC_AMOY_RPC_URL": "https://rpc-amoy.polygon.technology",
+        "EXPO_PUBLIC_BACKEND_URL": "https://energitoken.vercel.app"
       }
     },
     "preview": {
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_PRIVY_APP_ID": "cmqurd9a501040cl47ym5mzpr",
+        "EXPO_PUBLIC_PRIVY_MOBILE_CLIENT_ID": "client-WY6aUXfrm42pwKPCD9EQwyNYEdtNf6kfnhcQNqpdCcCw5",
+        "EXPO_PUBLIC_AMOY_RPC_URL": "https://rpc-amoy.polygon.technology",
+        "EXPO_PUBLIC_BACKEND_URL": "https://energitoken.vercel.app"
       }
     }
   }
