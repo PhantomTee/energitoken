@@ -13,6 +13,7 @@ import { TopUpModal } from "../../src/components/TopUpModal";
 import { getEngyBalance } from "../../src/services/contract";
 import { useMeterData, MeterMode } from "../../src/hooks/useMeterData";
 import { writeDirectoryEntry } from "../../src/services/directory";
+import { tokensToUnits } from "../../src/services/units";
 
 export default function DashboardScreen() {
   const [mode, setMode] = useState<MeterMode>("mock");
@@ -97,9 +98,9 @@ export default function DashboardScreen() {
         <View style={styles.balanceMain}>
           <Text style={[typography.label, styles.balanceLabel]}>Available credit</Text>
           <Text style={[typography.data, styles.balanceValue]}>
-            {balanceWh === null ? "···" : balanceWh.toLocaleString()}
+            {balanceWh === null ? "···" : tokensToUnits(balanceWh).toLocaleString()}
           </Text>
-          <Text style={[typography.dataSm, styles.balanceUnit]}>Wh · ENGY on Polygon Amoy</Text>
+          <Text style={[typography.dataSm, styles.balanceUnit]}>units · 1 unit = 1 kWh</Text>
           {walletAddress && (
             <Pressable style={styles.topUpButton} onPress={() => setTopUpVisible(true)}>
               <Text style={[typography.bodyStrong, styles.topUpButtonText]}>Top up with OPay</Text>

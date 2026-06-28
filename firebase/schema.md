@@ -12,7 +12,7 @@ to whichever device the current wallet is bound to (see `/deviceToWallet` below)
     current:      number   (A)
     power:        number   (W)
     energyWh:     number   (cumulative Wh this cycle)
-    budgetWh:     number   (user-set budget)
+    budgetWh:     number   (user-set budget, in Wh -- see unit note below)
     percentUsed:  number   (0-100)
     relays:       { r1: bool, r2: bool, r3: bool, r4: bool }
     updatedAt:    number   (unix ms)
@@ -23,6 +23,14 @@ characters, e.g. `3B9D88`), printed on the meter's LCD during setup. Relay
 tiers, by priority: `r1` = Critical, `r2` = Essential, `r3` = Optional,
 `r4` = Luxury. `true` = load is powered, `false` = load has been shed by the
 budget enforcement logic on-device.
+
+`budgetWh` is written only by the app's Budget screen (`app/(tabs)/budget.tsx`
+via `src/services/budget.ts`) -- last-write-wins, no merge logic, since only
+the one household bound to this device can write here. The contract and this
+field both stay in Wh (1 ENGY token = 1 Wh); the app is the only place that
+ever shows the user "units" (1 unit = 1 kWh = 1,000 Wh = 1,000 ENGY), via
+`src/services/units.ts`. Don't add a raw-Wh display anywhere in the UI --
+always convert at the boundary.
 
 ## `/deviceToWallet/{deviceId}` and `/walletToDevice/{wallet}`
 

@@ -24,6 +24,10 @@ export default function TabsLayout() {
         options={{ title: "Dashboard", tabBarIcon: ({ color }) => <TabIcon symbol="⌂" color={color} /> }}
       />
       <Tabs.Screen
+        name="budget"
+        options={{ title: "Budget", tabBarIcon: ({ color }) => <TabIcon symbol="◐" color={color} /> }}
+      />
+      <Tabs.Screen
         name="transfer"
         options={{ title: "Transfer", tabBarIcon: ({ color }) => <TabIcon symbol="⇄" color={color} /> }}
       />
