@@ -32,6 +32,12 @@
       "expo-web-browser",
       "expo-font",
       [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Use Face ID to quickly unlock EnergiToken."
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/splash-icon.png",

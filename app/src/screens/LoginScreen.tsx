@@ -5,6 +5,7 @@ import { useLoginWithEmail, useEmbeddedEthereumWallet } from "@privy-io/expo";
 import { colors } from "../theme/colors";
 import { typography, spacing, radius } from "../theme/typography";
 import { AdinkraAccent } from "../theme/motifs/AdinkraAccent";
+import { recordFullLogin } from "../services/quickAuth";
 
 /**
  * Privy's mobile SDK authenticates by emailing a one-time 6-digit code
@@ -30,6 +31,8 @@ export default function LoginScreen() {
       } catch {
         // wallet likely already exists — fine to ignore
       }
+      // Starts this device's 12h quick-unlock window (src/services/quickAuth.ts).
+      await recordFullLogin();
       router.replace("/(tabs)/dashboard");
     },
   });
