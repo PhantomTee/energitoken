@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
-import { useLoginWithEmail, useCreateWallet, usePrivy, useWallets } from "@privy-io/react-auth";
+import { useLoginWithEmail, useCreateWallet, usePrivy } from "@privy-io/react-auth";
+import { useWallet } from "../hooks/useWallet";
 import { colors } from "../theme/colors";
 import { typography, spacing, radius } from "../theme/typography";
 import { AdinkraAccent } from "../theme/motifs/AdinkraAccent";
@@ -11,52 +12,29 @@ export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const pendingNav = useRef(false);
+  const didNavigate = useRef(false);
 
-  const { ready, authenticated, logout } = usePrivy();
-  const { wallets } = useWallets();
+  // useWallet() derives walletAddress from user.linkedAccounts — available
+  // immediately when Privy is ready, no waiting for useWallets() to connect.
+  const { isReady, isAuthenticated, walletAddress } = useWallet();
+  const { ready } = usePrivy();
   const { create: createWallet } = useCreateWallet();
 
-  const embeddedWallet = wallets.find((w) => w.walletClientType === "privy");
-
-  // Redirect to dashboard whenever we have a confirmed embedded wallet.
+  // Redirect away from /login the moment we have a confirmed wallet address.
+  // Covers both: (a) returning user with existing session, (b) fresh login.
   useEffect(() => {
-    if (ready && authenticated && embeddedWallet?.address) {
+    if (isReady && isAuthenticated && walletAddress && !didNavigate.current) {
+      didNavigate.current = true;
       router.replace("/(tabs)/dashboard");
     }
-  }, [ready, authenticated, embeddedWallet, router]);
-
-  // When Privy says we're authenticated but wallets[] is still empty, it means
-  // either (a) wallets[] is still loading async, or (b) the wallet was never
-  // created (edge case). Proactively try createWallet() after a short settling
-  // delay. If that also fails, log out so the user can sign in fresh.
-  useEffect(() => {
-    if (!ready || !authenticated || embeddedWallet) return;
-
-    let cancelled = false;
-    const timer = setTimeout(async () => {
-      if (cancelled) return;
-      try {
-        await createWallet();
-        // If successful, wallets[] will update and the redirect useEffect fires.
-      } catch {
-        // Wallet likely already exists but isn't in wallets[] — or creation truly
-        // failed. Log out so the user lands on a clean login form.
-        if (!cancelled) await logout();
-      }
-    }, 2500); // 2.5s settling window for wallets[] to populate normally
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [ready, authenticated, embeddedWallet, createWallet, logout]);
+  }, [isReady, isAuthenticated, walletAddress, router]);
 
   const { sendCode, loginWithCode, state } = useLoginWithEmail({
     onComplete: async () => {
+      // createOnLogin handles wallet creation, but call create() as a safety net
+      // for edge cases where it didn't fire (e.g. existing user, config race).
       try { await createWallet(); } catch { /* wallet already exists — fine */ }
-      pendingNav.current = true;
-      // useEffect above will fire when wallets[] updates with the new wallet.
+      // Navigation fires from the useEffect above once walletAddress is populated.
     },
     onError: (err) => setError((err as Error).message ?? "Something went wrong. Please try again."),
   });
@@ -71,11 +49,11 @@ export default function LoginScreen() {
       await sendCode({ email });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg.toLowerCase().includes("timeout") || msg.toLowerCase().includes("aborted")) {
-        setError("Connection timed out. Please check your network and try again.");
-      } else {
-        setError(msg || "Couldn't send the code. Please try again.");
-      }
+      setError(
+        msg.toLowerCase().includes("timeout") || msg.toLowerCase().includes("aborted")
+          ? "Connection timed out. Please check your network and try again."
+          : msg || "Couldn't send the code. Please try again."
+      );
     }
   };
 
@@ -90,15 +68,13 @@ export default function LoginScreen() {
     }
   };
 
-  // Show spinner while:
-  //   - Privy SDK is still initialising (!ready)
-  //   - User is authenticated but wallet hasn't appeared in wallets[] yet
-  //     (prevents the form appearing in the gap, which causes "already linked" error)
-  const isLoading = !ready || (authenticated && !embeddedWallet);
+  // Show spinner while SDK is initialising OR while we have auth but wallet
+  // address hasn't resolved from linkedAccounts yet (should be <100ms).
+  const isLoading = !ready || (isAuthenticated && !walletAddress);
 
   if (isLoading) {
     return (
-      <View style={[styles.screen, { justifyContent: "center", alignItems: "center" }]}>
+      <View style={styles.screenCenter}>
         <ActivityIndicator size="large" color={colors.indigo[400]} />
       </View>
     );
@@ -176,6 +152,12 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   screen: {
+    flex: 1,
+    backgroundColor: colors.indigo[900],
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  screenCenter: {
     flex: 1,
     backgroundColor: colors.indigo[900],
     alignItems: "center",
