@@ -72,6 +72,8 @@ export default function LoginScreen() {
         <AdinkraAccent size={96} color={colors.terracotta[500]} />
       </View>
 
+      {/* On web this View centres itself; on native it fills the screen */}
+      <View style={styles.outer}>
       <View style={styles.content}>
         <View style={styles.brandRow}>
           <AdinkraAccent size={22} color={colors.terracotta[400]} dotColor={colors.indigo[400]} opacity={1} />
@@ -135,14 +137,32 @@ export default function LoginScreen() {
 
         {error && <Text style={[typography.caption, styles.errorText]}>{error}</Text>}
       </View>
+      </View>
     </KeyboardAvoidingView>
   );
 }
 
+const isWeb = Platform.OS === "web";
+
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.indigo[900] },
+  screen: {
+    flex: 1,
+    backgroundColor: colors.indigo[900],
+    alignItems: isWeb ? "center" : "stretch",
+    justifyContent: "center",
+  },
   accentTopRight: { position: "absolute", top: spacing.xl, right: spacing.lg },
-  content: { flex: 1, justifyContent: "center", paddingHorizontal: spacing.xl },
+  outer: {
+    width: isWeb ? 440 : "100%",
+    flex: isWeb ? 0 : 1,
+  },
+  content: {
+    flex: isWeb ? 0 : 1,
+    justifyContent: "center",
+    paddingHorizontal: spacing.xl,
+    paddingVertical: isWeb ? 48 : 0,
+    ...(isWeb ? { backgroundColor: "rgba(255,255,255,0.05)", borderRadius: 18 } : {}),
+  },
   brandRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.md },
   brandLabel: { color: colors.terracotta[300] },
   title: { color: colors.neutral.white, marginBottom: spacing.md },
