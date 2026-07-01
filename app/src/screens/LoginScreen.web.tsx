@@ -1,10 +1,10 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
 // On web the root provider is @privy-io/react-auth (see RootLayout.web.tsx),
 // so we must use its hooks here — @privy-io/expo hooks require the expo
 // PrivyProvider and will crash with a null-context error on web.
-import { useLoginWithEmail, useCreateWallet } from "@privy-io/react-auth";
+import { useLoginWithEmail, useCreateWallet, usePrivy, useWallets } from "@privy-io/react-auth";
 import { colors } from "../theme/colors";
 import { typography, spacing, radius } from "../theme/typography";
 import { AdinkraAccent } from "../theme/motifs/AdinkraAccent";
@@ -16,14 +16,32 @@ export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const pendingNav = useRef(false);
 
+  const { authenticated } = usePrivy();
+  const { wallets } = useWallets();
   const { create: createWallet } = useCreateWallet();
 
-  const { sendCode, loginWithCode, state } = useLoginWithEmail({
-    // react-auth uses onComplete, not onLoginSuccess (that's the expo SDK name)
-    onComplete: async () => {
-      try { await createWallet(); } catch { /* wallet likely already exists */ }
+  // Navigate to dashboard once Privy state confirms both authenticated AND
+  // embedded wallet exists. This avoids the race where onComplete fires before
+  // useWallets() has propagated the newly-created wallet — new users would land
+  // on dashboard with walletAddress=null if we navigated inside onComplete directly.
+  useEffect(() => {
+    if (!pendingNav.current) return;
+    const embeddedWallet = wallets.find((w) => w.walletClientType === "privy");
+    if (authenticated && embeddedWallet?.address) {
+      pendingNav.current = false;
       router.replace("/(tabs)/dashboard");
+    }
+  }, [authenticated, wallets, router]);
+
+  const { sendCode, loginWithCode, state } = useLoginWithEmail({
+    onComplete: async () => {
+      // Attempt wallet creation in case createOnLogin didn't fire (e.g. returning
+      // user whose wallet already exists — the catch makes this a safe no-op).
+      try { await createWallet(); } catch { /* wallet already exists — fine */ }
+      // Signal the useEffect above to navigate once wallets[] is updated.
+      pendingNav.current = true;
     },
     onError: (err) => setError((err as Error).message ?? "Something went wrong. Please try again."),
   });
