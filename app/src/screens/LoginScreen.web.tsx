@@ -20,11 +20,12 @@ export default function LoginScreen() {
   const { create: createWallet } = useCreateWallet();
 
   const { sendCode, loginWithCode, state } = useLoginWithEmail({
-    onError: (err) => setError((err as Error).message ?? "Something went wrong. Please try again."),
-    onLoginSuccess: async () => {
+    // react-auth uses onComplete, not onLoginSuccess (that's the expo SDK name)
+    onComplete: async () => {
       try { await createWallet(); } catch { /* wallet likely already exists */ }
       router.replace("/(tabs)/dashboard");
     },
+    onError: (err) => setError((err as Error).message ?? "Something went wrong. Please try again."),
   });
 
   const awaitingCode = state.status === "awaiting-code-input" || state.status === "submitting-code";
