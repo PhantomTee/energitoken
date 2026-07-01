@@ -13,24 +13,44 @@ export default function LoginScreen() {
   const [error, setError] = useState<string | null>(null);
   const pendingNav = useRef(false);
 
-  const { ready, authenticated } = usePrivy();
+  const { ready, authenticated, logout } = usePrivy();
   const { wallets } = useWallets();
   const { create: createWallet } = useCreateWallet();
 
   const embeddedWallet = wallets.find((w) => w.walletClientType === "privy");
 
-  // Redirect away from /login whenever we are authenticated with a confirmed wallet.
-  // This covers three cases:
-  //   (a) Cold open with an active Privy session — redirect immediately.
-  //   (b) Post-login for existing users — wallet is already in wallets[] when onComplete fires.
-  //   (c) Post-login for NEW users — wallet appears in wallets[] shortly after onComplete;
-  //       pendingNav=true ensures we only navigate once the wallet is actually there.
+  // Redirect to dashboard whenever we have a confirmed embedded wallet.
   useEffect(() => {
-    if (!ready) return;
-    if (authenticated && embeddedWallet?.address) {
+    if (ready && authenticated && embeddedWallet?.address) {
       router.replace("/(tabs)/dashboard");
     }
   }, [ready, authenticated, embeddedWallet, router]);
+
+  // When Privy says we're authenticated but wallets[] is still empty, it means
+  // either (a) wallets[] is still loading async, or (b) the wallet was never
+  // created (edge case). Proactively try createWallet() after a short settling
+  // delay. If that also fails, log out so the user can sign in fresh.
+  useEffect(() => {
+    if (!ready || !authenticated || embeddedWallet) return;
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      if (cancelled) return;
+      try {
+        await createWallet();
+        // If successful, wallets[] will update and the redirect useEffect fires.
+      } catch {
+        // Wallet likely already exists but isn't in wallets[] — or creation truly
+        // failed. Log out so the user lands on a clean login form.
+        if (!cancelled) await logout();
+      }
+    }, 2500); // 2.5s settling window for wallets[] to populate normally
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [ready, authenticated, embeddedWallet, createWallet, logout]);
 
   const { sendCode, loginWithCode, state } = useLoginWithEmail({
     onComplete: async () => {

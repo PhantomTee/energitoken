@@ -26,15 +26,10 @@ export default function Index() {
   useEffect(() => {
     if (!isReady) return;
 
-    // Not logged in at all — go to login.
-    if (!isAuthenticated) {
+    if (!isAuthenticated || !walletAddress) {
       setDestination("/login");
       return;
     }
-
-    // Authenticated but wallet address hasn't propagated yet (async Privy state).
-    // Stay on splash until it's available rather than incorrectly bouncing to /login.
-    if (!walletAddress) return;
 
     let cancelled = false;
 
