@@ -41,9 +41,14 @@ export default function UnlockScreen() {
     }
   }, [walletAddress, router]);
 
+  // Wait for walletAddress to be available before triggering biometrics.
+  // index.tsx only sends us here when walletAddress is already set, but Privy's
+  // state can settle slightly after mount — guard against the edge case.
   useEffect(() => {
-    attemptUnlock();
-  }, [attemptUnlock]);
+    if (walletAddress) {
+      attemptUnlock();
+    }
+  }, [walletAddress, attemptUnlock]);
 
   const handleUseCodeInstead = async () => {
     await clearFullLogin();

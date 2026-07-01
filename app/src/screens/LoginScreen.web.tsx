@@ -1,15 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
-// On web the root provider is @privy-io/react-auth (see RootLayout.web.tsx),
-// so we must use its hooks here — @privy-io/expo hooks require the expo
-// PrivyProvider and will crash with a null-context error on web.
 import { useLoginWithEmail, useCreateWallet, usePrivy, useWallets } from "@privy-io/react-auth";
 import { colors } from "../theme/colors";
 import { typography, spacing, radius } from "../theme/typography";
 import { AdinkraAccent } from "../theme/motifs/AdinkraAccent";
-// quickAuth uses expo-secure-store which is native-only.
-// The 12h biometric unlock window is a native-only concept — web skips it.
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -18,29 +13,30 @@ export default function LoginScreen() {
   const [error, setError] = useState<string | null>(null);
   const pendingNav = useRef(false);
 
-  const { authenticated } = usePrivy();
+  const { ready, authenticated } = usePrivy();
   const { wallets } = useWallets();
   const { create: createWallet } = useCreateWallet();
 
-  // Redirect away from login whenever we're authenticated with a wallet —
-  // covers both: (a) already-authenticated users who land on /login with an
-  // active Privy session, and (b) the post-login state update for new users
-  // where onComplete fires before useWallets() has the new wallet in the array.
+  const embeddedWallet = wallets.find((w) => w.walletClientType === "privy");
+
+  // Redirect away from /login whenever we are authenticated with a confirmed wallet.
+  // This covers three cases:
+  //   (a) Cold open with an active Privy session — redirect immediately.
+  //   (b) Post-login for existing users — wallet is already in wallets[] when onComplete fires.
+  //   (c) Post-login for NEW users — wallet appears in wallets[] shortly after onComplete;
+  //       pendingNav=true ensures we only navigate once the wallet is actually there.
   useEffect(() => {
-    const embeddedWallet = wallets.find((w) => w.walletClientType === "privy");
+    if (!ready) return;
     if (authenticated && embeddedWallet?.address) {
-      pendingNav.current = false;
       router.replace("/(tabs)/dashboard");
     }
-  }, [authenticated, wallets, router]);
+  }, [ready, authenticated, embeddedWallet, router]);
 
   const { sendCode, loginWithCode, state } = useLoginWithEmail({
     onComplete: async () => {
-      // Attempt wallet creation in case createOnLogin didn't fire (e.g. returning
-      // user whose wallet already exists — the catch makes this a safe no-op).
       try { await createWallet(); } catch { /* wallet already exists — fine */ }
-      // Signal the useEffect above to navigate once wallets[] is updated.
       pendingNav.current = true;
+      // useEffect above will fire when wallets[] updates with the new wallet.
     },
     onError: (err) => setError((err as Error).message ?? "Something went wrong. Please try again."),
   });
@@ -73,6 +69,20 @@ export default function LoginScreen() {
       setError(msg || "Couldn't verify the code. Please try again.");
     }
   };
+
+  // Show spinner while:
+  //   - Privy SDK is still initialising (!ready)
+  //   - User is authenticated but wallet hasn't appeared in wallets[] yet
+  //     (prevents the form appearing in the gap, which causes "already linked" error)
+  const isLoading = !ready || (authenticated && !embeddedWallet);
+
+  if (isLoading) {
+    return (
+      <View style={[styles.screen, { justifyContent: "center", alignItems: "center" }]}>
+        <ActivityIndicator size="large" color={colors.indigo[400]} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.screen}>
@@ -151,11 +161,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  accentTopRight: {
-    position: "absolute",
-    top: spacing.xl,
-    right: spacing.lg,
-  },
+  accentTopRight: { position: "absolute", top: spacing.xl, right: spacing.lg },
   card: {
     width: 440,
     backgroundColor: "rgba(255,255,255,0.05)",
@@ -163,12 +169,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
     paddingVertical: 48,
   },
-  brandRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
+  brandRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.md },
   brandLabel: { color: colors.terracotta[300] },
   title: { color: colors.neutral.white, marginBottom: spacing.md },
   subtitle: { color: colors.indigo[100], marginBottom: spacing.xl, opacity: 0.85 },

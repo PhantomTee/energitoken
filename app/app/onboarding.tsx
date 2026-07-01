@@ -17,10 +17,17 @@ import { claimDevice, DEVICE_CODE_PATTERN } from "../src/services/deviceBinding"
  */
 export default function OnboardingScreen() {
   const router = useRouter();
-  const { walletAddress } = useWallet();
+  const { walletAddress, isReady, isAuthenticated } = useWallet();
   const [code, setCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Guard: unauthenticated users who navigate here directly should go to login.
+  React.useEffect(() => {
+    if (isReady && !isAuthenticated) {
+      router.replace("/login");
+    }
+  }, [isReady, isAuthenticated, router]);
 
   const isValidFormat = DEVICE_CODE_PATTERN.test(code.trim());
 
