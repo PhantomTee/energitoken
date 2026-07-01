@@ -43,13 +43,27 @@ export default function LoginScreen() {
   const handleSendCode = async () => {
     setError(null);
     if (!email.includes("@")) return;
-    await sendCode({ email });
+    try {
+      await sendCode({ email });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.toLowerCase().includes("timeout") || msg.toLowerCase().includes("aborted")) {
+        setError("Connection timed out. Please check your network and try again.");
+      } else {
+        setError(msg || "Couldn't send the code. Please try again.");
+      }
+    }
   };
 
   const handleSubmitCode = async () => {
     setError(null);
     if (code.length < 4) return;
-    await loginWithCode({ code, email });
+    try {
+      await loginWithCode({ code, email });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg || "Couldn't verify the code. Please try again.");
+    }
   };
 
   return (
