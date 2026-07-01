@@ -22,12 +22,11 @@ export default function LoginScreen() {
   const { wallets } = useWallets();
   const { create: createWallet } = useCreateWallet();
 
-  // Navigate to dashboard once Privy state confirms both authenticated AND
-  // embedded wallet exists. This avoids the race where onComplete fires before
-  // useWallets() has propagated the newly-created wallet — new users would land
-  // on dashboard with walletAddress=null if we navigated inside onComplete directly.
+  // Redirect away from login whenever we're authenticated with a wallet —
+  // covers both: (a) already-authenticated users who land on /login with an
+  // active Privy session, and (b) the post-login state update for new users
+  // where onComplete fires before useWallets() has the new wallet in the array.
   useEffect(() => {
-    if (!pendingNav.current) return;
     const embeddedWallet = wallets.find((w) => w.walletClientType === "privy");
     if (authenticated && embeddedWallet?.address) {
       pendingNav.current = false;
