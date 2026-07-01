@@ -12,16 +12,20 @@ export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  // Once the user successfully sends the OTP we must NEVER hide the form with
+  // a spinner again — Privy v3 can briefly flip isAuthenticated=true with no
+  // wallet while it hydrates a recognised email, which would otherwise cover
+  // the code-entry field and leave the user stuck.
+  const otpSent = useRef(false);
   const didNavigate = useRef(false);
 
-  // useWallet() derives walletAddress from user.linkedAccounts — available
-  // immediately when Privy is ready, no waiting for useWallets() to connect.
   const { isReady, isAuthenticated, walletAddress } = useWallet();
   const { ready } = usePrivy();
   const { create: createWallet } = useCreateWallet();
 
-  // Redirect away from /login the moment we have a confirmed wallet address.
-  // Covers both: (a) returning user with existing session, (b) fresh login.
+  // Redirect once we have a confirmed wallet address.
+  // Fires both for returning users (cold load) and after a fresh login.
   useEffect(() => {
     if (isReady && isAuthenticated && walletAddress && !didNavigate.current) {
       didNavigate.current = true;
@@ -31,22 +35,24 @@ export default function LoginScreen() {
 
   const { sendCode, loginWithCode, state } = useLoginWithEmail({
     onComplete: async () => {
-      // createOnLogin handles wallet creation, but call create() as a safety net
-      // for edge cases where it didn't fire (e.g. existing user, config race).
       try { await createWallet(); } catch { /* wallet already exists — fine */ }
-      // Navigation fires from the useEffect above once walletAddress is populated.
+      // Navigation is handled by the useEffect above once walletAddress resolves.
     },
     onError: (err) => setError((err as Error).message ?? "Something went wrong. Please try again."),
   });
 
   const awaitingCode = state.status === "awaiting-code-input" || state.status === "submitting-code";
-  const sendingCode = state.status === "sending-code";
+  const sendingCode  = state.status === "sending-code";
 
   const handleSendCode = async () => {
     setError(null);
     if (!email.includes("@")) return;
     try {
       await sendCode({ email });
+      // Mark OTP as sent — prevents the auth-state spinner from hiding the
+      // code-entry form even if Privy briefly sets authenticated=true before
+      // the wallet address is available (partial session hydration).
+      otpSent.current = true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(
@@ -68,9 +74,14 @@ export default function LoginScreen() {
     }
   };
 
-  // Show spinner while SDK is initialising OR while we have auth but wallet
-  // address hasn't resolved from linkedAccounts yet (should be <100ms).
-  const isLoading = !ready || (isAuthenticated && !walletAddress);
+  // Show a full-screen spinner only while:
+  //   1. Privy SDK is still initialising  (!ready)
+  //   2. Returning user: authenticated but wallet address not yet resolved —
+  //      redirect is about to fire so no need to show the form
+  //
+  // Critically: once otpSent is true we are mid-flow and MUST show the form
+  // regardless of any transient auth-state changes Privy makes in the background.
+  const isLoading = !ready || (!otpSent.current && isAuthenticated && !walletAddress);
 
   if (isLoading) {
     return (
