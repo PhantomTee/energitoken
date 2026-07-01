@@ -13,11 +13,11 @@ type Res = ServerResponse & { status: (code: number) => Res; json: (body: unknow
 const WH_PER_NGN = Number(process.env.WH_PER_NGN ?? "1");
 
 /** Where OPay's hosted Cashier page sends the user's browser back to. */
-function buildReturnUrls() {
-  const webUrl = process.env.PUBLIC_WEB_URL ?? "https://energitoken.vercel.app";
+function buildReturnUrls(reference: string) {
+  const webUrl = (process.env.PUBLIC_WEB_URL ?? "https://energitoken.vercel.app").replace(/\/$/, "");
   return {
-    returnUrl: `${webUrl}/payment-complete`,
-    cancelUrl: `${webUrl}/payment-complete?cancelled=true`,
+    returnUrl: `${webUrl}/payment-complete?reference=${reference}`,
+    cancelUrl: `${webUrl}/payment-complete?cancelled=true&reference=${reference}`,
   };
 }
 
@@ -46,8 +46,11 @@ export default async function handler(req: Req, res: Res) {
 
     const reference = `etk_${Date.now()}_${randomBytes(4).toString("hex")}`;
     const whAmount = Math.floor(amountNgn * WH_PER_NGN);
-    const { returnUrl, cancelUrl } = buildReturnUrls();
-    const callbackUrl = `${process.env.PUBLIC_BACKEND_URL}/api/opay/callback`;
+    const { returnUrl, cancelUrl } = buildReturnUrls(reference);
+    // Hardcoded fallback ensures OPay's server-side callback always reaches us
+    // even if PUBLIC_BACKEND_URL is missing from Vercel env vars.
+    const backendUrl = (process.env.PUBLIC_BACKEND_URL ?? "https://energitoken.vercel.app").replace(/\/$/, "");
+    const callbackUrl = `${backendUrl}/api/opay/callback`;
 
     const opayResponse = await createCashierPayment({
       reference,
