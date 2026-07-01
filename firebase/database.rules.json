@@ -2,28 +2,58 @@
   "rules": {
     "uidToWallet": {
       "$uid": {
-        ".read": "auth != null && auth.uid == $uid",
+        ".read":  "auth != null && auth.uid == $uid",
         ".write": "auth != null && auth.uid == $uid && (!data.exists() || data.val() == newData.val())"
       }
     },
+
     "walletToDevice": {
       "$wallet": {
-        ".read": "auth != null && root.child('uidToWallet').child(auth.uid).val() == $wallet",
+        ".read":  "auth != null && root.child('uidToWallet').child(auth.uid).val() == $wallet",
         ".write": "auth != null && root.child('uidToWallet').child(auth.uid).val() == $wallet && (!data.exists() || data.val() == newData.val())"
       }
     },
+
     "deviceToWallet": {
       "$deviceId": {
-        ".read": "auth != null",
+        ".read":  "auth != null",
         ".write": "auth != null && newData.val() == root.child('uidToWallet').child(auth.uid).val() && (!data.exists() || data.val() == newData.val())"
       }
     },
+
     "meters": {
       "$deviceId": {
         ".read": "auth != null && root.child('deviceToWallet').child($deviceId).val() == root.child('uidToWallet').child(auth.uid).val()",
-        ".write": "auth != null && root.child('deviceToWallet').child($deviceId).val() == root.child('uidToWallet').child(auth.uid).val()"
+
+        "budgetWh": {
+          ".write": "auth != null && root.child('deviceToWallet').child($deviceId).val() == root.child('uidToWallet').child(auth.uid).val()",
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        },
+
+        "voltage":   { ".write": false },
+        "current":   { ".write": false },
+        "power":     { ".write": false },
+        "energyWh":  { ".write": false },
+        "relays":    { ".write": false },
+        "updatedAt": { ".write": false },
+        "percentUsed": { ".write": false }
       }
     },
+
+    "burnCheckpoints": {
+      "$deviceId": {
+        ".read":  false,
+        ".write": false
+      }
+    },
+
+    "pendingDevices": {
+      "$deviceId": {
+        ".read":  "auth != null",
+        ".write": false
+      }
+    },
+
     "directory": {
       ".read": "auth != null",
       "$emailKey": {

@@ -1,4 +1,4 @@
-import { ref, get, set } from "firebase/database";
+import { ref, get } from "firebase/database";
 import { db } from "./firebase";
 
 export const DEVICE_CODE_PATTERN = /^[0-9A-Fa-f]{6}$/;
@@ -14,22 +14,29 @@ export async function getDeviceForWallet(walletAddress: string): Promise<string 
 }
 
 /**
- * Binds a device code to a wallet during onboarding. Checks the claim
- * client-side first for a clear error message; the security rules enforce
- * the same write-once-per-device constraint as a backstop either way.
+ * Claims a device via the server-side API (/api/devices/claim).
+ * The API enforces:
+ *   - Device must be in pairing mode (ESP32 setup button held, 1h window)
+ *   - Device must not already be claimed by another wallet
+ *   - Both Firebase bindings written atomically by Admin SDK
  */
 export async function claimDevice(rawDeviceId: string, walletAddress: string): Promise<void> {
-  const deviceId = normalizeDeviceId(rawDeviceId);
-  if (!DEVICE_CODE_PATTERN.test(deviceId)) {
+  const deviceCode = normalizeDeviceId(rawDeviceId);
+  if (!DEVICE_CODE_PATTERN.test(deviceCode)) {
     throw new Error("Device code must be 6 hex characters (0-9, A-F).");
   }
 
-  const deviceToWalletRef = ref(db, `deviceToWallet/${deviceId}`);
-  const existing = await get(deviceToWalletRef);
-  if (existing.exists() && existing.val() !== walletAddress) {
-    throw new Error("This device is already linked to another account.");
-  }
+  const response = await fetch("/api/devices/claim", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ deviceCode, walletAddress }),
+  });
 
-  await set(deviceToWalletRef, walletAddress);
-  await set(ref(db, `walletToDevice/${walletAddress}`), deviceId);
+  const json = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(
+      (json as { error?: string }).error ?? `Device claim failed (${response.status})`
+    );
+  }
 }

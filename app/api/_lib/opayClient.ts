@@ -1,7 +1,47 @@
 /**
- * Thin wrapper around OPay's Cashier Create Payment API.
+ * Thin wrapper around OPay's Cashier API.
  * https://documentation.opaycheckout.com — Express Checkout / OPay Cashier.
  */
+
+export type OPayPaymentStatus = {
+  reference: string;
+  orderNo: string;
+  status: string; // "INITIAL" | "PENDING" | "SUCCESS" | "FAIL" | "CANCEL" | "CLOSE"
+  amount: { total: number; currency: string };
+  merchantId: string;
+};
+
+type QueryStatusResponse = {
+  code: string;
+  message: string;
+  data?: OPayPaymentStatus;
+};
+
+/**
+ * Queries OPay server-to-server for the authoritative payment status.
+ * Must be called from the callback handler before trusting the callback body.
+ */
+export async function queryPaymentStatus(reference: string): Promise<OPayPaymentStatus> {
+  const { publicKey, merchantId, baseUrl } = getOpayConfig();
+
+  const response = await fetch(`${baseUrl}/api/v1/international/cashier/query`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${publicKey}`,
+      MerchantId: merchantId,
+    },
+    body: JSON.stringify({ reference }),
+  });
+
+  const json = (await response.json()) as QueryStatusResponse;
+
+  if (!response.ok || json.code !== "00000" || !json.data) {
+    throw new Error(`OPay status query failed: ${json.code ?? response.status} ${json.message ?? ""}`);
+  }
+
+  return json.data;
+}
 
 type CreateCashierPaymentInput = {
   reference: string;

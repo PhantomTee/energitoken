@@ -6,18 +6,20 @@ import { ordersRef } from "../_lib/firebaseAdmin";
 type Req = IncomingMessage & { method?: string; body?: unknown };
 type Res = ServerResponse & { status: (code: number) => Res; json: (body: unknown) => void };
 
-/**
- * Conversion rate from a Naira payment to ENGY (Wh). A flat placeholder for
- * this demo — swap WH_PER_NGN for a real per-kWh tariff when one exists.
- */
-const WH_PER_NGN = Number(process.env.WH_PER_NGN ?? "1");
+// Tariff — kept in one place server-side so callback.ts and create-payment.ts
+// always agree. Exposed via /api/tariff so the app can render it dynamically.
+export const TARIFF = {
+  version: process.env.TARIFF_VERSION ?? "1",
+  whPerNgn: Number(process.env.WH_PER_NGN ?? "1"),  // 1 Wh per ₦1 placeholder
+  minNgn: 1_000,    // ₦1,000 minimum top-up
+  maxNgn: 100_000,  // ₦100,000 maximum top-up
+};
 
-/** Where OPay's hosted Cashier page sends the user's browser back to. */
 function buildReturnUrls(reference: string) {
   const webUrl = (process.env.PUBLIC_WEB_URL ?? "https://energitoken.vercel.app").replace(/\/$/, "");
   return {
     returnUrl: `${webUrl}/payment-complete?reference=${reference}`,
-    cancelUrl: `${webUrl}/payment-complete?cancelled=true&reference=${reference}`,
+    cancelUrl:  `${webUrl}/payment-complete?cancelled=true&reference=${reference}`,
   };
 }
 
@@ -30,25 +32,39 @@ export default async function handler(req: Req, res: Res) {
   try {
     const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
     const { walletAddress, amountNgn, email } = (body ?? {}) as {
-      walletAddress?: string;
-      amountNgn?: number;
-      email?: string;
+      walletAddress?: unknown;
+      amountNgn?: unknown;
+      email?: unknown;
     };
 
-    if (!walletAddress || !/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+    // ── Validate wallet ───────────────────────────────────────────────────
+    if (typeof walletAddress !== "string" || !/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
       res.status(400).json({ error: "walletAddress must be a valid 0x address" });
       return;
     }
-    if (!amountNgn || amountNgn <= 0) {
-      res.status(400).json({ error: "amountNgn must be greater than 0" });
+
+    // ── Validate amount ───────────────────────────────────────────────────
+    if (typeof amountNgn !== "number" || !Number.isFinite(amountNgn)) {
+      res.status(400).json({ error: "amountNgn must be a number" });
+      return;
+    }
+    // Reject fractional naira — OPay works in kobo, avoid rounding surprises.
+    if (!Number.isInteger(amountNgn)) {
+      res.status(400).json({ error: "amountNgn must be a whole number (no fractions)" });
+      return;
+    }
+    if (amountNgn < TARIFF.minNgn) {
+      res.status(400).json({ error: `Minimum top-up is ₦${TARIFF.minNgn.toLocaleString()}` });
+      return;
+    }
+    if (amountNgn > TARIFF.maxNgn) {
+      res.status(400).json({ error: `Maximum top-up is ₦${TARIFF.maxNgn.toLocaleString()}` });
       return;
     }
 
     const reference = `etk_${Date.now()}_${randomBytes(4).toString("hex")}`;
-    const whAmount = Math.floor(amountNgn * WH_PER_NGN);
+    const whAmount   = Math.floor(amountNgn * TARIFF.whPerNgn);
     const { returnUrl, cancelUrl } = buildReturnUrls(reference);
-    // Hardcoded fallback ensures OPay's server-side callback always reaches us
-    // even if PUBLIC_BACKEND_URL is missing from Vercel env vars.
     const backendUrl = (process.env.PUBLIC_BACKEND_URL ?? "https://energitoken.vercel.app").replace(/\/$/, "");
     const callbackUrl = `${backendUrl}/api/opay/callback`;
 
@@ -58,7 +74,7 @@ export default async function handler(req: Req, res: Res) {
       returnUrl,
       cancelUrl,
       callbackUrl,
-      userEmail: email,
+      userEmail: typeof email === "string" ? email : undefined,
     });
 
     const now = Date.now();
@@ -68,6 +84,9 @@ export default async function handler(req: Req, res: Res) {
       whAmount,
       status: "initial",
       orderNo: opayResponse.data?.orderNo ?? null,
+      // Store tariff snapshot so we can audit any future tariff change impact.
+      tariffVersion: TARIFF.version,
+      whPerNgn: TARIFF.whPerNgn,
       createdAt: now,
       updatedAt: now,
     });

@@ -27,7 +27,7 @@ function getAdminApp() {
   });
 }
 
-export type OpayOrderStatus = "initial" | "success" | "failed" | "minted";
+export type OpayOrderStatus = "initial" | "failed" | "minting" | "minted" | "mint_failed";
 
 export type OpayOrder = {
   walletAddress: string;
@@ -40,8 +40,12 @@ export type OpayOrder = {
   updatedAt: number;
 };
 
-/** /orders is separate from /meters and /directory — it's only ever touched by these
- * trusted server functions via the Admin SDK, so it isn't covered by database.rules.json. */
+/** Raw Admin database reference — use for paths not exposed via a named helper. */
+export function adminDb() {
+  return getDatabase(getAdminApp());
+}
+
+/** /orders is only ever touched by server functions via Admin SDK. */
 export function ordersRef() {
   return getDatabase(getAdminApp()).ref("orders");
 }

@@ -14,6 +14,7 @@ import { getEngyBalance } from "../../src/services/contract";
 import { useMeterData, MeterMode } from "../../src/hooks/useMeterData";
 import { writeDirectoryEntry } from "../../src/services/directory";
 import { tokensToUnits } from "../../src/services/units";
+import { clearFirebaseSession } from "../../src/services/firebaseSession";
 
 export default function DashboardScreen() {
   const [mode, setMode] = useState<MeterMode>("mock");
@@ -60,6 +61,7 @@ export default function DashboardScreen() {
   }, [walletAddress, email]);
 
   const handleLogout = async () => {
+    await clearFirebaseSession();
     await logout();
     router.replace("/login");
   };
