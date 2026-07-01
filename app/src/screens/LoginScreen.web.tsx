@@ -11,12 +11,10 @@ export default function LoginScreen() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
-  // Once the user successfully sends the OTP we must NEVER hide the form with
-  // a spinner again — Privy v3 can briefly flip isAuthenticated=true with no
-  // wallet while it hydrates a recognised email, which would otherwise cover
-  // the code-entry field and leave the user stuck.
+  // Set to true once sendCode() succeeds — prevents a transient
+  // isAuthenticated=true (Privy v3 partial hydration) from hiding the form.
   const otpSent = useRef(false);
   const didNavigate = useRef(false);
 
@@ -24,8 +22,28 @@ export default function LoginScreen() {
   const { ready } = usePrivy();
   const { create: createWallet } = useCreateWallet();
 
-  // Redirect once we have a confirmed wallet address.
-  // Fires both for returning users (cold load) and after a fresh login.
+  // No callbacks passed to useLoginWithEmail — inline arrow functions create
+  // new references on every render, which can cause Privy's hook to reset its
+  // internal email session state, producing "invalid email and code combination".
+  // Drive everything from state.status instead.
+  const { sendCode, loginWithCode, state } = useLoginWithEmail();
+
+  // ── Completion handler ───────────────────────────────────────────────────
+  // When Privy marks the OTP flow as done, create the embedded wallet (no-op
+  // for existing users). The redirect fires from the walletAddress effect below.
+  useEffect(() => {
+    if (state.status !== "done") return;
+    createWallet().catch(() => {/* wallet already exists */});
+  }, [state.status, createWallet]);
+
+  // ── Error handler ────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (state.status !== "error") return;
+    const msg = state.error?.message ?? "Something went wrong. Please try again.";
+    setFormError(msg);
+  }, [state.status, state]);
+
+  // ── Redirect once wallet is confirmed ────────────────────────────────────
   useEffect(() => {
     if (isReady && isAuthenticated && walletAddress && !didNavigate.current) {
       didNavigate.current = true;
@@ -33,29 +51,18 @@ export default function LoginScreen() {
     }
   }, [isReady, isAuthenticated, walletAddress, router]);
 
-  const { sendCode, loginWithCode, state } = useLoginWithEmail({
-    onComplete: async () => {
-      try { await createWallet(); } catch { /* wallet already exists — fine */ }
-      // Navigation is handled by the useEffect above once walletAddress resolves.
-    },
-    onError: (err) => setError((err as Error).message ?? "Something went wrong. Please try again."),
-  });
-
   const awaitingCode = state.status === "awaiting-code-input" || state.status === "submitting-code";
   const sendingCode  = state.status === "sending-code";
 
   const handleSendCode = async () => {
-    setError(null);
-    if (!email.includes("@")) return;
+    setFormError(null);
+    if (!email.trim().includes("@")) return;
     try {
-      await sendCode({ email });
-      // Mark OTP as sent — prevents the auth-state spinner from hiding the
-      // code-entry form even if Privy briefly sets authenticated=true before
-      // the wallet address is available (partial session hydration).
+      await sendCode({ email: email.trim().toLowerCase() });
       otpSent.current = true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      setError(
+      setFormError(
         msg.toLowerCase().includes("timeout") || msg.toLowerCase().includes("aborted")
           ? "Connection timed out. Please check your network and try again."
           : msg || "Couldn't send the code. Please try again."
@@ -64,23 +71,20 @@ export default function LoginScreen() {
   };
 
   const handleSubmitCode = async () => {
-    setError(null);
-    if (code.length < 4) return;
+    setFormError(null);
+    const trimmed = code.trim();
+    if (trimmed.length < 4) return;
     try {
-      await loginWithCode({ code, email });
+      await loginWithCode({ code: trimmed });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      setError(msg || "Couldn't verify the code. Please try again.");
+      setFormError(msg || "Couldn't verify the code. Please try again.");
     }
   };
 
-  // Show a full-screen spinner only while:
-  //   1. Privy SDK is still initialising  (!ready)
-  //   2. Returning user: authenticated but wallet address not yet resolved —
-  //      redirect is about to fire so no need to show the form
-  //
-  // Critically: once otpSent is true we are mid-flow and MUST show the form
-  // regardless of any transient auth-state changes Privy makes in the background.
+  // Show full-screen spinner only while SDK initialises or a returning user's
+  // wallet address is resolving (redirect is imminent). Never show it once the
+  // OTP has been sent — that would hide the code-entry field.
   const isLoading = !ready || (!otpSent.current && isAuthenticated && !walletAddress);
 
   if (isLoading) {
@@ -106,7 +110,7 @@ export default function LoginScreen() {
         <Text style={[typography.display, styles.title]}>Power, budgeted{"\n"}and shared.</Text>
         <Text style={[typography.body, styles.subtitle]}>
           {awaitingCode
-            ? `Enter the code we sent to ${email}.`
+            ? `Enter the 6-digit code we sent to ${email}.`
             : "Sign in with your email to see your household's energy budget and credit balance."}
         </Text>
 
@@ -117,7 +121,7 @@ export default function LoginScreen() {
               placeholder="you@example.com"
               placeholderTextColor={colors.neutral[500]}
               value={email}
-              onChangeText={setEmail}
+              onChangeText={(t) => { setEmail(t); setFormError(null); }}
               autoCapitalize="none"
               keyboardType="email-address"
               editable={!sendingCode}
@@ -136,26 +140,30 @@ export default function LoginScreen() {
           <>
             <TextInput
               style={[styles.input, styles.codeInput]}
-              placeholder="6-digit code"
+              placeholder="123456"
               placeholderTextColor={colors.neutral[500]}
               value={code}
-              onChangeText={setCode}
+              onChangeText={(t) => { setCode(t); setFormError(null); }}
               keyboardType="number-pad"
+              maxLength={6}
               editable={state.status !== "submitting-code"}
             />
             <Pressable
-              style={[styles.button, (code.length < 4 || state.status === "submitting-code") && styles.buttonDisabled]}
+              style={[styles.button, (code.trim().length < 4 || state.status === "submitting-code") && styles.buttonDisabled]}
               onPress={handleSubmitCode}
-              disabled={code.length < 4 || state.status === "submitting-code"}
+              disabled={code.trim().length < 4 || state.status === "submitting-code"}
             >
               {state.status === "submitting-code"
                 ? <ActivityIndicator color={colors.neutral.white} />
                 : <Text style={[typography.bodyStrong, styles.buttonText]}>Verify & sign in</Text>}
             </Pressable>
+            <Pressable onPress={() => { otpSent.current = false; setCode(""); setFormError(null); }} style={styles.backLink}>
+              <Text style={[typography.caption, styles.backLinkText]}>← Use a different email</Text>
+            </Pressable>
           </>
         )}
 
-        {error && <Text style={[typography.caption, styles.errorText]}>{error}</Text>}
+        {formError && <Text style={[typography.caption, styles.errorText]}>{formError}</Text>}
       </View>
     </View>
   );
@@ -196,7 +204,7 @@ const styles = StyleSheet.create({
     fontFamily: typography.body.fontFamily,
     marginBottom: spacing.md,
   },
-  codeInput: { fontFamily: typography.dataMd.fontFamily, fontSize: 22, letterSpacing: 4 },
+  codeInput: { fontFamily: typography.dataMd.fontFamily, fontSize: 22, letterSpacing: 6, textAlign: "center" },
   button: {
     backgroundColor: colors.terracotta[400],
     borderRadius: radius.md,
@@ -206,4 +214,6 @@ const styles = StyleSheet.create({
   buttonDisabled: { opacity: 0.5 },
   buttonText: { color: colors.neutral.white },
   errorText: { color: colors.terracotta[300], marginTop: spacing.md },
+  backLink: { alignItems: "center", marginTop: spacing.md },
+  backLinkText: { color: colors.indigo[300], textDecorationLine: "underline" },
 });
