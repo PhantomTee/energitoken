@@ -1,25 +1,27 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, KeyboardAvoidingView } from "react-native";
+import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
-import { useLoginWithEmail } from "@privy-io/react-auth";
+import { useLoginWithEmail, useEmbeddedEthereumWallet } from "@privy-io/expo";
 import { colors } from "../theme/colors";
 import { typography, spacing, radius } from "../theme/typography";
 import { AdinkraAccent } from "../theme/motifs/AdinkraAccent";
+import { recordFullLogin } from "../services/quickAuth";
 
-/**
- * Privy's web SDK creates the embedded wallet (config in src/screens/RootLayout.web.tsx)
- * before onComplete fires, so unlike the native screen there's no separate
- * create-wallet call needed here.
- */
 export default function LoginScreen() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
 
+  const { create: createEthereumWallet } = useEmbeddedEthereumWallet();
+
   const { sendCode, loginWithCode, state } = useLoginWithEmail({
-    onError: (err) => setError(err ?? "Something went wrong. Please try again."),
-    onComplete: () => router.replace("/(tabs)/dashboard"),
+    onError: (err) => setError(err.message ?? "Something went wrong. Please try again."),
+    onLoginSuccess: async () => {
+      try { await createEthereumWallet(); } catch { /* already exists */ }
+      await recordFullLogin();
+      router.replace("/(tabs)/dashboard");
+    },
   });
 
   const awaitingCode = state.status === "awaiting-code-input" || state.status === "submitting-code";
@@ -28,26 +30,41 @@ export default function LoginScreen() {
   const handleSendCode = async () => {
     setError(null);
     if (!email.includes("@")) return;
-    await sendCode({ email });
+    try {
+      await sendCode({ email });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.toLowerCase().includes("timeout") || msg.toLowerCase().includes("aborted")) {
+        setError("Connection timed out. Please check your network and try again.");
+      } else {
+        setError(msg || "Couldn't send the code. Please try again.");
+      }
+    }
   };
 
   const handleSubmitCode = async () => {
     setError(null);
     if (code.length < 4) return;
-    await loginWithCode({ code });
+    try {
+      await loginWithCode({ code, email });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg || "Couldn't verify the code. Please try again.");
+    }
   };
 
   return (
-    <KeyboardAvoidingView style={styles.screen}>
+    <View style={styles.screen}>
       <View style={styles.accentTopRight}>
         <AdinkraAccent size={96} color={colors.terracotta[500]} />
       </View>
 
-      <View style={styles.content}>
+      <View style={styles.card}>
         <View style={styles.brandRow}>
           <AdinkraAccent size={22} color={colors.terracotta[400]} dotColor={colors.indigo[400]} opacity={1} />
           <Text style={[typography.label, styles.brandLabel]}>ENERGITOKEN</Text>
         </View>
+
         <Text style={[typography.display, styles.title]}>Power, budgeted{"\n"}and shared.</Text>
         <Text style={[typography.body, styles.subtitle]}>
           {awaitingCode
@@ -72,11 +89,9 @@ export default function LoginScreen() {
               onPress={handleSendCode}
               disabled={!email.includes("@") || sendingCode}
             >
-              {sendingCode ? (
-                <ActivityIndicator color={colors.neutral.white} />
-              ) : (
-                <Text style={[typography.bodyStrong, styles.buttonText]}>Continue with email</Text>
-              )}
+              {sendingCode
+                ? <ActivityIndicator color={colors.neutral.white} />
+                : <Text style={[typography.bodyStrong, styles.buttonText]}>Continue with email</Text>}
             </Pressable>
           </>
         ) : (
@@ -95,26 +110,44 @@ export default function LoginScreen() {
               onPress={handleSubmitCode}
               disabled={code.length < 4 || state.status === "submitting-code"}
             >
-              {state.status === "submitting-code" ? (
-                <ActivityIndicator color={colors.neutral.white} />
-              ) : (
-                <Text style={[typography.bodyStrong, styles.buttonText]}>Verify & sign in</Text>
-              )}
+              {state.status === "submitting-code"
+                ? <ActivityIndicator color={colors.neutral.white} />
+                : <Text style={[typography.bodyStrong, styles.buttonText]}>Verify & sign in</Text>}
             </Pressable>
           </>
         )}
 
         {error && <Text style={[typography.caption, styles.errorText]}>{error}</Text>}
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.indigo[900] },
-  accentTopRight: { position: "absolute", top: spacing.xl, right: spacing.lg },
-  content: { flex: 1, justifyContent: "center", paddingHorizontal: spacing.xl },
-  brandRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.md },
+  screen: {
+    flex: 1,
+    backgroundColor: colors.indigo[900],
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  accentTopRight: {
+    position: "absolute",
+    top: spacing.xl,
+    right: spacing.lg,
+  },
+  card: {
+    width: 440,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderRadius: 18,
+    paddingHorizontal: 40,
+    paddingVertical: 48,
+  },
+  brandRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
   brandLabel: { color: colors.terracotta[300] },
   title: { color: colors.neutral.white, marginBottom: spacing.md },
   subtitle: { color: colors.indigo[100], marginBottom: spacing.xl, opacity: 0.85 },
@@ -128,7 +161,11 @@ const styles = StyleSheet.create({
     fontFamily: typography.body.fontFamily,
     marginBottom: spacing.md,
   },
-  codeInput: { fontFamily: typography.dataMd.fontFamily, fontSize: 22, letterSpacing: 4 },
+  codeInput: {
+    fontFamily: typography.dataMd.fontFamily,
+    fontSize: 22,
+    letterSpacing: 4,
+  },
   button: {
     backgroundColor: colors.terracotta[400],
     borderRadius: radius.md,

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform } from "react-native";
+import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform } from "react-native"; // Platform kept for iOS keyboard behavior
 import { useRouter } from "expo-router";
 import { useLoginWithEmail, useEmbeddedEthereumWallet } from "@privy-io/expo";
 import { colors } from "../theme/colors";
@@ -140,26 +140,9 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: colors.indigo[900],
-    justifyContent: "center",
-  },
+  screen: { flex: 1, backgroundColor: colors.indigo[900] },
   accentTopRight: { position: "absolute", top: spacing.xl, right: spacing.lg },
-  content: Platform.OS === "web"
-    ? {
-        alignSelf: "center" as const,
-        width: 440,
-        paddingHorizontal: spacing.xl,
-        paddingVertical: 48,
-        backgroundColor: "rgba(255,255,255,0.05)",
-        borderRadius: 16,
-      }
-    : {
-        flex: 1,
-        justifyContent: "center",
-        paddingHorizontal: spacing.xl,
-      },
+  content: { flex: 1, justifyContent: "center", paddingHorizontal: spacing.xl },
   brandRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.md },
   brandLabel: { color: colors.terracotta[300] },
   title: { color: colors.neutral.white, marginBottom: spacing.md },
