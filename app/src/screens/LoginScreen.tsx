@@ -72,7 +72,6 @@ export default function LoginScreen() {
         <AdinkraAccent size={96} color={colors.terracotta[500]} />
       </View>
 
-      <View style={styles.centeredOuter}>
       <View style={styles.content}>
         <View style={styles.brandRow}>
           <AdinkraAccent size={22} color={colors.terracotta[400]} dotColor={colors.indigo[400]} opacity={1} />
@@ -136,34 +135,31 @@ export default function LoginScreen() {
 
         {error && <Text style={[typography.caption, styles.errorText]}>{error}</Text>}
       </View>
-      </View>
     </KeyboardAvoidingView>
   );
 }
 
-const MAX_CARD_WIDTH = 440;
-
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.indigo[900] },
-  accentTopRight: { position: "absolute", top: spacing.xl, right: spacing.lg },
-  centeredOuter: {
+  screen: {
     flex: 1,
-    alignItems: "center",
+    backgroundColor: colors.indigo[900],
     justifyContent: "center",
   },
-  content: {
-    width: "100%",
-    ...(Platform.OS === "web" ? { maxWidth: MAX_CARD_WIDTH } : {}),
-    justifyContent: "center",
-    paddingHorizontal: spacing.xl,
-    ...(Platform.OS === "web" ? {
-      backgroundColor: "rgba(255,255,255,0.04)",
-      borderRadius: 16,
-      paddingVertical: 48,
-      // @ts-ignore — web-only shadow
-      boxShadow: "0 4px 40px rgba(0,0,0,0.4)",
-    } : {}),
-  },
+  accentTopRight: { position: "absolute", top: spacing.xl, right: spacing.lg },
+  content: Platform.OS === "web"
+    ? {
+        alignSelf: "center" as const,
+        width: 440,
+        paddingHorizontal: spacing.xl,
+        paddingVertical: 48,
+        backgroundColor: "rgba(255,255,255,0.05)",
+        borderRadius: 16,
+      }
+    : {
+        flex: 1,
+        justifyContent: "center",
+        paddingHorizontal: spacing.xl,
+      },
   brandRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.md },
   brandLabel: { color: colors.terracotta[300] },
   title: { color: colors.neutral.white, marginBottom: spacing.md },
