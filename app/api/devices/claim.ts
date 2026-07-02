@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { adminDb } from "../_lib/firebaseAdmin";
+import { sendNotification } from "../_lib/notify";
 
 type Req = IncomingMessage & { method?: string; body?: unknown };
 type Res = ServerResponse & { status: (code: number) => Res; json: (body: unknown) => void };
@@ -83,6 +84,12 @@ export default async function handler(req: Req, res: Res) {
       [`pendingDevices/${deviceId}/claimed`]: true,
       [`pendingDevices/${deviceId}/claimedAt`]: now,
       [`pendingDevices/${deviceId}/claimedByWallet`]: walletAddress,
+    });
+
+    await sendNotification(walletAddress, {
+      type: "device",
+      title: "Meter linked",
+      body: `Device ${deviceId} is now paired with your account. Live readings will appear on your dashboard.`,
     });
 
     res.status(200).json({ ok: true, deviceId, walletAddress });

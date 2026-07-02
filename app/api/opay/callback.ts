@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "http";
 import { ordersRef } from "../_lib/firebaseAdmin";
 import { mintEngy } from "../_lib/mintEngy";
 import { queryPaymentStatus } from "../_lib/opayClient";
+import { sendNotification } from "../_lib/notify";
 
 type Req = IncomingMessage & { method?: string; body?: unknown };
 type Res = ServerResponse & { status: (code: number) => Res; json: (body: unknown) => void };
@@ -107,6 +108,13 @@ export default async function handler(req: Req, res: Res) {
       status: "minted",
       mintTxHash: txHash,
       updatedAt: Date.now(),
+    });
+
+    const units = (order.whAmount / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 });
+    await sendNotification(order.walletAddress, {
+      type: "topup",
+      title: "Top-up complete",
+      body: `₦${Number(order.amountNgn).toLocaleString()} payment confirmed — ${units} unit${order.whAmount === 1000 ? "" : "s"} added to your balance.`,
     });
 
     res.status(200).json({ ok: true, minted: true, txHash });

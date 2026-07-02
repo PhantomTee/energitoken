@@ -54,6 +54,17 @@
       }
     },
 
+    "notifications": {
+      "$wallet": {
+        ".read": "auth != null && root.child('uidToWallet').child(auth.uid).val() == $wallet",
+        "$notificationId": {
+          "read": {
+            ".write": "auth != null && root.child('uidToWallet').child(auth.uid).val() == $wallet && newData.isBoolean()"
+          }
+        }
+      }
+    },
+
     "directory": {
       ".read": "auth != null",
       "$emailKey": {

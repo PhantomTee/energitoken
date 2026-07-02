@@ -15,11 +15,15 @@ import { useMeterData, MeterMode } from "../../src/hooks/useMeterData";
 import { writeDirectoryEntry } from "../../src/services/directory";
 import { tokensToUnits } from "../../src/services/units";
 import { clearFirebaseSession } from "../../src/services/firebaseSession";
+import { useNotifications } from "../../src/hooks/useNotifications";
+import { NotificationsPanel } from "../../src/components/NotificationsPanel";
 
 export default function DashboardScreen() {
   const [mode, setMode] = useState<MeterMode>("mock");
   const { walletAddress, email, logout } = useWallet();
   const [topUpVisible, setTopUpVisible] = useState(false);
+  const [notifVisible, setNotifVisible] = useState(false);
+  const { notifications, unreadCount, markAllRead } = useNotifications(walletAddress);
   const [balanceWh, setBalanceWh] = useState<bigint | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const {
@@ -84,14 +88,26 @@ export default function DashboardScreen() {
           <AdinkraAccent size={32} color={colors.terracotta[400]} dotColor={colors.indigo[400]} opacity={1} />
           <Text style={[typography.h2, styles.brandWordmark]}>ENERGITOKEN</Text>
         </View>
-        {walletAddress && (
-          <Pressable onPress={handleLogout} style={styles.walletChip}>
-            <Text style={[typography.dataXs, styles.walletAddress]}>
-              {walletAddress.slice(0, 6)}…{walletAddress.slice(-4)}
-            </Text>
-            <Text style={[typography.caption, styles.logOut]}>Log out</Text>
-          </Pressable>
-        )}
+        <View style={styles.headerRight}>
+          {walletAddress && (
+            <Pressable onPress={() => setNotifVisible(true)} style={styles.bellButton} hitSlop={8}>
+              <Text style={styles.bellIcon}>🔔</Text>
+              {unreadCount > 0 && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{unreadCount > 9 ? "9+" : unreadCount}</Text>
+                </View>
+              )}
+            </Pressable>
+          )}
+          {walletAddress && (
+            <Pressable onPress={handleLogout} style={styles.walletChip}>
+              <Text style={[typography.dataXs, styles.walletAddress]}>
+                {walletAddress.slice(0, 6)}…{walletAddress.slice(-4)}
+              </Text>
+              <Text style={[typography.caption, styles.logOut]}>Log out</Text>
+            </Pressable>
+          )}
+        </View>
       </View>
 
       <LiveMockBanner mode={mode} onToggle={setMode} />
@@ -152,6 +168,13 @@ export default function DashboardScreen() {
       {walletAddress && (
         <TopUpModal visible={topUpVisible} onClose={() => setTopUpVisible(false)} walletAddress={walletAddress} />
       )}
+
+      <NotificationsPanel
+        visible={notifVisible}
+        onClose={() => setNotifVisible(false)}
+        notifications={notifications}
+        onOpened={markAllRead}
+      />
     </ScrollView>
   );
 }
@@ -162,6 +185,22 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   brandRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   brandWordmark: { color: colors.textPrimary, letterSpacing: 0.5 },
+  headerRight: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  bellButton: { position: "relative", padding: spacing.xs },
+  bellIcon: { fontSize: 20 },
+  badge: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    backgroundColor: colors.terracotta[500],
+    borderRadius: 9,
+    minWidth: 18,
+    height: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 3,
+  },
+  badgeText: { color: colors.neutral.white, fontSize: 10, fontWeight: "700" },
   walletChip: { alignItems: "flex-end" },
   walletAddress: { color: colors.textPrimary },
   logOut: { color: colors.textSecondary, textDecorationLine: "underline", marginTop: 2 },

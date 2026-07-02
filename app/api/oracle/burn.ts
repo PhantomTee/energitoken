@@ -1,6 +1,15 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { adminDb } from "../_lib/firebaseAdmin";
 import { burnEngy } from "../_lib/burnEngy";
+import { sendNotification } from "../_lib/notify";
+
+// Budget thresholds mirrored from the ESP32 load-shedding priorities:
+// luxury cut at 70%, optional at 85%, essential at 95%.
+const SHED_THRESHOLDS = [
+  { pct: 70, label: "Luxury loads switched off" },
+  { pct: 85, label: "Optional loads switched off" },
+  { pct: 95, label: "Essential loads switched off — critical loads only" },
+];
 
 type Req = IncomingMessage & { method?: string; body?: unknown };
 type Res = ServerResponse & { status: (code: number) => Res; json: (body: unknown) => void };
@@ -88,6 +97,30 @@ export default async function handler(req: Req, res: Res) {
       walletAddress,
       deviceId,
     });
+
+    // ── 6. Notify: consumption + any budget thresholds crossed ──────────
+    const units = (deltaWh / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 });
+    await sendNotification(walletAddress, {
+      type: "consumption",
+      title: "Energy used",
+      body: `${units} unit${deltaWh === 1000 ? "" : "s"} consumed and settled from your balance.`,
+    });
+
+    const budgetSnap = await db.ref(`meters/${deviceId}/budgetWh`).get();
+    const budgetWh: number | null = budgetSnap.exists() ? budgetSnap.val() : null;
+    if (budgetWh && budgetWh > 0) {
+      const prevPct = (lastBurnedEnergyWh / budgetWh) * 100;
+      const newPct = (currentEnergyWh / budgetWh) * 100;
+      for (const threshold of SHED_THRESHOLDS) {
+        if (prevPct < threshold.pct && newPct >= threshold.pct) {
+          await sendNotification(walletAddress, {
+            type: "shed_warning",
+            title: `Budget ${threshold.pct}% reached`,
+            body: `${threshold.label}. You've used ${Math.floor(newPct)}% of your energy budget.`,
+          });
+        }
+      }
+    }
 
     res.status(200).json({ ok: true, burned: true, deltaWh, txHash });
   } catch (error) {
