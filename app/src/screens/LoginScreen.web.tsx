@@ -3,6 +3,7 @@ import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator } from 
 import { useRouter } from "expo-router";
 import { useLoginWithEmail, useCreateWallet, usePrivy } from "@privy-io/react-auth";
 import { useWallet } from "../hooks/useWallet";
+import { markJustLoggedIn } from "../services/loginFlag";
 import { colors } from "../theme/colors";
 import { typography, spacing, radius } from "../theme/typography";
 import { AdinkraAccent } from "../theme/motifs/AdinkraAccent";
@@ -19,8 +20,10 @@ export default function LoginScreen() {
   const didNavigate = useRef(false);
 
   const { isReady, isAuthenticated, walletAddress } = useWallet();
-  const { ready } = usePrivy();
-  const { create: createWallet } = useCreateWallet();
+  const { ready, logout } = usePrivy();
+  // NB: the v3 hook exposes `createWallet`, NOT `create` — destructuring the
+  // wrong name made this undefined and silently broke wallet creation.
+  const { createWallet } = useCreateWallet();
 
   // No callbacks passed to useLoginWithEmail — inline arrow functions create
   // new references on every render, which can cause Privy's hook to reset its
@@ -44,12 +47,40 @@ export default function LoginScreen() {
   }, [state.status, state]);
 
   // ── Redirect once wallet is confirmed ────────────────────────────────────
+  // Hand control back to "/" (index.tsx) — it decides onboarding vs dashboard.
+  // If this was a fresh OTP login (not a returning session), mark it so index
+  // skips any cold-start detours.
   useEffect(() => {
     if (isReady && isAuthenticated && walletAddress && !didNavigate.current) {
       didNavigate.current = true;
-      router.replace("/(tabs)/dashboard");
+      if (otpSent.current) markJustLoggedIn();
+      router.replace("/");
     }
   }, [isReady, isAuthenticated, walletAddress, router]);
+
+  // ── Recovery: authenticated account with NO embedded wallet ─────────────
+  // walletAddress comes from user.linkedAccounts (instant), so if we're
+  // authenticated and it's still null after a grace period, the wallet
+  // genuinely doesn't exist (creation failed at signup). Try creating it
+  // once; if that doesn't produce a wallet, log out to a clean form rather
+  // than leaving the user on an infinite spinner. Skipped mid-OTP-flow.
+  useEffect(() => {
+    if (!ready || !isAuthenticated || walletAddress || otpSent.current) return;
+
+    let cancelled = false;
+    const createTimer = setTimeout(() => {
+      if (!cancelled) createWallet().catch(() => {/* handled by logout timer */});
+    }, 3000);
+    const bailTimer = setTimeout(() => {
+      if (!cancelled) logout().catch(() => {});
+    }, 10000);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(createTimer);
+      clearTimeout(bailTimer);
+    };
+  }, [ready, isAuthenticated, walletAddress, createWallet, logout]);
 
   const awaitingCode = state.status === "awaiting-code-input" || state.status === "submitting-code";
   const sendingCode  = state.status === "sending-code";

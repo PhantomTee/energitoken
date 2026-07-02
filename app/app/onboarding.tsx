@@ -22,12 +22,13 @@ export default function OnboardingScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Guard: unauthenticated users who navigate here directly should go to login.
+  // Guard: anyone here without a full session (auth + wallet) goes to login,
+  // which owns the recovery path for wallet-less accounts.
   React.useEffect(() => {
-    if (isReady && !isAuthenticated) {
+    if (isReady && (!isAuthenticated || !walletAddress)) {
       router.replace("/login");
     }
-  }, [isReady, isAuthenticated, router]);
+  }, [isReady, isAuthenticated, walletAddress, router]);
 
   const isValidFormat = DEVICE_CODE_PATTERN.test(code.trim());
 

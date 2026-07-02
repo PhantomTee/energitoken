@@ -6,6 +6,7 @@ import { colors } from "../theme/colors";
 import { typography, spacing, radius } from "../theme/typography";
 import { AdinkraAccent } from "../theme/motifs/AdinkraAccent";
 import { recordFullLogin } from "../services/quickAuth";
+import { markJustLoggedIn } from "../services/loginFlag";
 
 /**
  * Privy's mobile SDK authenticates by emailing a one-time 6-digit code
@@ -33,7 +34,11 @@ export default function LoginScreen() {
       }
       // Starts this device's 12h quick-unlock window (src/services/quickAuth.ts).
       await recordFullLogin();
-      router.replace("/(tabs)/dashboard");
+      // Hand off to "/" (index.tsx) — it checks device pairing and sends new
+      // users to onboarding instead of an unpaired dashboard. The flag skips
+      // the biometric detour that cold starts get.
+      markJustLoggedIn();
+      router.replace("/");
     },
   });
 

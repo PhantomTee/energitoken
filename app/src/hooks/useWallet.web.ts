@@ -12,7 +12,13 @@ export function useWallet() {
   const embeddedAccount = (user?.linkedAccounts ?? []).find(
     (a: any) => a.type === "wallet" && a.walletClientType === "privy"
   );
-  const walletAddress: string | null = (embeddedAccount as any)?.address ?? null;
+  // Fallback chain: linkedAccounts → user.wallet (Privy's primary-wallet field)
+  // → the connected wallet list. Any one of them knowing the address is enough.
+  const walletAddress: string | null =
+    (embeddedAccount as any)?.address ??
+    user?.wallet?.address ??
+    wallets.find((w) => w.walletClientType === "privy")?.address ??
+    null;
 
   const email = user?.email?.address ?? null;
 

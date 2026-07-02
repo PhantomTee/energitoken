@@ -5,19 +5,21 @@ import { useWallet } from "../src/hooks/useWallet";
 import { BrandSplash } from "../src/components/BrandSplash";
 import { resolvePostAuthDestination, PostAuthDestination } from "../src/services/postAuthRouting";
 import { isWithinQuickAuthWindow, clearFullLogin } from "../src/services/quickAuth";
+import { consumeJustLoggedIn } from "../src/services/loginFlag";
 
 type Destination = "/login" | "/unlock" | PostAuthDestination;
 
 /**
- * Entry point. Routes to login if not authenticated.
+ * THE routing brain. Every screen that finishes an auth step navigates back
+ * to "/" and this component decides where the user actually belongs:
  *
- * On native, an already-authenticated cold start doesn't go straight to the
- * dashboard -- it detours through /unlock for a quick biometric/PIN check,
- * as long as that's happened within the last 12h (src/services/quickAuth.ts).
- * Past 12h, the Privy session is dropped and a full email-code login is
- * required again. This is a deliberate app-level policy layered on top of
- * Privy, not something Privy's own session length controls. Web has no
- * equivalent concept -- biometrics aren't part of this app's web flow.
+ *   - Not authenticated (or authenticated with no wallet) → /login,
+ *     which owns the recovery path for wallet-less accounts.
+ *   - Fresh login (marked via loginFlag) → straight to onboarding/dashboard,
+ *     no biometric detour even on native.
+ *   - Native cold start within the 12h quick-auth window → /unlock.
+ *   - Native cold start past the window → force logout → /login.
+ *   - Web (or post-unlock) → paired? dashboard : onboarding.
  */
 export default function Index() {
   const { isReady, isAuthenticated, walletAddress, logout } = useWallet();
@@ -35,7 +37,9 @@ export default function Index() {
 
     (async () => {
       try {
-        if (Platform.OS !== "web") {
+        const justLoggedIn = consumeJustLoggedIn();
+
+        if (Platform.OS !== "web" && !justLoggedIn) {
           const withinWindow = await isWithinQuickAuthWindow();
           if (cancelled) return;
 
@@ -50,13 +54,14 @@ export default function Index() {
           return;
         }
 
+        // Web, or a login that literally just completed: resolve final home.
         const dest = await resolvePostAuthDestination(walletAddress);
         if (!cancelled) setDestination(dest);
       } catch {
         if (cancelled) return;
-        // Don't strand the user on a blank splash if a check above throws --
-        // send them somewhere that can surface the real error on next action.
-        setDestination(Platform.OS !== "web" ? "/unlock" : "/onboarding");
+        // Don't strand the user on a blank splash if a check above throws —
+        // the dashboard can surface the real error on the next user action.
+        setDestination("/(tabs)/dashboard");
       }
     })();
 
