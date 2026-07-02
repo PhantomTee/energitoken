@@ -15,7 +15,8 @@
         "EXPO_PUBLIC_PRIVY_MOBILE_CLIENT_ID": "client-WY6aUXfrm42pwKPCD9EQwyNYEdtNf6kfnhcQNqpdCcCw5",
         "EXPO_PUBLIC_AMOY_RPC_URL": "https://rpc-amoy.polygon.technology",
         "EXPO_PUBLIC_BACKEND_URL": "https://energitoken.vercel.app"
-      }
+      },
+      "channel": "development"
     },
     "preview": {
       "distribution": "internal",
@@ -27,7 +28,8 @@
         "EXPO_PUBLIC_PRIVY_MOBILE_CLIENT_ID": "client-WY6aUXfrm42pwKPCD9EQwyNYEdtNf6kfnhcQNqpdCcCw5",
         "EXPO_PUBLIC_AMOY_RPC_URL": "https://rpc-amoy.polygon.technology",
         "EXPO_PUBLIC_BACKEND_URL": "https://energitoken.vercel.app"
-      }
+      },
+      "channel": "preview"
     }
   }
 }
