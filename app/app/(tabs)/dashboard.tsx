@@ -16,6 +16,7 @@ import { writeDirectoryEntry } from "../../src/services/directory";
 import { tokensToUnits } from "../../src/services/units";
 import { clearFirebaseSession } from "../../src/services/firebaseSession";
 import { useNotifications } from "../../src/hooks/useNotifications";
+import { usePushNotifications } from "../../src/hooks/usePushNotifications";
 import { NotificationsPanel } from "../../src/components/NotificationsPanel";
 
 export default function DashboardScreen() {
@@ -24,6 +25,7 @@ export default function DashboardScreen() {
   const [topUpVisible, setTopUpVisible] = useState(false);
   const [notifVisible, setNotifVisible] = useState(false);
   const { notifications, unreadCount, markAllRead } = useNotifications(walletAddress);
+  usePushNotifications(walletAddress);
   const [balanceWh, setBalanceWh] = useState<bigint | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const {
