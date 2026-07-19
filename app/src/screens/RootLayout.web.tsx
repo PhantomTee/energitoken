@@ -1,5 +1,6 @@
 import "../polyfills";
 import React from "react";
+import { View } from "react-native";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { PrivyProvider } from "@privy-io/react-auth";
@@ -24,11 +25,15 @@ export default function RootLayout() {
       }}
     >
       <StatusBar style="light" />
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
-        <Stack.Screen name="login" />
-        <Stack.Screen name="onboarding" />
-        <Stack.Screen name="(tabs)" />
-      </Stack>
+      {/* Fixed top padding on web -- no notch/status bar to measure, but the
+          app felt cramped flush against the browser chrome without it. */}
+      <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: 24 }}>
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
+          <Stack.Screen name="login" />
+          <Stack.Screen name="onboarding" />
+          <Stack.Screen name="(tabs)" />
+        </Stack>
+      </View>
     </PrivyProvider>
   );
 }
