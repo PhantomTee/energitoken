@@ -35,6 +35,8 @@ async function main() {
     voltage: 231.4,
     current: 2.8,
     power: 648,
+    frequency: 50.0,
+    powerFactor: 0.94,
     energyWh: 4200,
     budgetWh: 15000,
     percentUsed: 28,
@@ -42,8 +44,16 @@ async function main() {
     updatedAt: Date.now(),
   });
 
+  // The pairing API (app/api/devices/claim.ts) only accepts a device that's
+  // in "pairing mode" -- normally written by the ESP32 firmware when its
+  // setup button is held. Seed it here too, or onboarding can't claim this
+  // mock device at all. Matches the same 1h window claim.ts enforces.
+  await db.ref(`pendingDevices/${MOCK_DEVICE_ID}`).set({
+    createdAt: Date.now(),
+  });
+
   console.log(`Seeded mock meter data for device ${MOCK_DEVICE_ID}`);
-  console.log(`Enter "${MOCK_DEVICE_ID}" as the device code during onboarding to bind to it.`);
+  console.log(`Enter "${MOCK_DEVICE_ID}" as the device code during onboarding to bind to it (valid for 1h).`);
   process.exit(0);
 }
 

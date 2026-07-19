@@ -48,6 +48,32 @@ export function getWritableContract(signer: ethers.Signer): ethers.Contract {
 }
 
 /**
+ * Network + gas check only, used to render the Transfer screen's live
+ * pre-flight checklist (separate from the amount/balance checks, which the
+ * form already validates from local state). Never throws -- a failed read
+ * just means the checklist shows that item as not-yet-confirmed.
+ */
+export async function checkNetworkAndGas(
+  signer: ethers.Signer
+): Promise<{ networkOk: boolean; gasOk: boolean }> {
+  try {
+    const provider = signer.provider;
+    if (!provider) return { networkOk: false, gasOk: false };
+
+    const network = await provider.getNetwork();
+    const networkOk = network.chainId === AMOY_CHAIN_ID;
+
+    const address = await signer.getAddress();
+    const gasBalance = await provider.getBalance(address);
+    const gasOk = gasBalance > 0n;
+
+    return { networkOk, gasOk };
+  } catch {
+    return { networkOk: false, gasOk: false };
+  }
+}
+
+/**
  * Checked right before calling transfer() -- not just at form-validation time --
  * since the wallet's actual network/gas state can change between when the
  * form was filled and when the user taps confirm. Returns a specific error

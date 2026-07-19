@@ -8,14 +8,17 @@ to whichever device the current wallet is bound to (see `/deviceToWallet` below)
 
 ```
 /meters/{deviceId}/
-    voltage:      number   (V)
-    current:      number   (A)
-    power:        number   (W)
-    energyWh:     number   (cumulative Wh this cycle)
-    budgetWh:     number   (user-set budget, in Wh -- see unit note below)
-    percentUsed:  number   (0-100)
-    relays:       { r1: bool, r2: bool, r3: bool, r4: bool }
-    updatedAt:    number   (unix ms)
+    voltage:        number   (V)
+    current:        number   (A)
+    power:          number   (W)
+    frequency:      number   (Hz, mains frequency -- PZEM-004T reports this directly)
+    powerFactor:    number   (0-1, PZEM-004T reports this directly)
+    energyWh:       number   (cumulative Wh this cycle)
+    budgetWh:       number   (user-set budget, in Wh -- see unit note below)
+    percentUsed:    number   (0-100)
+    relays:         { r1: bool, r2: bool, r3: bool, r4: bool }
+    relayOverrides: { r1?: bool, r2?: bool, r3?: bool, r4?: bool }
+    updatedAt:      number   (unix ms)
 ```
 
 `{deviceId}` is a short code derived from the ESP32's MAC address (last 6 hex
@@ -23,6 +26,13 @@ characters, e.g. `3B9D88`), printed on the meter's LCD during setup. Relay
 tiers, by priority: `r1` = Critical, `r2` = Essential, `r3` = Optional,
 `r4` = Luxury. `true` = load is powered, `false` = load has been shed by the
 budget enforcement logic on-device.
+
+`relayOverrides` lets a user manually force a tier on or off from the app,
+overriding the automatic budget-shedding decision for that tier. A missing key
+means "auto" (firmware's own priority logic decides). Firmware is expected to
+check `relayOverrides/{tier}` before applying its automatic decision -- if
+present, it wins regardless of budget state. Written only by the app's
+Dashboard/Budget screens (`src/services/relayOverride.ts`), one tier at a time.
 
 `budgetWh` is written only by the app's Budget screen (`app/(tabs)/budget.tsx`
 via `src/services/budget.ts`) -- last-write-wins, no merge logic, since only

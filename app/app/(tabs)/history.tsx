@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo, useState } from "react";
 import { View, Text, StyleSheet, FlatList, Pressable, Linking, ActivityIndicator } from "react-native";
 import { colors } from "../../src/theme/colors";
 import { typography, fonts, spacing, radius } from "../../src/theme/typography";
@@ -15,6 +15,22 @@ const DIRECTION_META: Record<TxDirection, { label: string; symbol: string; color
   "transfer-out": { label: "Sent", symbol: "−", color: colors.terracotta[400] },
   burn: { label: "Consumed", symbol: "−", color: colors.textSecondary },
 };
+
+type FilterTab = "all" | "received" | "sent" | "consumption";
+
+const FILTER_TABS: { key: FilterTab; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "received", label: "Received" },
+  { key: "sent", label: "Sent" },
+  { key: "consumption", label: "Consumption" },
+];
+
+function matchesFilter(direction: TxDirection, filter: FilterTab): boolean {
+  if (filter === "all") return true;
+  if (filter === "received") return direction === "mint" || direction === "transfer-in";
+  if (filter === "sent") return direction === "transfer-out";
+  return direction === "burn"; // consumption
+}
 
 function formatTimestamp(ts: number) {
   const d = new Date(ts);
@@ -53,12 +69,32 @@ function TransactionRow({ tx }: { tx: TxRecord }) {
 export default function HistoryScreen() {
   const { walletAddress } = useWallet();
   const { transactions, loading, error, refresh } = useTransactionHistory(walletAddress);
+  const [filter, setFilter] = useState<FilterTab>("all");
+
+  const filteredTransactions = useMemo(
+    () => transactions.filter((tx) => matchesFilter(tx.direction, filter)),
+    [transactions, filter]
+  );
 
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
         <Text style={[typography.h1, styles.headerTitle]}>History</Text>
         <AdinkraAccent size={28} color={colors.terracotta[400]} dotColor={colors.indigo[400]} opacity={1} />
+      </View>
+
+      <View style={styles.filterRow}>
+        {FILTER_TABS.map((tab) => (
+          <Pressable
+            key={tab.key}
+            onPress={() => setFilter(tab.key)}
+            style={[styles.filterChip, filter === tab.key && styles.filterChipActive]}
+          >
+            <Text style={[typography.caption, filter === tab.key ? styles.filterTextActive : styles.filterText]}>
+              {tab.label}
+            </Text>
+          </Pressable>
+        ))}
       </View>
 
       {loading && (
@@ -83,8 +119,14 @@ export default function HistoryScreen() {
         </Text>
       )}
 
+      {!loading && !error && transactions.length > 0 && filteredTransactions.length === 0 && (
+        <Text style={[typography.caption, styles.statusText, styles.emptyText]}>
+          No {FILTER_TABS.find((t) => t.key === filter)?.label.toLowerCase()} transactions yet.
+        </Text>
+      )}
+
       <FlatList
-        data={transactions}
+        data={filteredTransactions}
         keyExtractor={(item) => item.hash}
         renderItem={({ item }) => <TransactionRow tx={item} />}
         contentContainerStyle={styles.listContent}
@@ -106,6 +148,18 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.sm,
   },
   headerTitle: { color: colors.textPrimary },
+  filterRow: { flexDirection: "row", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
+  filterChip: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    backgroundColor: colors.surface,
+  },
+  filterChipActive: { backgroundColor: colors.indigo[400], borderColor: colors.indigo[400] },
+  filterText: { color: colors.textSecondary },
+  filterTextActive: { color: colors.neutral.white },
   statusRow: {
     flexDirection: "row",
     alignItems: "center",

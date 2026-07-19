@@ -30,12 +30,21 @@
           ".validate": "newData.isNumber() && newData.val() >= 0"
         },
 
-        "voltage":   { ".write": false },
-        "current":   { ".write": false },
-        "power":     { ".write": false },
-        "energyWh":  { ".write": false },
-        "relays":    { ".write": false },
-        "updatedAt": { ".write": false },
+        "relayOverrides": {
+          "$tier": {
+            ".write": "auth != null && root.child('deviceToWallet').child($deviceId).val() == root.child('uidToWallet').child(auth.uid).val()",
+            ".validate": "newData.isBoolean()"
+          }
+        },
+
+        "voltage":     { ".write": false },
+        "current":     { ".write": false },
+        "power":       { ".write": false },
+        "frequency":   { ".write": false },
+        "powerFactor": { ".write": false },
+        "energyWh":    { ".write": false },
+        "relays":      { ".write": false },
+        "updatedAt":   { ".write": false },
         "percentUsed": { ".write": false }
       }
     },

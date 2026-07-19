@@ -7,6 +7,9 @@ import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
 import { CopyableField } from "../../src/components/CopyableField";
 import { useWallet } from "../../src/hooks/useWallet";
 import { getDeviceForWallet } from "../../src/services/deviceBinding";
+import { clearFirebaseSession } from "../../src/services/firebaseSession";
+
+const APP_VERSION = "EnergiToken v1.0 — Polygon Amoy";
 
 /**
  * Everything a household might need to hand to someone else verbatim —
@@ -33,6 +36,7 @@ export default function ProfileScreen() {
   }, [walletAddress]);
 
   const handleLogout = async () => {
+    await clearFirebaseSession();
     await logout();
     router.replace("/login");
   };
@@ -59,6 +63,8 @@ export default function ProfileScreen() {
       <Pressable style={styles.logoutButton} onPress={handleLogout}>
         <Text style={[typography.bodyStrong, styles.logoutText]}>Log out</Text>
       </Pressable>
+
+      <Text style={[typography.caption, styles.versionText]}>{APP_VERSION}</Text>
     </ScrollView>
   );
 }
@@ -79,4 +85,5 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
   },
   logoutText: { color: colors.danger },
+  versionText: { color: colors.textSecondary, opacity: 0.6, textAlign: "center", marginTop: spacing.lg },
 });

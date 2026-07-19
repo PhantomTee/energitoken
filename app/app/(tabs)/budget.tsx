@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, Platform } from "react-native";
 import { useFocusEffect, Link } from "expo-router";
-import { colors } from "../../src/theme/colors";
+import { colors, RelayTier } from "../../src/theme/colors";
 import { typography, spacing, radius } from "../../src/theme/typography";
 import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
 import { BudgetRing } from "../../src/components/BudgetRing";
@@ -12,6 +12,7 @@ import { getEngyBalance } from "../../src/services/contract";
 import { setBudgetWh } from "../../src/services/budget";
 import { ensureFirebaseSession } from "../../src/services/firebaseSession";
 import { whToUnits, unitsToWh, tokensToUnits } from "../../src/services/units";
+import { setRelayOverride } from "../../src/services/relayOverride";
 
 const isWeb = Platform.OS === "web";
 
@@ -74,8 +75,23 @@ export default function BudgetScreen() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [relayBusyTier, setRelayBusyTier] = useState<RelayTier | null>(null);
+  const [relayError, setRelayError] = useState<string | null>(null);
 
   const { reading, loading, error, deviceId, hasDevice } = useMeterData(walletAddress, "live");
+
+  const handleRelayToggle = async (tier: RelayTier, next: boolean | null) => {
+    if (!deviceId) return;
+    setRelayError(null);
+    setRelayBusyTier(tier);
+    try {
+      await setRelayOverride(deviceId, tier, next);
+    } catch (err) {
+      setRelayError(err instanceof Error ? err.message : "Couldn't update that load right now.");
+    } finally {
+      setRelayBusyTier(null);
+    }
+  };
 
   const refreshBalance = useCallback(async () => {
     if (!walletAddress) return;
@@ -255,7 +271,13 @@ export default function BudgetScreen() {
           {reading?.relays && (
             <>
               <Text style={[typography.h2, styles.sectionTitle]}>Loads right now</Text>
-              <RelayIndicator relays={reading.relays} />
+              <RelayIndicator
+                relays={reading.relays}
+                overrides={reading.relayOverrides}
+                onToggle={deviceId ? handleRelayToggle : undefined}
+                disabledTier={relayBusyTier}
+              />
+              {relayError && <Text style={[typography.caption, styles.errorText]}>{relayError}</Text>}
             </>
           )}
 

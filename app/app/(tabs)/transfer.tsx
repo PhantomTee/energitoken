@@ -17,7 +17,7 @@ import { typography, spacing, radius } from "../../src/theme/typography";
 import { TxStatus, TxState } from "../../src/components/TxStatus";
 import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
 import { useWallet } from "../../src/hooks/useWallet";
-import { getEngyBalance, getWritableContract, runTransferPreflight } from "../../src/services/contract";
+import { getEngyBalance, getWritableContract, runTransferPreflight, checkNetworkAndGas } from "../../src/services/contract";
 import { resolveEmailToAddress } from "../../src/services/directory";
 
 /**
@@ -26,6 +26,25 @@ import { resolveEmailToAddress } from "../../src/services/directory";
  * email hasn't logged in yet there's nothing to resolve to, so that's
  * surfaced explicitly rather than silently blocking the form.
  */
+function PreflightRow({
+  label,
+  state,
+  loading,
+}: {
+  label: string;
+  state: boolean | null;
+  loading?: boolean;
+}) {
+  const icon = loading ? "…" : state === true ? "✓" : state === false ? "✗" : "—";
+  const color = loading ? colors.textSecondary : state === true ? colors.success : state === false ? colors.danger : colors.textSecondary;
+  return (
+    <View style={styles.preflightRow}>
+      <Text style={[typography.bodyStrong, { color }]}>{icon}</Text>
+      <Text style={[typography.caption, styles.preflightLabel]}>{label}</Text>
+    </View>
+  );
+}
+
 export default function TransferScreen() {
   const { walletAddress, getSigner } = useWallet();
   const [recipient, setRecipient] = useState("");
@@ -39,6 +58,9 @@ export default function TransferScreen() {
   const [resolving, setResolving] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [networkOk, setNetworkOk] = useState<boolean | null>(null);
+  const [gasOk, setGasOk] = useState<boolean | null>(null);
+  const [checkingChain, setCheckingChain] = useState(false);
 
   const refreshBalance = useCallback(async () => {
     if (!walletAddress) return;
@@ -91,7 +113,41 @@ export default function TransferScreen() {
   const amountWh = Number(amount);
   const isValidRecipient = effectiveAddress !== null;
   const isValidAmount = balanceWh !== null && amountWh > 0 && BigInt(Math.floor(amountWh)) <= balanceWh;
-  const canSubmit = isValidAmount && isValidRecipient && !resolving;
+  const canSubmit = isValidAmount && isValidRecipient && !resolving && networkOk === true && gasOk === true;
+
+  // Live network + gas check, once recipient and amount are otherwise valid --
+  // powers the pre-flight checklist below. Debounced so it doesn't re-fire on
+  // every keystroke while the amount field is still being typed.
+  useEffect(() => {
+    if (!isValidRecipient || !isValidAmount) {
+      setNetworkOk(null);
+      setGasOk(null);
+      return;
+    }
+    let cancelled = false;
+    setCheckingChain(true);
+    const timer = setTimeout(() => {
+      getSigner()
+        .then((signer) => checkNetworkAndGas(signer))
+        .then(({ networkOk: n, gasOk: g }) => {
+          if (cancelled) return;
+          setNetworkOk(n);
+          setGasOk(g);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setNetworkOk(false);
+          setGasOk(false);
+        })
+        .finally(() => {
+          if (!cancelled) setCheckingChain(false);
+        });
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [isValidRecipient, isValidAmount, getSigner]);
 
   const handleSend = async () => {
     if (!effectiveAddress) return;
@@ -200,6 +256,24 @@ export default function TransferScreen() {
         </Text>
       )}
 
+      {txState === "idle" && (recipient.length > 0 || amount.length > 0) && (
+        <View style={styles.preflightCard}>
+          <Text style={[typography.label, styles.preflightTitle]}>Before you send</Text>
+          <PreflightRow label="Recipient wallet found" state={isValidRecipient} />
+          <PreflightRow label="You have enough credit" state={isValidAmount} />
+          <PreflightRow
+            label="Connected to Polygon Amoy"
+            state={networkOk}
+            loading={checkingChain && networkOk === null}
+          />
+          <PreflightRow
+            label="Sufficient gas"
+            state={gasOk}
+            loading={checkingChain && gasOk === null}
+          />
+        </View>
+      )}
+
       {txState === "idle" ? (
         <Pressable
           style={[styles.button, !canSubmit && styles.buttonDisabled]}
@@ -281,6 +355,18 @@ const styles = StyleSheet.create({
   resolveRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs, marginTop: spacing.xs },
   resolveText: { color: colors.textSecondary },
   resolveSuccess: { color: colors.success, marginTop: spacing.xs },
+  preflightCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    marginTop: spacing.lg,
+    gap: spacing.sm,
+  },
+  preflightTitle: { color: colors.textSecondary, marginBottom: spacing.xs },
+  preflightRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  preflightLabel: { color: colors.textPrimary },
   button: {
     backgroundColor: colors.indigo[500],
     borderRadius: radius.md,

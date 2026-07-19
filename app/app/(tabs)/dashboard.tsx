@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl } from "react-native";
 import { router, useFocusEffect, Link } from "expo-router";
-import { colors } from "../../src/theme/colors";
+import { colors, RelayTier } from "../../src/theme/colors";
 import { typography, spacing, radius } from "../../src/theme/typography";
 import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
 import { MetricTile } from "../../src/components/MetricTile";
@@ -18,20 +18,39 @@ import { clearFirebaseSession } from "../../src/services/firebaseSession";
 import { useNotifications } from "../../src/hooks/useNotifications";
 import { usePushNotifications } from "../../src/hooks/usePushNotifications";
 import { NotificationsPanel } from "../../src/components/NotificationsPanel";
+import { setRelayOverride } from "../../src/services/relayOverride";
+
+/** How stale a reading can be before the status pill drops from Live to No signal. */
+const STALE_AFTER_MS = 60_000;
+
+type MeterStatus = "live" | "no-signal" | "fault";
+
+function formatSecondsAgo(updatedAt: number, nowMs: number): string {
+  const seconds = Math.max(0, Math.floor((nowMs - updatedAt) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  return `${Math.floor(minutes / 60)}h ago`;
+}
 
 export default function DashboardScreen() {
   const [mode, setMode] = useState<MeterMode>("mock");
   const { walletAddress, email, logout } = useWallet();
   const [topUpVisible, setTopUpVisible] = useState(false);
   const [notifVisible, setNotifVisible] = useState(false);
+  const [showMoreReadings, setShowMoreReadings] = useState(false);
   const { notifications, unreadCount, markAllRead } = useNotifications(walletAddress);
   usePushNotifications(walletAddress);
   const [balanceWh, setBalanceWh] = useState<bigint | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [relayBusyTier, setRelayBusyTier] = useState<RelayTier | null>(null);
+  const [relayError, setRelayError] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const {
     reading,
     loading: meterLoading,
     error: meterError,
+    deviceId,
     hasDevice,
   } = useMeterData(walletAddress, mode);
 
@@ -66,10 +85,46 @@ export default function DashboardScreen() {
     }
   }, [walletAddress, email]);
 
+  // Ticks once a second so "Updated Xs ago" stays accurate -- only while
+  // there's a live reading to measure freshness against.
+  useEffect(() => {
+    if (mode !== "live" || !reading) return;
+    const interval = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [mode, reading]);
+
   const handleLogout = async () => {
     await clearFirebaseSession();
     await logout();
     router.replace("/login");
+  };
+
+  const handleRelayToggle = async (tier: RelayTier, next: boolean | null) => {
+    if (!deviceId) return;
+    setRelayError(null);
+    setRelayBusyTier(tier);
+    try {
+      await setRelayOverride(deviceId, tier, next);
+    } catch (err) {
+      setRelayError(err instanceof Error ? err.message : "Couldn't update that load right now.");
+    } finally {
+      setRelayBusyTier(null);
+    }
+  };
+
+  const meterStatus: MeterStatus | null =
+    mode !== "live" || !hasDevice
+      ? null
+      : meterError
+        ? "fault"
+        : reading && nowMs - reading.updatedAt < STALE_AFTER_MS
+          ? "live"
+          : "no-signal";
+
+  const statusMeta: Record<MeterStatus, { label: string; color: string }> = {
+    live: { label: "Live", color: colors.success },
+    "no-signal": { label: "No signal from meter", color: colors.warning },
+    fault: { label: "Meter fault", color: colors.danger },
   };
 
   return (
@@ -92,7 +147,7 @@ export default function DashboardScreen() {
         </View>
         <View style={styles.headerRight}>
           {walletAddress && (
-            <Pressable onPress={() => setNotifVisible(true)} style={styles.bellButton} hitSlop={8}>
+            <Pressable onPress={() => setNotifVisible(true)} style={styles.iconButton} hitSlop={8}>
               <Text style={styles.bellIcon}>🔔</Text>
               {unreadCount > 0 && (
                 <View style={styles.badge}>
@@ -102,17 +157,33 @@ export default function DashboardScreen() {
             </Pressable>
           )}
           {walletAddress && (
-            <Pressable onPress={handleLogout} style={styles.walletChip}>
-              <Text style={[typography.dataXs, styles.walletAddress]}>
-                {walletAddress.slice(0, 6)}…{walletAddress.slice(-4)}
-              </Text>
-              <Text style={[typography.caption, styles.logOut]}>Log out</Text>
+            <Pressable
+              onPress={() => router.push("/(tabs)/profile")}
+              style={styles.iconButton}
+              hitSlop={8}
+              accessibilityLabel="Settings"
+            >
+              <Text style={styles.gearIcon}>⚙</Text>
             </Pressable>
           )}
         </View>
       </View>
 
       <LiveMockBanner mode={mode} onToggle={setMode} />
+
+      {meterStatus && (
+        <View style={[styles.statusPill, { backgroundColor: `${statusMeta[meterStatus].color}22` }]}>
+          <View style={[styles.statusDot, { backgroundColor: statusMeta[meterStatus].color }]} />
+          <Text style={[typography.caption, { color: statusMeta[meterStatus].color }]}>
+            {statusMeta[meterStatus].label}
+          </Text>
+          {meterStatus !== "fault" && reading && (
+            <Text style={[typography.dataXs, styles.statusTimestamp]}>
+              Updated {formatSecondsAgo(reading.updatedAt, nowMs)}
+            </Text>
+          )}
+        </View>
+      )}
 
       <View style={styles.balanceCard}>
         <View style={styles.balanceMain}>
@@ -121,51 +192,80 @@ export default function DashboardScreen() {
             {balanceWh === null ? "···" : tokensToUnits(balanceWh).toLocaleString()}
           </Text>
           <Text style={[typography.dataSm, styles.balanceUnit]}>units · 1 unit = 1 kWh</Text>
-          {walletAddress && (
-            <Pressable style={styles.topUpButton} onPress={() => setTopUpVisible(true)}>
-              <Text style={[typography.bodyStrong, styles.topUpButtonText]}>Top up with OPay</Text>
-            </Pressable>
-          )}
         </View>
         <BudgetRing percentUsed={reading?.percentUsed ?? 0} size={96} />
       </View>
 
-      {mode === "live" && (
-        <View style={styles.meterStatusRow}>
-          <View
-            style={[
-              styles.statusDot,
-              { backgroundColor: meterError ? colors.danger : hasDevice ? colors.success : colors.warning },
-            ]}
-          />
-          <Text style={[typography.caption, styles.meterStatusText]}>
-            {meterLoading
-              ? "Loading live meter data…"
-              : meterError
-                ? `Couldn't load live data: ${meterError}`
-                : !hasDevice
-                  ? "No device paired yet"
-                  : reading
-                    ? "Live"
-                    : "Device paired — waiting for first reading"}
-          </Text>
-          {meterLoading && <ActivityIndicator color={colors.indigo[400]} style={styles.meterStatusSpinner} />}
-          {!meterLoading && !hasDevice && (
-            <Link href="/onboarding" style={styles.pairLink}>
-              <Text style={[typography.dataXs, styles.pairLinkText]}>Pair a device →</Text>
-            </Link>
-          )}
+      {walletAddress && (
+        <View style={styles.quickActionsRow}>
+          <Pressable style={[styles.quickActionButton, styles.topUpButton]} onPress={() => setTopUpVisible(true)}>
+            <Text style={[typography.bodyStrong, styles.quickActionText]}>Top Up</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.quickActionButton, styles.setBudgetButton]}
+            onPress={() => router.push("/(tabs)/budget")}
+          >
+            <Text style={[typography.bodyStrong, styles.quickActionText]}>Set Budget</Text>
+          </Pressable>
         </View>
       )}
 
-      <View style={styles.tileRow}>
-        <MetricTile label="Voltage" value={reading ? reading.voltage.toFixed(1) : "—"} unit="V" />
-        <MetricTile label="Current" value={reading ? reading.current.toFixed(1) : "—"} unit="A" />
-        <MetricTile label="Power" value={reading ? reading.power.toFixed(0) : "—"} unit="W" />
+      {mode === "live" && !hasDevice && !meterLoading && (
+        <View style={styles.meterStatusRow}>
+          <Text style={[typography.caption, styles.meterStatusText]}>No device paired yet</Text>
+          <Link href="/onboarding" style={styles.pairLink}>
+            <Text style={[typography.dataXs, styles.pairLinkText]}>Pair a device →</Text>
+          </Link>
+        </View>
+      )}
+      {mode === "live" && meterLoading && (
+        <View style={styles.meterStatusRow}>
+          <ActivityIndicator color={colors.indigo[400]} />
+          <Text style={[typography.caption, styles.meterStatusText]}>Loading live meter data…</Text>
+        </View>
+      )}
+      {mode === "live" && meterError && (
+        <Text style={[typography.caption, styles.errorText]}>Couldn't load live data: {meterError}</Text>
+      )}
+
+      <View style={styles.tileGrid}>
+        <View style={styles.tileRow}>
+          <MetricTile label="Voltage" value={reading ? reading.voltage.toFixed(1) : "—"} unit="V" />
+          <MetricTile label="Current" value={reading ? reading.current.toFixed(1) : "—"} unit="A" />
+        </View>
+        <View style={styles.tileRow}>
+          <MetricTile label="Power" value={reading ? reading.power.toFixed(0) : "—"} unit="W" />
+          <MetricTile
+            label="Frequency"
+            value={reading?.frequency != null ? reading.frequency.toFixed(1) : "—"}
+            unit="Hz"
+          />
+        </View>
       </View>
 
+      <Pressable onPress={() => setShowMoreReadings((v) => !v)} style={styles.moreToggle}>
+        <Text style={[typography.caption, styles.moreToggleText]}>
+          {showMoreReadings ? "Show less ▲" : "More readings ▼"}
+        </Text>
+      </Pressable>
+      {showMoreReadings && (
+        <View style={styles.tileRow}>
+          <MetricTile
+            label="Power factor"
+            value={reading?.powerFactor != null ? reading.powerFactor.toFixed(2) : "—"}
+            unit=""
+          />
+        </View>
+      )}
+
       <Text style={[typography.h2, styles.sectionTitle]}>Load priority</Text>
-      <RelayIndicator relays={reading?.relays ?? { r1: false, r2: false, r3: false, r4: false }} />
+      <RelayIndicator
+        relays={reading?.relays ?? { r1: false, r2: false, r3: false, r4: false }}
+        overrides={reading?.relayOverrides}
+        onToggle={deviceId ? handleRelayToggle : undefined}
+        disabledTier={relayBusyTier}
+      />
+      {relayError && <Text style={[typography.caption, styles.errorText]}>{relayError}</Text>}
 
       {walletAddress && (
         <TopUpModal visible={topUpVisible} onClose={() => setTopUpVisible(false)} walletAddress={walletAddress} />
@@ -187,9 +287,10 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   brandRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   brandWordmark: { color: colors.textPrimary, letterSpacing: 0.5 },
-  headerRight: { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  bellButton: { position: "relative", padding: spacing.xs },
+  headerRight: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  iconButton: { position: "relative", padding: spacing.xs },
   bellIcon: { fontSize: 20 },
+  gearIcon: { fontSize: 20, color: colors.textPrimary },
   badge: {
     position: "absolute",
     top: 0,
@@ -203,9 +304,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
   },
   badgeText: { color: colors.neutral.white, fontSize: 10, fontWeight: "700" },
-  walletChip: { alignItems: "flex-end" },
-  walletAddress: { color: colors.textPrimary },
-  logOut: { color: colors.textSecondary, textDecorationLine: "underline", marginTop: 2 },
+  statusPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    alignSelf: "flex-start",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.pill,
+  },
+  statusDot: { width: 8, height: 8, borderRadius: 4 },
+  statusTimestamp: { color: colors.textSecondary, marginLeft: spacing.xs },
   balanceCard: {
     backgroundColor: colors.panelInset,
     borderRadius: radius.lg,
@@ -218,22 +327,24 @@ const styles = StyleSheet.create({
   balanceLabel: { color: colors.terracotta[500] },
   balanceValue: { color: colors.panelInsetText, marginTop: spacing.xs },
   balanceUnit: { color: colors.indigo[700], marginTop: 2 },
-  meterStatusRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  statusDot: { width: 8, height: 8, borderRadius: 4 },
-  meterStatusText: { color: colors.textSecondary, flex: 1 },
-  meterStatusSpinner: { marginLeft: spacing.xs },
-  pairLink: { marginLeft: spacing.sm },
-  pairLinkText: { color: colors.indigo[400] },
-  topUpButton: {
-    backgroundColor: colors.terracotta[500],
-    borderRadius: radius.md,
+  quickActionsRow: { flexDirection: "row", gap: spacing.sm },
+  quickActionButton: {
+    flex: 1,
+    borderRadius: radius.pill,
     paddingVertical: spacing.sm,
     alignItems: "center",
-    marginTop: spacing.md,
-    alignSelf: "flex-start",
-    paddingHorizontal: spacing.md,
   },
-  topUpButtonText: { color: colors.neutral.white },
+  topUpButton: { backgroundColor: colors.terracotta[500] },
+  setBudgetButton: { backgroundColor: colors.indigo[500] },
+  quickActionText: { color: colors.neutral.white },
+  meterStatusRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  meterStatusText: { color: colors.textSecondary, flex: 1 },
+  errorText: { color: colors.danger },
+  pairLink: { marginLeft: spacing.sm },
+  pairLinkText: { color: colors.indigo[400] },
+  tileGrid: { gap: spacing.sm },
   tileRow: { flexDirection: "row", gap: spacing.sm },
+  moreToggle: { alignSelf: "flex-start" },
+  moreToggleText: { color: colors.indigo[400] },
   sectionTitle: { color: colors.textPrimary, marginTop: spacing.sm },
 });
