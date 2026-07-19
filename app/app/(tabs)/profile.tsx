@@ -8,6 +8,7 @@ import { CopyableField } from "../../src/components/CopyableField";
 import { useWallet } from "../../src/hooks/useWallet";
 import { getDeviceForWallet } from "../../src/services/deviceBinding";
 import { clearFirebaseSession } from "../../src/services/firebaseSession";
+import { displayNameFromEmail } from "../../src/services/displayName";
 
 const APP_VERSION = "EnergiToken v1.0 — Polygon Amoy";
 
@@ -19,6 +20,7 @@ const APP_VERSION = "EnergiToken v1.0 — Polygon Amoy";
 export default function ProfileScreen() {
   const { email, walletAddress, logout } = useWallet();
   const [deviceId, setDeviceId] = useState<string | null | undefined>(undefined);
+  const displayName = displayNameFromEmail(email);
 
   useEffect(() => {
     if (!walletAddress) return;
@@ -51,6 +53,16 @@ export default function ProfileScreen() {
         Your account details — share these to add someone to your household or register your meter.
       </Text>
 
+      <View style={styles.identityCard}>
+        <View style={styles.avatar}>
+          <Text style={styles.avatarInitial}>{displayName.charAt(0)}</Text>
+        </View>
+        <View>
+          <Text style={[typography.h2, styles.displayName]}>{displayName}</Text>
+          <Text style={[typography.caption, styles.displayEmail]}>{email ?? "Not linked"}</Text>
+        </View>
+      </View>
+
       <View style={styles.fields}>
         <CopyableField label="Email" value={email ?? "Not linked"} mono={false} />
         <CopyableField label="Wallet address" value={walletAddress ?? "—"} />
@@ -75,6 +87,26 @@ const styles = StyleSheet.create({
   titleRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   title: { color: colors.textPrimary, marginBottom: spacing.xs },
   subtitle: { color: colors.textSecondary, marginBottom: spacing.lg },
+  identityCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    backgroundColor: colors.panelInset,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.terracotta[500],
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarInitial: { color: colors.neutral.white, fontSize: 20, fontWeight: "700" },
+  displayName: { color: colors.panelInsetText },
+  displayEmail: { color: colors.indigo[700], marginTop: 2 },
   fields: { gap: spacing.md },
   logoutButton: {
     borderRadius: radius.md,
