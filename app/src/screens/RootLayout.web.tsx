@@ -27,7 +27,7 @@ export default function RootLayout() {
       <StatusBar style="light" />
       {/* Fixed top padding on web -- no notch/status bar to measure, but the
           app felt cramped flush against the browser chrome without it. */}
-      <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: 24 }}>
+      <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: 40 }}>
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
           <Stack.Screen name="login" />
           <Stack.Screen name="onboarding" />
