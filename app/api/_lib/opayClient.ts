@@ -2,6 +2,7 @@
  * Thin wrapper around OPay's Cashier API.
  * https://documentation.opaycheckout.com — Express Checkout / OPay Cashier.
  */
+import { createHmac } from "crypto";
 
 export type OPayPaymentStatus = {
   reference: string;
@@ -20,18 +21,29 @@ type QueryStatusResponse = {
 /**
  * Queries OPay server-to-server for the authoritative payment status.
  * Must be called from the callback handler before trusting the callback body.
+ *
+ * Unlike Cashier creation (public-key Bearer auth), the status/query endpoint
+ * requires the request body to be signed: Authorization: Bearer <hex HMAC-SHA512
+ * of the exact JSON body, keyed with the merchant's private/secret key>. Node's
+ * JSON.stringify doesn't escape forward slashes, matching OPay's documented
+ * "JSON_UNESCAPED_SLASHES" requirement, so no extra escaping is needed --
+ * but the exact string that gets signed must be the exact string sent as the
+ * body (not re-stringified), or the signature won't match on OPay's side.
  */
 export async function queryPaymentStatus(reference: string): Promise<OPayPaymentStatus> {
-  const { publicKey, merchantId, baseUrl } = getOpayConfig();
+  const { secretKey, merchantId, baseUrl } = getOpaySecretConfig();
 
-  const response = await fetch(`${baseUrl}/api/v1/international/cashier/query`, {
+  const bodyJson = JSON.stringify({ reference, country: "NG" });
+  const signature = createHmac("sha512", secretKey).update(bodyJson).digest("hex");
+
+  const response = await fetch(`${baseUrl}/api/v1/international/cashier/status`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${publicKey}`,
+      Authorization: `Bearer ${signature}`,
       MerchantId: merchantId,
     },
-    body: JSON.stringify({ reference }),
+    body: bodyJson,
   });
 
   const json = (await response.json()) as QueryStatusResponse;
@@ -73,6 +85,21 @@ function getOpayConfig() {
   }
 
   return { publicKey, merchantId, baseUrl };
+}
+
+/** Separate from getOpayConfig() -- the query/status endpoint needs the
+ * private/secret key (for HMAC signing), not the public key used to create
+ * a Cashier order. */
+function getOpaySecretConfig() {
+  const secretKey = process.env.OPAY_SECRET_KEY;
+  const merchantId = process.env.OPAY_MERCHANT_ID;
+  const baseUrl = process.env.OPAY_BASE_URL ?? "https://testapi.opaycheckout.com";
+
+  if (!secretKey || !merchantId) {
+    throw new Error("Missing OPAY_SECRET_KEY or OPAY_MERCHANT_ID env vars");
+  }
+
+  return { secretKey, merchantId, baseUrl };
 }
 
 export async function createCashierPayment(
