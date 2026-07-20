@@ -62,7 +62,11 @@ export default async function handler(req: Req, res: Res) {
       return;
     }
 
-    const reference = `etk_${Date.now()}_${randomBytes(4).toString("hex")}`;
+    // 16 random bytes (128 bits) -- the previous 4 bytes (32 bits) combined
+    // with a predictable timestamp prefix made references guessable enough
+    // to be a realistic concern for an endpoint whose reference is the only
+    // input needed to probe order state.
+    const reference = `etk_${Date.now()}_${randomBytes(16).toString("hex")}`;
     const whAmount   = Math.floor(amountNgn * TARIFF.whPerNgn);
     const { returnUrl, cancelUrl } = buildReturnUrls(reference);
     const backendUrl = (process.env.PUBLIC_BACKEND_URL ?? "https://energitoken.vercel.app").replace(/\/$/, "");

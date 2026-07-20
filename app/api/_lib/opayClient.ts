@@ -2,7 +2,7 @@
  * Thin wrapper around OPay's Cashier API.
  * https://documentation.opaycheckout.com — Express Checkout / OPay Cashier.
  */
-import { createHmac } from "crypto";
+import { createHmac, timingSafeEqual } from "crypto";
 
 export type OPayPaymentStatus = {
   reference: string;
@@ -17,6 +17,55 @@ type QueryStatusResponse = {
   message: string;
   data?: OPayPaymentStatus;
 };
+
+/** Shape of the /payload object inside a callback POST to our callbackUrl. */
+export type OPayCallbackPayload = {
+  amount: string;
+  currency: string;
+  reference: string;
+  refunded: boolean;
+  status: string;
+  timestamp: string;
+  token: string;
+  transactionId: string;
+};
+
+/**
+ * Verifies an inbound OPay callback is genuinely from OPay, not forged --
+ * a real gap the earlier implementation had (it only checked that the
+ * reference existed, which anyone who saw a reference value in a URL
+ * bar or log could replay). Checked BEFORE any Firebase/OPay lookups, so
+ * a forged request is rejected cheaply without hitting the database or
+ * OPay's API.
+ *
+ * This is defense-in-depth alongside (not instead of) the existing
+ * queryPaymentStatus() re-verification -- the direct API re-query remains
+ * the authoritative check for whether to mint; this just stops obviously
+ * forged requests early and matches OPay's documented recommendation.
+ *
+ * Algorithm per OPay docs (documentation.opaycheckout.com/callback-signature):
+ * HMAC-SHA3-512 (not SHA-512 -- different from the status-query signature)
+ * over a fixed-format string built from eight payload fields, keyed with
+ * the merchant's private/secret key, hex-encoded, compared to body.sha512.
+ */
+export function verifyCallbackSignature(
+  payload: OPayCallbackPayload,
+  sha512: string,
+  secretKey: string
+): boolean {
+  const signedString =
+    `{Amount:"${payload.amount}",Currency:"${payload.currency}",Reference:"${payload.reference}",` +
+    `Refunded:${payload.refunded ? "t" : "f"},Status:"${payload.status}",Timestamp:"${payload.timestamp}",` +
+    `Token:"${payload.token}",TransactionID:"${payload.transactionId}"}`;
+
+  const expected = createHmac("sha3-512", secretKey).update(signedString).digest("hex");
+
+  const expectedBuf = Buffer.from(expected, "hex");
+  const receivedBuf = Buffer.from(sha512, "hex");
+  if (expectedBuf.length !== receivedBuf.length) return false;
+
+  return timingSafeEqual(expectedBuf, receivedBuf);
+}
 
 /**
  * Queries OPay server-to-server for the authoritative payment status.
@@ -90,10 +139,11 @@ function getOpayConfig() {
   return { publicKey, merchantId, baseUrl };
 }
 
-/** Separate from getOpayConfig() -- the query/status endpoint needs the
- * private/secret key (for HMAC signing), not the public key used to create
- * a Cashier order. */
-function getOpaySecretConfig() {
+/** Separate from getOpayConfig() -- the query/status endpoint (and callback
+ * signature verification) need the private/secret key (for HMAC signing),
+ * not the public key used to create a Cashier order. Exported so callback.ts
+ * can get the secretKey for verifyCallbackSignature(). */
+export function getOpaySecretConfig() {
   // .trim() defends against a trailing newline/space picked up when the key
   // was copy-pasted into the Vercel CLI/dashboard -- that would silently
   // corrupt every HMAC signature with no other symptom than "auth failed".

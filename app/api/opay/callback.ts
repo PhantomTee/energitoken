@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { ordersRef } from "../_lib/firebaseAdmin";
 import { mintEngy } from "../_lib/mintEngy";
-import { queryPaymentStatus } from "../_lib/opayClient";
+import { queryPaymentStatus, verifyCallbackSignature, getOpaySecretConfig, OPayCallbackPayload } from "../_lib/opayClient";
 import { sendNotification } from "../_lib/notify";
 
 type Req = IncomingMessage & { method?: string; body?: unknown };
@@ -11,14 +11,19 @@ type Res = ServerResponse & { status: (code: number) => Res; json: (body: unknow
  * OPay calls this server-to-server when a Cashier payment's status changes.
  *
  * Security model:
- *  1. We NEVER trust the callback body status — it can be forged by anyone
- *     who knows a reference value.
- *  2. We re-query OPay's /cashier/query endpoint with our server credentials
- *     and use only the status returned by that authoritative call.
+ *  1. Verify the callback's own HMAC-SHA3-512 signature first (OPay's
+ *     documented mechanism) -- rejects obviously forged requests cheaply,
+ *     before touching Firebase or OPay's API.
+ *  2. We still NEVER trust the callback body's status for the mint decision
+ *     -- we re-query OPay's /cashier/status endpoint with our server
+ *     credentials and use only the status returned by that authoritative
+ *     call. The signature check is defense-in-depth, not a replacement.
  *  3. We cross-check orderNo and amount against what we stored at order creation.
  *  4. We use a "minting" intermediate state so a process crash between mint
- *     and the Firebase update doesn't allow a second mint — we check the chain
- *     on restart instead of re-minting blindly.
+ *     and the Firebase update doesn't allow a second mint.
+ *  5. If the mint transaction itself fails, the order is marked "mint_failed"
+ *     (not left stuck in "minting" forever) so it's visibly distinguishable
+ *     and retriable by an operator.
  */
 export default async function handler(req: Req, res: Res) {
   if (req.method !== "POST") {
@@ -28,12 +33,27 @@ export default async function handler(req: Req, res: Res) {
 
   try {
     const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
-    const { reference } = (body ?? {}) as { reference?: string };
+    const { payload, sha512 } = (body ?? {}) as { payload?: OPayCallbackPayload; sha512?: string };
 
-    if (!reference) {
-      res.status(400).json({ error: "Missing reference" });
+    if (!payload?.reference) {
+      res.status(400).json({ error: "Missing payload.reference" });
       return;
     }
+
+    if (sha512) {
+      // Only verify when a signature is present -- OPay's sandbox callback
+      // format has been observed to vary; a present-but-invalid signature is
+      // rejected, but we don't hard-fail requests OPay didn't sign at all,
+      // since queryPaymentStatus() below is still the authoritative check.
+      const { secretKey } = getOpaySecretConfig();
+      if (!verifyCallbackSignature(payload, sha512, secretKey)) {
+        console.error("opay callback: signature verification failed", { reference: payload.reference });
+        res.status(401).json({ error: "Invalid signature" });
+        return;
+      }
+    }
+
+    const reference = payload.reference;
 
     // Load our stored order first — reject any reference we never created.
     const snapshot = await ordersRef().child(reference).get();
@@ -102,7 +122,23 @@ export default async function handler(req: Req, res: Res) {
       updatedAt: Date.now(),
     });
 
-    const txHash = await mintEngy(order.walletAddress, order.whAmount);
+    let txHash: string;
+    try {
+      txHash = await mintEngy(order.walletAddress, order.whAmount);
+    } catch (err) {
+      // Don't leave the order stuck in "minting" forever -- mark it
+      // distinctly so an operator can see it needs a manual retry, and so
+      // it doesn't silently block re-processing if OPay retries the callback.
+      const message = err instanceof Error ? err.message : "Unknown mint error";
+      console.error("opay callback: mint failed", { reference, error: message });
+      await ordersRef().child(reference).update({
+        status: "mint_failed",
+        mintError: message,
+        updatedAt: Date.now(),
+      });
+      res.status(500).json({ error: "Mint transaction failed", detail: message });
+      return;
+    }
 
     await ordersRef().child(reference).update({
       status: "minted",
