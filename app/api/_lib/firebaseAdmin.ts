@@ -27,14 +27,15 @@ function getAdminApp() {
   });
 }
 
-export type OpayOrderStatus = "initial" | "failed" | "minting" | "minted" | "mint_failed";
+export type PaymentOrderStatus = "initial" | "failed" | "minting" | "minted" | "mint_failed";
 
-export type OpayOrder = {
+export type PaymentOrder = {
   walletAddress: string;
   amountNgn: number;
   whAmount: number;
-  status: OpayOrderStatus;
-  orderNo?: string;
+  status: PaymentOrderStatus;
+  /** Flutterwave's own transaction id, assigned once payment completes (from the webhook or a verify call) — not known at order creation. */
+  flwTransactionId?: number;
   mintTxHash?: string;
   createdAt: number;
   updatedAt: number;

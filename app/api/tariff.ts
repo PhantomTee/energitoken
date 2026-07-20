@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "http";
-import { TARIFF } from "./opay/create-payment";
+import { TARIFF } from "./payments/create";
 
 type Res = ServerResponse & { status: (code: number) => Res; json: (body: unknown) => void };
 

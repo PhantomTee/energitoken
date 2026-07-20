@@ -6,7 +6,7 @@ import { typography, spacing, radius } from "../theme/typography";
 
 const BACKEND_URL = Platform.OS === "web" ? "" : process.env.EXPO_PUBLIC_BACKEND_URL ?? "https://energitoken.vercel.app";
 const NGN_PER_UNIT = 1000; // 1 unit = 1 kWh = 1000 Wh, WH_PER_NGN=1 on server → 1000 NGN per unit
-const MIN_TOP_UP_NGN = 100; // must match TARIFF.minNgn in app/api/opay/create-payment.ts
+const MIN_TOP_UP_NGN = 100; // must match TARIFF.minNgn in app/api/payments/create.ts
 
 type Props = {
   visible: boolean;
@@ -19,7 +19,7 @@ async function pollOrderStatus(reference: string, maxAttempts = 12): Promise<"mi
   for (let i = 0; i < maxAttempts; i++) {
     await new Promise((r) => setTimeout(r, 5000));
     try {
-      const res = await fetch(`${BACKEND_URL}/api/opay/status?reference=${reference}`);
+      const res = await fetch(`${BACKEND_URL}/api/payments/status?reference=${reference}`);
       if (!res.ok) continue;
       const json = await res.json();
       if (json.status === "minted") return "minted";
@@ -53,7 +53,7 @@ export function TopUpModal({ visible, onClose, walletAddress, onMinted }: Props)
     setError(null);
     setLoading(true);
     try {
-      const response = await fetch(`${BACKEND_URL}/api/opay/create-payment`, {
+      const response = await fetch(`${BACKEND_URL}/api/payments/create`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ walletAddress, amountNgn: amount }),
@@ -62,11 +62,11 @@ export function TopUpModal({ visible, onClose, walletAddress, onMinted }: Props)
       if (!response.ok) throw new Error(json.error ?? "Failed to start payment");
 
       if (Platform.OS === "web") {
-        Linking.openURL(json.cashierUrl);
+        Linking.openURL(json.checkoutUrl);
         onClose();
       } else {
         setLoading(false);
-        await WebBrowser.openBrowserAsync(json.cashierUrl);
+        await WebBrowser.openBrowserAsync(json.checkoutUrl);
         // Browser closed — start polling to see if mint happened
         setPolling(true);
         const result = await pollOrderStatus(json.reference);
@@ -115,14 +115,14 @@ export function TopUpModal({ visible, onClose, walletAddress, onMinted }: Props)
               <ActivityIndicator color={colors.indigo[400]} style={{ marginBottom: spacing.md }} />
               <Text style={[typography.h2, styles.title]}>Confirming payment…</Text>
               <Text style={[typography.body, styles.subtitle]}>
-                Waiting for OPay to confirm your payment. This can take up to a minute.
+                Waiting for your payment to be confirmed. This can take up to a minute.
               </Text>
             </>
           ) : (
             <>
-              <Text style={[typography.h2, styles.title]}>Top up with OPay</Text>
+              <Text style={[typography.h2, styles.title]}>Top Up</Text>
               <Text style={[typography.body, styles.subtitle]}>
-                ₦1,000 = 1 unit (1 kWh) · minimum ₦{MIN_TOP_UP_NGN}. You'll be redirected to OPay's secure checkout.
+                ₦1,000 = 1 unit (1 kWh) · minimum ₦{MIN_TOP_UP_NGN}. You'll be redirected to a secure checkout page.
               </Text>
               <Text style={[typography.label, styles.fieldLabel]}>AMOUNT (NGN)</Text>
               <TextInput
@@ -148,7 +148,7 @@ export function TopUpModal({ visible, onClose, walletAddress, onMinted }: Props)
                   {loading ? (
                     <ActivityIndicator color={colors.neutral.white} />
                   ) : (
-                    <Text style={[typography.bodyStrong, styles.buttonText]}>Pay with OPay</Text>
+                    <Text style={[typography.bodyStrong, styles.buttonText]}>Top Up</Text>
                   )}
                 </Pressable>
               </View>

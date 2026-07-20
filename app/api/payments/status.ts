@@ -4,7 +4,7 @@ import { ordersRef } from "../_lib/firebaseAdmin";
 type Req = IncomingMessage & { method?: string; url?: string };
 type Res = ServerResponse & { status: (code: number) => Res; json: (body: unknown) => void };
 
-/** Lets the app poll an order's state while the real-time balance read (Step 7) isn't wired yet. */
+/** Lets the app poll an order's state while it's waiting on the webhook. */
 export default async function handler(req: Req, res: Res) {
   if (req.method !== "GET") {
     res.status(405).json({ error: "Method not allowed" });

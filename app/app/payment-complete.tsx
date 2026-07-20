@@ -10,17 +10,21 @@ const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL ?? "https://energitoken.
 type OrderStatus = "polling" | "minted" | "failed" | "cancelled" | "timeout";
 
 /**
- * Where OPay's hosted Cashier page redirects the browser after the user pays
- * or cancels. Polls our /api/opay/status endpoint to confirm the mint.
- * The actual mint() call happens server-side via api/opay/callback.ts.
+ * Where the hosted checkout page redirects the browser after the user pays,
+ * cancels, or the attempt fails -- all three land here with the same
+ * redirect_url, differentiated by a `status` query param (successful |
+ * cancelled | failed), plus `tx_ref`. That param is only a UX hint for which
+ * screen to show first; the actual state always comes from polling
+ * /api/payments/status, which reflects Firebase order state set only by the
+ * verified webhook (api/payments/callback.ts) -- never trusted from the URL.
  */
 export default function PaymentCompleteScreen() {
   const router = useRouter();
-  const { cancelled, reference } = useLocalSearchParams<{ cancelled?: string; reference?: string }>();
-  const [status, setStatus] = useState<OrderStatus>(cancelled === "true" ? "cancelled" : "polling");
+  const { status: redirectStatus, tx_ref } = useLocalSearchParams<{ status?: string; tx_ref?: string }>();
+  const [status, setStatus] = useState<OrderStatus>(redirectStatus === "cancelled" ? "cancelled" : "polling");
 
   useEffect(() => {
-    if (status !== "polling" || !reference) {
+    if (status !== "polling" || !tx_ref) {
       if (status === "polling") setStatus("timeout");
       return;
     }
@@ -36,7 +40,7 @@ export default function PaymentCompleteScreen() {
       }
       attempts++;
       try {
-        const res = await fetch(`${BACKEND_URL}/api/opay/status?reference=${reference}`);
+        const res = await fetch(`${BACKEND_URL}/api/payments/status?reference=${tx_ref}`);
         if (res.ok) {
           const json = await res.json();
           if (!cancelled) {
@@ -52,12 +56,12 @@ export default function PaymentCompleteScreen() {
 
     poll();
     return () => { cancelled = true; };
-  }, [reference, status]);
+  }, [tx_ref, status]);
 
   const content: Record<OrderStatus, { title: string; body: string; titleColor: string }> = {
     polling: {
       title: "Confirming payment…",
-      body: "We're waiting for OPay to confirm your payment. This usually takes under a minute.",
+      body: "We're waiting for your payment to be confirmed. This usually takes under a minute.",
       titleColor: colors.textPrimary,
     },
     minted: {
@@ -67,7 +71,7 @@ export default function PaymentCompleteScreen() {
     },
     failed: {
       title: "Payment not completed",
-      body: "Your payment was not confirmed by OPay. No charge was made. You can try again from the dashboard.",
+      body: "Your payment could not be confirmed. No charge was made. You can try again from the dashboard.",
       titleColor: colors.danger,
     },
     cancelled: {

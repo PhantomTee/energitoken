@@ -1,27 +1,19 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { randomBytes } from "crypto";
-import { createCashierPayment } from "../_lib/opayClient";
+import { createPayment } from "../_lib/flutterwaveClient";
 import { ordersRef } from "../_lib/firebaseAdmin";
 
 type Req = IncomingMessage & { method?: string; body?: unknown };
 type Res = ServerResponse & { status: (code: number) => Res; json: (body: unknown) => void };
 
-// Tariff — kept in one place server-side so callback.ts and create-payment.ts
-// always agree. Exposed via /api/tariff so the app can render it dynamically.
+// Tariff — kept in one place server-side so callback.ts and create.ts always
+// agree. Exposed via /api/tariff so the app can render it dynamically.
 export const TARIFF = {
   version: process.env.TARIFF_VERSION ?? "1",
-  whPerNgn: Number(process.env.WH_PER_NGN ?? "1"),  // 1 Wh per ₦1 placeholder
-  minNgn: 100,      // ₦100 minimum top-up
-  maxNgn: 100_000,  // ₦100,000 maximum top-up
+  whPerNgn: Number(process.env.WH_PER_NGN ?? "1"), // 1 Wh per ₦1 placeholder
+  minNgn: 100, // ₦100 minimum top-up
+  maxNgn: 100_000, // ₦100,000 maximum top-up
 };
-
-function buildReturnUrls(reference: string) {
-  const webUrl = (process.env.PUBLIC_WEB_URL ?? "https://energitoken.vercel.app").replace(/\/$/, "");
-  return {
-    returnUrl: `${webUrl}/payment-complete?reference=${reference}`,
-    cancelUrl:  `${webUrl}/payment-complete?cancelled=true&reference=${reference}`,
-  };
-}
 
 export default async function handler(req: Req, res: Res) {
   if (req.method !== "POST") {
@@ -48,7 +40,6 @@ export default async function handler(req: Req, res: Res) {
       res.status(400).json({ error: "amountNgn must be a number" });
       return;
     }
-    // Reject fractional naira — OPay works in kobo, avoid rounding surprises.
     if (!Number.isInteger(amountNgn)) {
       res.status(400).json({ error: "amountNgn must be a whole number (no fractions)" });
       return;
@@ -62,32 +53,27 @@ export default async function handler(req: Req, res: Res) {
       return;
     }
 
-    // 16 random bytes (128 bits) -- the previous 4 bytes (32 bits) combined
-    // with a predictable timestamp prefix made references guessable enough
-    // to be a realistic concern for an endpoint whose reference is the only
-    // input needed to probe order state.
-    const reference = `etk_${Date.now()}_${randomBytes(16).toString("hex")}`;
-    const whAmount   = Math.floor(amountNgn * TARIFF.whPerNgn);
-    const { returnUrl, cancelUrl } = buildReturnUrls(reference);
-    const backendUrl = (process.env.PUBLIC_BACKEND_URL ?? "https://energitoken.vercel.app").replace(/\/$/, "");
-    const callbackUrl = `${backendUrl}/api/opay/callback`;
+    // 16 random bytes (128 bits) of entropy, prefixed with a timestamp only
+    // for rough chronological sortability in the Firebase console -- not
+    // relied on for uniqueness or unguessability.
+    const txRef = `etk_${Date.now()}_${randomBytes(16).toString("hex")}`;
+    const whAmount = Math.floor(amountNgn * TARIFF.whPerNgn);
+    const webUrl = (process.env.PUBLIC_WEB_URL ?? "https://energitoken.vercel.app").replace(/\/$/, "");
+    const redirectUrl = `${webUrl}/payment-complete`;
 
-    const opayResponse = await createCashierPayment({
-      reference,
+    const { link } = await createPayment({
+      txRef,
       amountNgn,
-      returnUrl,
-      cancelUrl,
-      callbackUrl,
-      userEmail: typeof email === "string" ? email : undefined,
+      redirectUrl,
+      customerEmail: typeof email === "string" ? email : undefined,
     });
 
     const now = Date.now();
-    await ordersRef().child(reference).set({
+    await ordersRef().child(txRef).set({
       walletAddress,
       amountNgn,
       whAmount,
       status: "initial",
-      orderNo: opayResponse.data?.orderNo ?? null,
       // Store tariff snapshot so we can audit any future tariff change impact.
       tariffVersion: TARIFF.version,
       whPerNgn: TARIFF.whPerNgn,
@@ -95,9 +81,9 @@ export default async function handler(req: Req, res: Res) {
       updatedAt: now,
     });
 
-    res.status(200).json({ reference, cashierUrl: opayResponse.data?.cashierUrl });
+    res.status(200).json({ reference: txRef, checkoutUrl: link });
   } catch (error) {
-    console.error("create-payment failed", error);
+    console.error("payments/create failed", error);
     res.status(500).json({ error: error instanceof Error ? error.message : "Unknown error" });
   }
 }

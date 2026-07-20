@@ -16,7 +16,7 @@ export const mockTransactions: TxRecord[] = [
     hash: "0xa1b2c3d4e5f60718293a4b5c6d7e8f901234567890abcdef1234567890abcd",
     direction: "mint",
     amountWh: 10000,
-    counterparty: "Oracle (OPay top-up)",
+    counterparty: "Oracle (top-up)",
     timestamp: now - hour * 50,
   },
   {

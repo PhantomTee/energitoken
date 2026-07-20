@@ -68,7 +68,7 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
 
 /**
  * Reads this wallet's history straight from chain event logs -- Transfer
- * (P2P sends/receives), Minted (OPay top-ups), Consumed (meter usage).
+ * (P2P sends/receives), Minted (top-ups), Consumed (meter usage).
  * Transfer also fires on mint/burn under the hood (standard ERC20 behavior),
  * so logs touching the zero address are skipped since Minted/Consumed
  * already cover those.
@@ -131,7 +131,7 @@ export async function getTransactionHistory(walletAddress: string): Promise<TxRe
       } else if (parsed.name === "Minted") {
         const { to, wh } = parsed.args;
         if (to.toLowerCase() === lowerWallet) {
-          raw.push({ hash: log.transactionHash, direction: "mint", amountWh: Number(wh), counterparty: "Oracle (OPay top-up)", blockNumber: log.blockNumber });
+          raw.push({ hash: log.transactionHash, direction: "mint", amountWh: Number(wh), counterparty: "Oracle (top-up)", blockNumber: log.blockNumber });
         }
       } else if (parsed.name === "Consumed") {
         const { from, wh } = parsed.args;
