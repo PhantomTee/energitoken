@@ -33,7 +33,10 @@ type QueryStatusResponse = {
 export async function queryPaymentStatus(reference: string): Promise<OPayPaymentStatus> {
   const { secretKey, merchantId, baseUrl } = getOpaySecretConfig();
 
-  const bodyJson = JSON.stringify({ reference, country: "NG" });
+  // Field order matches OPay's own documented signing example verbatim
+  // (country before reference) -- if their verification does a literal
+  // byte-for-byte match rather than re-serializing, order matters.
+  const bodyJson = JSON.stringify({ country: "NG", reference });
   const signature = createHmac("sha512", secretKey).update(bodyJson).digest("hex");
 
   const response = await fetch(`${baseUrl}/api/v1/international/cashier/status`, {
@@ -91,8 +94,11 @@ function getOpayConfig() {
  * private/secret key (for HMAC signing), not the public key used to create
  * a Cashier order. */
 function getOpaySecretConfig() {
-  const secretKey = process.env.OPAY_SECRET_KEY;
-  const merchantId = process.env.OPAY_MERCHANT_ID;
+  // .trim() defends against a trailing newline/space picked up when the key
+  // was copy-pasted into the Vercel CLI/dashboard -- that would silently
+  // corrupt every HMAC signature with no other symptom than "auth failed".
+  const secretKey = process.env.OPAY_SECRET_KEY?.trim();
+  const merchantId = process.env.OPAY_MERCHANT_ID?.trim();
   const baseUrl = process.env.OPAY_BASE_URL ?? "https://testapi.opaycheckout.com";
 
   if (!secretKey || !merchantId) {
