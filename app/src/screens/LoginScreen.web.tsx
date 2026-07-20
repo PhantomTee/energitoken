@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { useLoginWithEmail, useCreateWallet, usePrivy } from "@privy-io/react-auth";
 import { useWallet } from "../hooks/useWallet";
 import { markJustLoggedIn } from "../services/loginFlag";
+import { friendlyAuthError } from "../services/authErrors";
 import { colors } from "../theme/colors";
 import { typography, spacing, radius } from "../theme/typography";
 import { AdinkraAccent } from "../theme/motifs/AdinkraAccent";
@@ -43,7 +44,7 @@ export default function LoginScreen() {
   useEffect(() => {
     if (state.status !== "error") return;
     const msg = state.error?.message ?? "Something went wrong. Please try again.";
-    setFormError(msg);
+    setFormError(friendlyAuthError(msg));
   }, [state.status, state]);
 
   // ── Redirect once wallet is confirmed ────────────────────────────────────
@@ -93,11 +94,7 @@ export default function LoginScreen() {
       otpSent.current = true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      setFormError(
-        msg.toLowerCase().includes("timeout") || msg.toLowerCase().includes("aborted")
-          ? "Connection timed out. Please check your network and try again."
-          : msg || "Couldn't send the code. Please try again."
-      );
+      setFormError(friendlyAuthError(msg) || "Couldn't send the code. Please try again.");
     }
   };
 
@@ -109,7 +106,7 @@ export default function LoginScreen() {
       await loginWithCode({ code: trimmed });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      setFormError(msg || "Couldn't verify the code. Please try again.");
+      setFormError(friendlyAuthError(msg) || "Couldn't verify the code. Please try again.");
     }
   };
 

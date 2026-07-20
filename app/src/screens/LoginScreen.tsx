@@ -7,6 +7,7 @@ import { typography, spacing, radius } from "../theme/typography";
 import { AdinkraAccent } from "../theme/motifs/AdinkraAccent";
 import { recordFullLogin } from "../services/quickAuth";
 import { markJustLoggedIn } from "../services/loginFlag";
+import { friendlyAuthError } from "../services/authErrors";
 
 /**
  * Privy's mobile SDK authenticates by emailing a one-time 6-digit code
@@ -23,7 +24,7 @@ export default function LoginScreen() {
   const { create: createEthereumWallet } = useEmbeddedEthereumWallet();
 
   const { sendCode, loginWithCode, state } = useLoginWithEmail({
-    onError: (err) => setError(err.message ?? "Something went wrong. Please try again."),
+    onError: (err) => setError(friendlyAuthError(err.message ?? "Something went wrong. Please try again.")),
     onLoginSuccess: async () => {
       // createOnLogin: "users-without-wallets" already covers this, but calling
       // create() again is a safe no-op if a wallet already exists.
@@ -52,11 +53,7 @@ export default function LoginScreen() {
       await sendCode({ email });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg.toLowerCase().includes("timeout") || msg.toLowerCase().includes("aborted")) {
-        setError("Connection timed out. Please check your network and try again.");
-      } else {
-        setError(msg || "Couldn't send the code. Please try again.");
-      }
+      setError(friendlyAuthError(msg) || "Couldn't send the code. Please try again.");
     }
   };
 
@@ -67,7 +64,7 @@ export default function LoginScreen() {
       await loginWithCode({ code, email });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      setError(msg || "Couldn't verify the code. Please try again.");
+      setError(friendlyAuthError(msg) || "Couldn't verify the code. Please try again.");
     }
   };
 
