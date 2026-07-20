@@ -11,7 +11,7 @@ type Res = ServerResponse & { status: (code: number) => Res; json: (body: unknow
 export const TARIFF = {
   version: process.env.TARIFF_VERSION ?? "1",
   whPerNgn: Number(process.env.WH_PER_NGN ?? "1"),  // 1 Wh per ₦1 placeholder
-  minNgn: 1_000,    // ₦1,000 minimum top-up
+  minNgn: 100,      // ₦100 minimum top-up
   maxNgn: 100_000,  // ₦100,000 maximum top-up
 };
 

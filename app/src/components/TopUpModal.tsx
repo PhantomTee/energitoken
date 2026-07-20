@@ -6,6 +6,7 @@ import { typography, spacing, radius } from "../theme/typography";
 
 const BACKEND_URL = Platform.OS === "web" ? "" : process.env.EXPO_PUBLIC_BACKEND_URL ?? "https://energitoken.vercel.app";
 const NGN_PER_UNIT = 1000; // 1 unit = 1 kWh = 1000 Wh, WH_PER_NGN=1 on server → 1000 NGN per unit
+const MIN_TOP_UP_NGN = 100; // must match TARIFF.minNgn in app/api/opay/create-payment.ts
 
 type Props = {
   visible: boolean;
@@ -45,8 +46,8 @@ export function TopUpModal({ visible, onClose, walletAddress, onMinted }: Props)
       setError("Enter an amount greater than 0.");
       return;
     }
-    if (amount < NGN_PER_UNIT) {
-      setError(`Minimum is ₦${NGN_PER_UNIT} (= 1 unit / 1 kWh).`);
+    if (amount < MIN_TOP_UP_NGN) {
+      setError(`Minimum top-up is ₦${MIN_TOP_UP_NGN}.`);
       return;
     }
     setError(null);
@@ -121,7 +122,7 @@ export function TopUpModal({ visible, onClose, walletAddress, onMinted }: Props)
             <>
               <Text style={[typography.h2, styles.title]}>Top up with OPay</Text>
               <Text style={[typography.body, styles.subtitle]}>
-                ₦1,000 = 1 unit (1 kWh). You'll be redirected to OPay's secure checkout.
+                ₦1,000 = 1 unit (1 kWh) · minimum ₦{MIN_TOP_UP_NGN}. You'll be redirected to OPay's secure checkout.
               </Text>
               <Text style={[typography.label, styles.fieldLabel]}>AMOUNT (NGN)</Text>
               <TextInput
