@@ -132,6 +132,12 @@ export async function createCashierPayment(
       cancelUrl: input.cancelUrl,
       callbackUrl: input.callbackUrl,
       customerVisitSource: "BROWSER",
+      // Force the browser-based payment flow instead of deep-linking into
+      // the native OPay app -- on a device without the app installed, the
+      // checkout page can get stuck waiting on that deep link (observed as
+      // "Continue to OPay" never redirecting, alongside a failed fraud-check
+      // websocket) instead of falling back to in-page payment methods.
+      evokeOpay: false,
       product: {
         name: "EnergiToken top-up",
         description: "Prepaid household electricity credit (ENGY)",
