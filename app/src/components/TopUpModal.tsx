@@ -15,7 +15,10 @@ type Props = {
   onMinted?: () => void;
 };
 
-async function pollOrderStatus(reference: string, maxAttempts = 12): Promise<"minted" | "failed" | "timeout"> {
+async function pollOrderStatus(
+  reference: string,
+  maxAttempts = 12
+): Promise<"minted" | "failed" | "mint_failed" | "timeout"> {
   for (let i = 0; i < maxAttempts; i++) {
     await new Promise((r) => setTimeout(r, 5000));
     try {
@@ -24,6 +27,9 @@ async function pollOrderStatus(reference: string, maxAttempts = 12): Promise<"mi
       const json = await res.json();
       if (json.status === "minted") return "minted";
       if (json.status === "failed") return "failed";
+      // Payment verified successful, but the on-chain mint itself failed --
+      // a terminal state distinct from "still processing".
+      if (json.status === "mint_failed") return "mint_failed";
     } catch {
       // network glitch — keep polling
     }
@@ -76,6 +82,10 @@ export function TopUpModal({ visible, onClose, walletAddress, onMinted }: Props)
           onMinted?.();
         } else if (result === "failed") {
           setError("Payment was not completed. No charge was made.");
+        } else if (result === "mint_failed") {
+          setError(
+            "Your payment went through, but we hit a hiccup crediting your balance. This is on our side, not yours — it's being retried and should resolve shortly."
+          );
         } else {
           // timeout — payment may still be processing
           setError("Payment is still being confirmed. Check your balance in a few minutes.");

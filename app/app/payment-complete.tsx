@@ -7,7 +7,7 @@ import { AdinkraAccent } from "../src/theme/motifs/AdinkraAccent";
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL ?? "https://energitoken.vercel.app";
 
-type OrderStatus = "polling" | "minted" | "failed" | "cancelled" | "timeout";
+type OrderStatus = "polling" | "minted" | "failed" | "mint_failed" | "cancelled" | "timeout";
 
 /**
  * Where the hosted checkout page redirects the browser after the user pays,
@@ -46,6 +46,11 @@ export default function PaymentCompleteScreen() {
           if (!cancelled) {
             if (json.status === "minted") { setStatus("minted"); return; }
             if (json.status === "failed") { setStatus("failed"); return; }
+            // Payment was verified successful by the provider, but the
+            // on-chain mint step itself failed (e.g. an RPC hiccup) --
+            // distinct from "still processing" so the user isn't left
+            // waiting on a state that's already terminal.
+            if (json.status === "mint_failed") { setStatus("mint_failed"); return; }
           }
         }
       } catch {
@@ -73,6 +78,11 @@ export default function PaymentCompleteScreen() {
       title: "Payment not completed",
       body: "Your payment could not be confirmed. No charge was made. You can try again from the dashboard.",
       titleColor: colors.danger,
+    },
+    mint_failed: {
+      title: "Payment received — crediting your balance",
+      body: "Your payment went through, but we hit a hiccup adding the credit to your balance. This is on our side, not yours — it's being retried automatically and should resolve shortly. If it doesn't, contact support with this reference.",
+      titleColor: colors.warning,
     },
     cancelled: {
       title: "Payment cancelled",
