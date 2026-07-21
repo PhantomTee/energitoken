@@ -14,7 +14,9 @@ const RETRY_DELAY_MS = 1500;
  * never shipped to the mobile app.
  */
 export async function mintEngy(toAddress: string, whAmount: number): Promise<string> {
-  const rpcUrl = process.env.AMOY_RPC_URL ?? "https://rpc-amoy.polygon.technology";
+  // rpc-amoy.polygon.technology (old default) is confirmed dead -- doesn't
+  // even resolve via DNS anymore, not just flaky.
+  const rpcUrl = process.env.AMOY_RPC_URL ?? "https://polygon-amoy-bor-rpc.publicnode.com";
   const oraclePrivateKey = process.env.ORACLE_PRIVATE_KEY;
 
   if (!oraclePrivateKey) {

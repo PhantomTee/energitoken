@@ -9,7 +9,9 @@ import contractInfo from "../../src/config/contract.json";
 export async function burnEngy(fromAddress: string, whAmount: number): Promise<string> {
   if (whAmount <= 0) throw new Error("whAmount must be positive");
 
-  const rpcUrl = process.env.AMOY_RPC_URL ?? "https://rpc-amoy.polygon.technology";
+  // rpc-amoy.polygon.technology (old default) is confirmed dead -- doesn't
+  // even resolve via DNS anymore, not just flaky.
+  const rpcUrl = process.env.AMOY_RPC_URL ?? "https://polygon-amoy-bor-rpc.publicnode.com";
   const oraclePrivateKey = process.env.ORACLE_PRIVATE_KEY;
   if (!oraclePrivateKey) throw new Error("Missing ORACLE_PRIVATE_KEY env var");
 

@@ -13,7 +13,10 @@ const contractInfo: { address: string; abi: unknown } = require("../config/contr
 export const CONTRACT_ADDRESS: string = contractInfo.address;
 export const CONTRACT_ABI = contractInfo.abi as ethers.InterfaceAbi;
 
-const AMOY_RPC_URL = process.env.EXPO_PUBLIC_AMOY_RPC_URL ?? "https://rpc-amoy.polygon.technology";
+// rpc-amoy.polygon.technology (the old default) stopped resolving entirely --
+// confirmed dead via direct DNS lookup, not just flaky. publicnode.com is a
+// reliable, no-API-key-required public RPC aggregator.
+const AMOY_RPC_URL = process.env.EXPO_PUBLIC_AMOY_RPC_URL ?? "https://polygon-amoy-bor-rpc.publicnode.com";
 export const AMOY_CHAIN_ID = 80002n;
 
 let readProvider: ethers.JsonRpcProvider | null = null;
