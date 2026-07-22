@@ -20,11 +20,20 @@ export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Shown alongside the friendly message while we're diagnosing a bug where
+  // the friendly-error mapping was too broad (matched any message containing
+  // "network", not just real connectivity failures) and may have been
+  // mislabeling a different underlying error. Remove once resolved.
+  const [rawError, setRawError] = useState<string | null>(null);
 
   const { create: createEthereumWallet } = useEmbeddedEthereumWallet();
 
   const { sendCode, loginWithCode, state } = useLoginWithEmail({
-    onError: (err) => setError(friendlyAuthError(err.message ?? "Something went wrong. Please try again.")),
+    onError: (err) => {
+      const msg = err.message ?? "Something went wrong. Please try again.";
+      setError(friendlyAuthError(msg));
+      setRawError(msg);
+    },
     onLoginSuccess: async () => {
       // createOnLogin: "users-without-wallets" already covers this, but calling
       // create() again is a safe no-op if a wallet already exists.
@@ -48,23 +57,27 @@ export default function LoginScreen() {
 
   const handleSendCode = async () => {
     setError(null);
+    setRawError(null);
     if (!email.includes("@")) return;
     try {
       await sendCode({ email });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(friendlyAuthError(msg) || "Couldn't send the code. Please try again.");
+      setRawError(msg);
     }
   };
 
   const handleSubmitCode = async () => {
     setError(null);
+    setRawError(null);
     if (code.length < 4) return;
     try {
       await loginWithCode({ code, email });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(friendlyAuthError(msg) || "Couldn't verify the code. Please try again.");
+      setRawError(msg);
     }
   };
 
@@ -138,6 +151,7 @@ export default function LoginScreen() {
         )}
 
         {error && <Text style={[typography.caption, styles.errorText]}>{error}</Text>}
+        {rawError && <Text style={[typography.caption, styles.rawErrorText]}>Debug: {rawError}</Text>}
       </View>
       </View>
     </KeyboardAvoidingView>
@@ -189,4 +203,5 @@ const styles = StyleSheet.create({
   buttonDisabled: { opacity: 0.5 },
   buttonText: { color: colors.neutral.white },
   errorText: { color: colors.terracotta[300], marginTop: spacing.md },
+  rawErrorText: { color: colors.indigo[300], marginTop: spacing.xs, opacity: 0.7 },
 });
