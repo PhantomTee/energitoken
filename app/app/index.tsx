@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Platform } from "react-native";
+import { Platform, AppState } from "react-native";
 import { Redirect } from "expo-router";
 import { useWallet } from "../src/hooks/useWallet";
 import { BrandSplash } from "../src/components/BrandSplash";
@@ -24,6 +24,25 @@ type Destination = "/login" | "/unlock" | PostAuthDestination;
 export default function Index() {
   const { isReady, isAuthenticated, walletAddress, logout } = useWallet();
   const [destination, setDestination] = useState<Destination | null>(null);
+  // Some Android OEM skins (observed: ColorOS/Oplus) aggressively freeze a
+  // just-launched app's background work to save battery, including native
+  // module callbacks like Privy's session-restore check. isReady can end up
+  // genuinely resolved on the native side well before React ever gets
+  // nudged to re-render with it -- the app then sits on the splash screen
+  // indefinitely until something else (e.g. switching apps) forces a
+  // re-render. Bumping this on every foreground transition re-runs the
+  // effect below even if isReady/isAuthenticated didn't "change" from
+  // React's point of view, closing that gap.
+  const [foregroundNonce, setForegroundNonce] = useState(0);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        setForegroundNonce((n) => n + 1);
+      }
+    });
+    return () => subscription.remove();
+  }, []);
 
   useEffect(() => {
     if (!isReady) return;
@@ -68,7 +87,7 @@ export default function Index() {
     return () => {
       cancelled = true;
     };
-  }, [isReady, isAuthenticated, walletAddress, logout]);
+  }, [isReady, isAuthenticated, walletAddress, logout, foregroundNonce]);
 
   if (!destination) {
     return <BrandSplash />;
