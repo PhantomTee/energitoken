@@ -24,6 +24,9 @@ app/web-build/
 firebase/firebase.config.ts
 firebase/serviceAccountKey.json
 
+# secrets scratchpad
+SECRETS.txt
+
 # OS / editor
 .DS_Store
 .vscode/
