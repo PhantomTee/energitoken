@@ -7,6 +7,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { PrivyProvider } from "@privy-io/expo";
 import { PRIVY_APP_ID, PRIVY_MOBILE_CLIENT_ID, privySupportedChains } from "../config/privy";
+import { resilientPrivyStorage } from "../services/resilientPrivyStorage";
 import { colors } from "../theme/colors";
 import { useAppFonts } from "../theme/useAppFonts";
 import { BrandSplash } from "../components/BrandSplash";
@@ -35,6 +36,9 @@ export default function RootLayout() {
         clientId={PRIVY_MOBILE_CLIENT_ID}
         supportedChains={privySupportedChains}
         config={{ embedded: { ethereum: { createOnLogin: "users-without-wallets" } } }}
+        // Recovers from corrupted persisted session data instead of getting
+        // stuck -- see resilientPrivyStorage.ts for the full diagnosis.
+        storage={resilientPrivyStorage}
       >
         <StatusBar style="light" />
         {/* edges=["top"] only -- each tab screen/ScrollView already handles its
