@@ -95,6 +95,20 @@ export default async function handler(req: Req, res: Res) {
       return;
     }
 
+    if (verified.status === "pending") {
+      // Not a final state -- e.g. a bank transfer awaiting settlement.
+      // Flutterwave will send another webhook once it resolves; don't mark
+      // "failed" here or the payment-complete screen shows a false failure
+      // to the user right before the success webhook silently mints anyway.
+      await ordersRef().child(txRef).update({
+        flwStatus: verified.status,
+        flwTransactionId: transactionId,
+        updatedAt: Date.now(),
+      });
+      res.status(200).json({ ok: true, minted: false, flwStatus: verified.status, pending: true });
+      return;
+    }
+
     if (verified.status !== "successful") {
       await ordersRef().child(txRef).update({
         status: "failed",

@@ -1,7 +1,7 @@
 import { adminDb } from "./firebaseAdmin";
 
 export type NotificationType =
-  | "topup"        // OPay payment minted
+  | "topup"        // Flutterwave payment minted
   | "consumption"  // tokens burned for energy used
   | "shed_warning" // budget threshold crossed (70/85/95%)
   | "transfer"     // credit received from another user

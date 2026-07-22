@@ -8,6 +8,7 @@
  * separate customer/payment-method/charge objects before you even get a
  * redirect link, which is unnecessary complexity for this use case.
  */
+import { createHash, timingSafeEqual } from "crypto";
 
 const FLW_BASE_URL = "https://api.flutterwave.com/v3";
 
@@ -120,13 +121,18 @@ export async function verifyTransactionById(id: number): Promise<FlutterwaveTran
 export function verifyWebhookSignature(receivedHash: string | undefined): boolean {
   const expected = process.env.FLW_SECRET_HASH?.trim();
   if (!expected || !receivedHash) return false;
-  if (receivedHash.length !== expected.length) return false;
 
-  // Manual constant-time compare -- avoids importing node:crypto's
-  // timingSafeEqual just for two same-length strings.
-  let mismatch = 0;
-  for (let i = 0; i < expected.length; i++) {
-    mismatch |= expected.charCodeAt(i) ^ receivedHash.charCodeAt(i);
-  }
-  return mismatch === 0;
+  // Compare against a fixed-length hash of both strings first, so a length
+  // mismatch doesn't short-circuit before any constant-time work happens --
+  // an early `return false` on `.length` differences is itself a timing
+  // side-channel (reveals the secret's length via response time). Padding
+  // both to the same fixed size (via a hash) means the comparison loop
+  // always runs the same amount of work regardless of input length.
+  const expectedHash = createHash("sha256").update(expected).digest();
+  const receivedHash_ = createHash("sha256").update(receivedHash).digest();
+
+  const lengthsMatch = expected.length === receivedHash.length;
+  const hashesMatch = timingSafeEqual(expectedHash, receivedHash_);
+
+  return lengthsMatch && hashesMatch;
 }

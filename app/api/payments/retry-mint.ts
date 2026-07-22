@@ -3,7 +3,7 @@ import { ordersRef } from "../_lib/firebaseAdmin";
 import { mintEngy } from "../_lib/mintEngy";
 import { sendNotification } from "../_lib/notify";
 
-type Req = IncomingMessage & { method?: string; body?: unknown };
+type Req = IncomingMessage & { method?: string; body?: unknown; headers: Record<string, string | string[] | undefined> };
 type Res = ServerResponse & { status: (code: number) => Res; json: (body: unknown) => void };
 
 /**
@@ -13,10 +13,22 @@ type Res = ServerResponse & { status: (code: number) => Res; json: (body: unknow
  * already in "mint_failed" state, which callback.ts only sets after its own
  * successful Flutterwave re-verification -- this never mints for an
  * unverified or fabricated order.
+ *
+ * Gated behind ORACLE_SECRET (same shared secret as /api/oracle/burn) --
+ * without this, anyone who learns an order reference (a log line, a client
+ * network trace, a support ticket) could trigger a mint with no credential
+ * at all.
  */
 export default async function handler(req: Req, res: Res) {
   if (req.method !== "POST") {
     res.status(405).json({ error: "Method not allowed" });
+    return;
+  }
+
+  const secret = process.env.ORACLE_SECRET;
+  const provided = req.headers["x-oracle-secret"];
+  if (secret && provided !== secret) {
+    res.status(401).json({ error: "Unauthorized" });
     return;
   }
 

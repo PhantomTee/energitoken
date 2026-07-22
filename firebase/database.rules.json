@@ -10,14 +10,14 @@
     "walletToDevice": {
       "$wallet": {
         ".read":  "auth != null && root.child('uidToWallet').child(auth.uid).val() == $wallet",
-        ".write": "auth != null && root.child('uidToWallet').child(auth.uid).val() == $wallet && (!data.exists() || data.val() == newData.val())"
+        ".write": false
       }
     },
 
     "deviceToWallet": {
       "$deviceId": {
         ".read":  "auth != null",
-        ".write": "auth != null && newData.val() == root.child('uidToWallet').child(auth.uid).val() && (!data.exists() || data.val() == newData.val())"
+        ".write": false
       }
     },
 
@@ -84,7 +84,7 @@
     "directory": {
       ".read": "auth != null",
       "$emailKey": {
-        ".write": "auth != null && newData.val() == root.child('uidToWallet').child(auth.uid).val()"
+        ".write": "auth != null && newData.val() == root.child('uidToWallet').child(auth.uid).val() && (!data.exists() || data.val() == newData.val())"
       }
     }
   }

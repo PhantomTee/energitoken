@@ -15,7 +15,11 @@ export function friendlyAuthError(rawMessage: string): string {
   if (msg.includes("json parse") || msg.includes("unexpected character") || msg.includes("unexpected token")) {
     return "Couldn't reach the login server. Check your internet connection (or Wi-Fi sign-in page) and try again.";
   }
-  if (msg.includes("network")) {
+  // Deliberately specific -- a bare "network" substring also matches Privy
+  // errors like "unsupported network" or "network mismatch" (chain/config
+  // problems, nothing to do with connectivity), which this was silently
+  // mislabeling as a connection issue.
+  if (msg.includes("network error") || msg.includes("network request failed") || msg.includes("no internet")) {
     return "No network connection. Check your internet and try again.";
   }
   return rawMessage;

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform } from "react-native"; // Platform kept for iOS keyboard behavior
 import { useRouter } from "expo-router";
 import { useLoginWithEmail, useEmbeddedEthereumWallet } from "@privy-io/expo";
@@ -20,37 +20,53 @@ export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
-  // Shown alongside the friendly message while we're diagnosing a bug where
-  // the friendly-error mapping was too broad (matched any message containing
-  // "network", not just real connectivity failures) and may have been
-  // mislabeling a different underlying error. Remove once resolved.
   const [rawError, setRawError] = useState<string | null>(null);
+  const [completing, setCompleting] = useState(false);
 
   const { create: createEthereumWallet } = useEmbeddedEthereumWallet();
 
-  const { sendCode, loginWithCode, state } = useLoginWithEmail({
-    onError: (err) => {
-      const msg = err.message ?? "Something went wrong. Please try again.";
-      setError(friendlyAuthError(msg));
-      setRawError(msg);
-    },
-    onLoginSuccess: async () => {
-      // createOnLogin: "users-without-wallets" already covers this, but calling
-      // create() again is a safe no-op if a wallet already exists.
+  // No callbacks passed to useLoginWithEmail -- inline onError/onLoginSuccess
+  // functions get a new reference on every render (every keystroke in the
+  // code field), and Privy's hook resets its internal OTP session state
+  // when it sees the options object change. That reset was the likely real
+  // cause of intermittent login failures: the web screen already had this
+  // exact bug documented and fixed; the native screen still had it. Drive
+  // everything from state.status instead, same pattern as the web screen.
+  const { sendCode, loginWithCode, state } = useLoginWithEmail();
+
+  // ── Completion handler ───────────────────────────────────────────────────
+  useEffect(() => {
+    if (state.status !== "done") return;
+    setCompleting(true);
+    (async () => {
       try {
-        await createEthereumWallet();
-      } catch {
-        // wallet likely already exists — fine to ignore
+        // createOnLogin: "users-without-wallets" already covers this, but
+        // calling create() again is a safe no-op if a wallet already exists.
+        try {
+          await createEthereumWallet();
+        } catch {
+          // wallet likely already exists — fine to ignore
+        }
+        // Starts this device's 12h quick-unlock window (src/services/quickAuth.ts).
+        await recordFullLogin();
+        // Hand off to "/" (index.tsx) — it checks device pairing and sends
+        // new users to onboarding instead of an unpaired dashboard. The flag
+        // skips the biometric detour that cold starts get.
+        markJustLoggedIn();
+        router.replace("/");
+      } finally {
+        setCompleting(false);
       }
-      // Starts this device's 12h quick-unlock window (src/services/quickAuth.ts).
-      await recordFullLogin();
-      // Hand off to "/" (index.tsx) — it checks device pairing and sends new
-      // users to onboarding instead of an unpaired dashboard. The flag skips
-      // the biometric detour that cold starts get.
-      markJustLoggedIn();
-      router.replace("/");
-    },
-  });
+    })();
+  }, [state.status, createEthereumWallet, router]);
+
+  // ── Error handler ────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (state.status !== "error") return;
+    const msg = state.error?.message ?? "Something went wrong. Please try again.";
+    setError(friendlyAuthError(msg));
+    setRawError(msg);
+  }, [state.status, state]);
 
   const awaitingCode = state.status === "awaiting-code-input" || state.status === "submitting-code";
   const sendingCode = state.status === "sending-code";
@@ -134,14 +150,14 @@ export default function LoginScreen() {
               value={code}
               onChangeText={setCode}
               keyboardType="number-pad"
-              editable={state.status !== "submitting-code"}
+              editable={state.status !== "submitting-code" && !completing}
             />
             <Pressable
-              style={[styles.button, (code.length < 4 || state.status === "submitting-code") && styles.buttonDisabled]}
+              style={[styles.button, (code.length < 4 || state.status === "submitting-code" || completing) && styles.buttonDisabled]}
               onPress={handleSubmitCode}
-              disabled={code.length < 4 || state.status === "submitting-code"}
+              disabled={code.length < 4 || state.status === "submitting-code" || completing}
             >
-              {state.status === "submitting-code" ? (
+              {state.status === "submitting-code" || completing ? (
                 <ActivityIndicator color={colors.neutral.white} />
               ) : (
                 <Text style={[typography.bodyStrong, styles.buttonText]}>Verify & sign in</Text>
