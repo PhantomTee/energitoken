@@ -16,12 +16,7 @@ const CONTRACT_ADDRESS = "0x8493324De9578BF390092ed6c4a5b1033fBF8048";
 const EXPLORER_URL = `https://amoy.polygonscan.com/address/${CONTRACT_ADDRESS}`;
 const GITHUB_URL = "https://github.com/PhantomTee/energitoken";
 
-const LANGUAGES = [
-  { code: "en", label: "English", available: true },
-  { code: "yo", label: "Yorùbá", available: false },
-  { code: "ha", label: "Hausa", available: false },
-  { code: "ig", label: "Igbo", available: false },
-] as const;
+const LANGUAGES = [{ code: "en", label: "English", available: true }] as const;
 
 function SectionHeader({ children }: { children: string }) {
   return <Text style={[typography.label, styles.sectionHeader]}>{children}</Text>;
@@ -179,26 +174,13 @@ export default function ProfileScreen() {
       {/* ── Language ── */}
       <SectionHeader>LANGUAGE</SectionHeader>
       <View style={styles.card}>
-        {LANGUAGES.map((lang, i) => (
-          <React.Fragment key={lang.code}>
-            {i > 0 && <View style={styles.divider} />}
-            <Pressable
-              style={[styles.row, !lang.available && styles.rowDisabled]}
-              onPress={() => lang.available && setLanguage(lang.code)}
-              disabled={!lang.available}
-            >
-              <Text style={[typography.body, styles.rowLabel, !lang.available && styles.rowLabelMuted]}>
-                {lang.label}
-              </Text>
-              {!lang.available ? (
-                <Text style={[typography.caption, styles.comingSoon]}>Coming soon</Text>
-              ) : (
-                <Text style={[typography.bodyStrong, language === lang.code ? styles.radioOn : styles.radioOff]}>
-                  {language === lang.code ? "●" : "○"}
-                </Text>
-              )}
-            </Pressable>
-          </React.Fragment>
+        {LANGUAGES.map((lang) => (
+          <Pressable key={lang.code} style={styles.row} onPress={() => setLanguage(lang.code)}>
+            <Text style={[typography.body, styles.rowLabel]}>{lang.label}</Text>
+            <Text style={[typography.bodyStrong, language === lang.code ? styles.radioOn : styles.radioOff]}>
+              {language === lang.code ? "●" : "○"}
+            </Text>
+          </Pressable>
         ))}
       </View>
 
@@ -314,14 +296,11 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: spacing.sm },
-  rowDisabled: { opacity: 0.5 },
   rowLabel: { color: colors.textPrimary },
-  rowLabelMuted: { color: colors.textSecondary },
   rowLabelDanger: { color: colors.danger },
   rowValue: { color: colors.textSecondary },
   divider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.xs },
   chevron: { color: colors.textSecondary, fontSize: 16 },
-  comingSoon: { color: colors.textSecondary, opacity: 0.6 },
   radioOn: { color: colors.terracotta[400] },
   radioOff: { color: colors.textSecondary },
   logoutButton: {
