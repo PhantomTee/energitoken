@@ -43,11 +43,12 @@ export default function RootLayout() {
         <StatusBar style="light" />
         {/* edges=["top"] only -- each tab screen/ScrollView already handles its
             own bottom padding, and the tab bar sits at the true screen bottom.
-            Extra 46px on top of the measured inset -- the raw inset alone
-            still felt tight against the status bar/notch. */}
+            Moderate 16px on top of the measured inset -- enough breathing
+            room without the excessive gap the earlier 46px left. */}
         <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={["top"]}>
-          <View style={{ height: 46 }} />
+          <View style={{ height: 16 }} />
           <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
+            <Stack.Screen name="welcome" />
             <Stack.Screen name="login" />
             <Stack.Screen name="unlock" />
             <Stack.Screen name="onboarding" />

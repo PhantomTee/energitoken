@@ -38,6 +38,7 @@ export function BrandSplash() {
         <AdinkraAccent size={72} color={colors.terracotta[400]} dotColor={colors.indigo[400]} opacity={1} />
       </View>
       <Text style={[typography.label, styles.wordmark]}>ENERGITOKEN</Text>
+      <Text style={[typography.caption, styles.tagline]}>Your energy. Your budget. Your control.</Text>
     </View>
   );
 }
@@ -47,4 +48,5 @@ const styles = StyleSheet.create({
   ringWrap: { alignItems: "center", justifyContent: "center", width: 72, height: 72 },
   pulseRing: { position: "absolute" },
   wordmark: { color: colors.terracotta[400], marginTop: spacing.lg, letterSpacing: 2 },
+  tagline: { color: colors.indigo[100], marginTop: spacing.xs, opacity: 0.75 },
 });

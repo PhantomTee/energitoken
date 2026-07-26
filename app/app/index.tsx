@@ -6,8 +6,9 @@ import { BrandSplash } from "../src/components/BrandSplash";
 import { resolvePostAuthDestination, PostAuthDestination } from "../src/services/postAuthRouting";
 import { isWithinQuickAuthWindow, clearFullLogin } from "../src/services/quickAuth";
 import { consumeJustLoggedIn } from "../src/services/loginFlag";
+import { hasSeenOnboarding } from "../src/services/firstLaunch";
 
-type Destination = "/login" | "/unlock" | PostAuthDestination;
+type Destination = "/login" | "/unlock" | "/welcome" | PostAuthDestination;
 
 /**
  * THE routing brain. Every screen that finishes an auth step navigates back
@@ -47,12 +48,22 @@ export default function Index() {
   useEffect(() => {
     if (!isReady) return;
 
-    if (!isAuthenticated || !walletAddress) {
-      setDestination("/login");
-      return;
-    }
-
     let cancelled = false;
+
+    if (!isAuthenticated || !walletAddress) {
+      // Welcome carousel is a native-only, first-install experience --
+      // shown once, before the user has ever reached login.
+      if (Platform.OS === "web") {
+        setDestination("/login");
+        return;
+      }
+      hasSeenOnboarding().then((seen) => {
+        if (!cancelled) setDestination(seen ? "/login" : "/welcome");
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
 
     (async () => {
       try {

@@ -1,5 +1,8 @@
+import { Platform } from "react-native";
 import { ref, get } from "firebase/database";
 import { db } from "./firebase";
+
+const BACKEND_URL = Platform.OS === "web" ? "" : process.env.EXPO_PUBLIC_BACKEND_URL ?? "https://energitoken.vercel.app";
 
 export const DEVICE_CODE_PATTERN = /^[0-9A-Fa-f]{6}$/;
 
@@ -26,7 +29,7 @@ export async function claimDevice(rawDeviceId: string, walletAddress: string): P
     throw new Error("Device code must be 6 hex characters (0-9, A-F).");
   }
 
-  const response = await fetch("/api/devices/claim", {
+  const response = await fetch(`${BACKEND_URL}/api/devices/claim`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ deviceCode, walletAddress }),
@@ -37,6 +40,23 @@ export async function claimDevice(rawDeviceId: string, walletAddress: string): P
   if (!response.ok) {
     throw new Error(
       (json as { error?: string }).error ?? `Device claim failed (${response.status})`
+    );
+  }
+}
+
+/** Removes the caller's device pairing via /api/devices/unbind. */
+export async function unbindDevice(walletAddress: string): Promise<void> {
+  const response = await fetch(`${BACKEND_URL}/api/devices/unbind`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ walletAddress }),
+  });
+
+  const json = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(
+      (json as { error?: string }).error ?? `Unbind failed (${response.status})`
     );
   }
 }
