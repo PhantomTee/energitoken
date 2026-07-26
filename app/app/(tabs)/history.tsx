@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, Linking, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, FlatList, Pressable, Linking, ActivityIndicator, Platform } from "react-native";
 import { colors } from "../../src/theme/colors";
 import { typography, fonts, spacing, radius } from "../../src/theme/typography";
 import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
@@ -7,6 +7,9 @@ import { useWallet } from "../../src/hooks/useWallet";
 import { useTransactionHistory } from "../../src/hooks/useTransactionHistory";
 import { TxRecord, TxDirection } from "../../src/services/contractEvents";
 import { whToUnits } from "../../src/services/units";
+import { exportTransactionsCsv, exportBillingReportPdf } from "../../src/services/exportReport";
+
+const isWeb = Platform.OS === "web";
 
 const CONSUMPTION_DAYS = 14;
 
@@ -157,7 +160,25 @@ export default function HistoryScreen() {
     <View style={styles.screen}>
       <View style={styles.header}>
         <Text style={[typography.h1, styles.headerTitle]}>History</Text>
-        <AdinkraAccent size={28} color={colors.terracotta[400]} dotColor={colors.indigo[400]} opacity={1} />
+        <View style={styles.headerRight}>
+          {isWeb && walletAddress && transactions.length > 0 && (
+            <>
+              <Pressable
+                style={styles.exportButton}
+                onPress={() => exportTransactionsCsv(transactions, walletAddress)}
+              >
+                <Text style={[typography.dataXs, styles.exportButtonText]}>Export CSV</Text>
+              </Pressable>
+              <Pressable
+                style={styles.exportButton}
+                onPress={() => exportBillingReportPdf(transactions, walletAddress)}
+              >
+                <Text style={[typography.dataXs, styles.exportButtonText]}>Billing PDF</Text>
+              </Pressable>
+            </>
+          )}
+          <AdinkraAccent size={28} color={colors.terracotta[400]} dotColor={colors.indigo[400]} opacity={1} />
+        </View>
       </View>
 
       <View style={styles.filterRow}>
@@ -229,6 +250,16 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.sm,
   },
   headerTitle: { color: colors.textPrimary },
+  headerRight: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  exportButton: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    backgroundColor: colors.surface,
+  },
+  exportButtonText: { color: colors.indigo[400] },
   filterRow: { flexDirection: "row", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
   filterChip: {
     borderWidth: 1,

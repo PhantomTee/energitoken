@@ -8,7 +8,7 @@ import { isWithinQuickAuthWindow, clearFullLogin } from "../src/services/quickAu
 import { consumeJustLoggedIn } from "../src/services/loginFlag";
 import { hasSeenOnboarding } from "../src/services/firstLaunch";
 
-type Destination = "/login" | "/unlock" | "/welcome" | PostAuthDestination;
+type Destination = "/login" | "/unlock" | "/welcome" | "/landing" | PostAuthDestination;
 
 /**
  * THE routing brain. Every screen that finishes an auth step navigates back
@@ -54,7 +54,7 @@ export default function Index() {
       // Welcome carousel is a native-only, first-install experience --
       // shown once, before the user has ever reached login.
       if (Platform.OS === "web") {
-        setDestination("/login");
+        setDestination("/landing");
         return;
       }
       hasSeenOnboarding().then((seen) => {
