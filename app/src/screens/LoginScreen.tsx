@@ -8,6 +8,7 @@ import { AdinkraAccent } from "../theme/motifs/AdinkraAccent";
 import { recordFullLogin } from "../services/quickAuth";
 import { markJustLoggedIn } from "../services/loginFlag";
 import { friendlyAuthError } from "../services/authErrors";
+import { OtpInput } from "../components/OtpInput";
 
 /**
  * Privy's mobile SDK authenticates by emailing a one-time 6-digit code
@@ -84,18 +85,27 @@ export default function LoginScreen() {
     }
   };
 
-  const handleSubmitCode = async () => {
+  const handleSubmitCode = async (submittedCode: string) => {
     setError(null);
     setRawError(null);
-    if (code.length < 4) return;
+    if (submittedCode.length < 4) return;
     try {
-      await loginWithCode({ code, email });
+      await loginWithCode({ code: submittedCode, email });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(friendlyAuthError(msg) || "Couldn't verify the code. Please try again.");
       setRawError(msg);
     }
   };
+
+  // Auto-submit once all 6 digits are entered -- no separate "Verify" tap
+  // needed, matching the spec's auto-focus/auto-advance OTP box behaviour.
+  useEffect(() => {
+    if (code.length === 6 && state.status === "awaiting-code-input") {
+      handleSubmitCode(code);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code]);
 
   return (
     <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
@@ -112,12 +122,16 @@ export default function LoginScreen() {
         </View>
         <Text style={[typography.display, styles.title]}>Power, budgeted{"\n"}and shared.</Text>
         <Text style={[typography.body, styles.subtitle]}>
-          {awaitingCode
-            ? `Enter the code we sent to ${email}.`
-            : "Sign in with your email to see your household's energy budget and credit balance."}
+          {completing
+            ? "Setting up your wallet..."
+            : awaitingCode
+              ? `Enter the code we sent to ${email}.`
+              : "Sign in with your email to see your household's energy budget and credit balance."}
         </Text>
 
-        {!awaitingCode ? (
+        {completing ? (
+          <ActivityIndicator color={colors.terracotta[400]} size="large" style={styles.completingSpinner} />
+        ) : !awaitingCode ? (
           <>
             <TextInput
               style={styles.input}
@@ -143,19 +157,16 @@ export default function LoginScreen() {
           </>
         ) : (
           <>
-            <TextInput
-              style={[styles.input, styles.codeInput]}
-              placeholder="6-digit code"
-              placeholderTextColor={colors.neutral[500]}
+            <OtpInput
               value={code}
               onChangeText={setCode}
-              keyboardType="number-pad"
               editable={state.status !== "submitting-code" && !completing}
+              autoFocus
             />
             <Pressable
-              style={[styles.button, (code.length < 4 || state.status === "submitting-code" || completing) && styles.buttonDisabled]}
-              onPress={handleSubmitCode}
-              disabled={code.length < 4 || state.status === "submitting-code" || completing}
+              style={[styles.button, (code.length < 6 || state.status === "submitting-code" || completing) && styles.buttonDisabled]}
+              onPress={() => handleSubmitCode(code)}
+              disabled={code.length < 6 || state.status === "submitting-code" || completing}
             >
               {state.status === "submitting-code" || completing ? (
                 <ActivityIndicator color={colors.neutral.white} />
@@ -220,4 +231,5 @@ const styles = StyleSheet.create({
   buttonText: { color: colors.neutral.white },
   errorText: { color: colors.terracotta[300], marginTop: spacing.md },
   rawErrorText: { color: colors.indigo[300], marginTop: spacing.xs, opacity: 0.7 },
+  completingSpinner: { marginTop: spacing.xl },
 });
