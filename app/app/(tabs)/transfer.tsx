@@ -19,6 +19,7 @@ import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
 import { useWallet } from "../../src/hooks/useWallet";
 import { getEngyBalance, getWritableContract, runTransferPreflight, checkNetworkAndGas } from "../../src/services/contract";
 import { resolveEmailToAddress } from "../../src/services/directory";
+import { QRScanner } from "../../src/components/QRScanner";
 
 /**
  * Recipients can be a raw wallet address or an email -- emails are resolved
@@ -57,6 +58,9 @@ export default function TransferScreen() {
   const { walletAddress, getSigner } = useWallet();
   const [recipientMode, setRecipientMode] = useState<RecipientMode>("email");
   const [recipient, setRecipient] = useState("");
+  const [scannedAddress, setScannedAddress] = useState<string | null>(null);
+  const [scannerVisible, setScannerVisible] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
   const [showConfirm, setShowConfirm] = useState(false);
   const [txState, setTxState] = useState<TxState>("idle");
@@ -118,7 +122,14 @@ export default function TransferScreen() {
     return () => clearTimeout(timer);
   }, [recipient, isEmailEntry]);
 
-  const effectiveAddress = isEmailEntry ? resolvedAddress : isAddress(recipient) ? recipient : null;
+  const effectiveAddress =
+    recipientMode === "email"
+      ? resolvedAddress
+      : recipientMode === "qr"
+        ? scannedAddress
+        : isAddress(recipient)
+          ? recipient
+          : null;
   const amountWh = Number(amount);
   const isValidRecipient = effectiveAddress !== null;
   const isValidAmount = balanceWh !== null && amountWh > 0 && BigInt(Math.floor(amountWh)) <= balanceWh;
@@ -190,6 +201,8 @@ export default function TransferScreen() {
   const reset = () => {
     setRecipientMode("email");
     setRecipient("");
+    setScannedAddress(null);
+    setScanError(null);
     setAmount("");
     setTxState("idle");
     setTxHash(undefined);
@@ -231,6 +244,8 @@ export default function TransferScreen() {
               setRecipient("");
               setResolvedAddress(null);
               setResolveError(null);
+              setScannedAddress(null);
+              setScanError(null);
             }}
           >
             <Text style={[typography.caption, recipientMode === tab.key ? styles.tabTextActive : styles.tabText]}>
@@ -242,11 +257,26 @@ export default function TransferScreen() {
 
       {recipientMode === "qr" ? (
         <View style={styles.qrPlaceholder}>
-          <Text style={[typography.body, styles.qrPlaceholderText]}>
-            Scanning a recipient's QR code needs the device camera, which isn't available in this
-            update yet -- use Email or Wallet Address for now. Camera scanning is coming in a future
-            app update.
-          </Text>
+          {scannedAddress ? (
+            <>
+              <Text style={[typography.caption, styles.resolveSuccess]}>
+                Scanned {scannedAddress.slice(0, 6)}…{scannedAddress.slice(-4)}
+              </Text>
+              <Pressable style={styles.secondaryButton} onPress={() => setScannerVisible(true)}>
+                <Text style={[typography.bodyStrong, styles.secondaryButtonText]}>Scan a different code</Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <Text style={[typography.body, styles.qrPlaceholderText]}>
+                Scan the recipient's wallet QR code (shown on their Settings screen).
+              </Text>
+              <Pressable style={styles.button} onPress={() => setScannerVisible(true)} disabled={txState !== "idle"}>
+                <Text style={[typography.bodyStrong, styles.buttonText]}>Open camera</Text>
+              </Pressable>
+            </>
+          )}
+          {scanError && <Text style={[typography.caption, styles.errorHint]}>{scanError}</Text>}
         </View>
       ) : (
         <>
@@ -371,6 +401,22 @@ export default function TransferScreen() {
           </View>
         </View>
       </Modal>
+
+      <QRScanner
+        visible={scannerVisible}
+        onClose={() => setScannerVisible(false)}
+        title="Scan the recipient's wallet QR code"
+        onScanned={(data) => {
+          setScannerVisible(false);
+          if (isAddress(data)) {
+            setScannedAddress(data);
+            setScanError(null);
+          } else {
+            setScannedAddress(null);
+            setScanError("That QR code doesn't contain a valid wallet address.");
+          }
+        }}
+      />
     </ScrollView>
   );
 }
@@ -412,6 +458,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     padding: spacing.lg,
+    alignItems: "center",
+    gap: spacing.md,
   },
   qrPlaceholderText: { color: colors.textSecondary, textAlign: "center" },
   balanceHint: { color: colors.textSecondary, marginTop: spacing.xs },

@@ -3,7 +3,7 @@
     "name": "EnergiToken",
     "slug": "energitoken",
     "scheme": "energitoken",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -59,6 +59,12 @@
         {
           "icon": "./assets/android-icon-monochrome.png",
           "color": "#B5552E"
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "EnergiToken uses the camera to scan a meter's or recipient's QR code."
         }
       ]
     ],

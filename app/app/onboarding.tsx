@@ -7,6 +7,7 @@ import { AdinkraAccent } from "../src/theme/motifs/AdinkraAccent";
 import { useWallet } from "../src/hooks/useWallet";
 import { ensureFirebaseSession } from "../src/services/firebaseSession";
 import { claimDevice, DEVICE_CODE_PATTERN } from "../src/services/deviceBinding";
+import { QRScanner } from "../src/components/QRScanner";
 
 /**
  * Shown once, right after first login, when the wallet has no device bound
@@ -21,6 +22,7 @@ export default function OnboardingScreen() {
   const [code, setCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scannerVisible, setScannerVisible] = useState(false);
 
   // Guard: anyone here without a full session (auth + wallet) goes to login,
   // which owns the recovery path for wallet-less accounts.
@@ -90,7 +92,25 @@ export default function OnboardingScreen() {
             <Text style={[typography.bodyStrong, styles.buttonText]}>Link device</Text>
           )}
         </Pressable>
+
+        {Platform.OS !== "web" && (
+          <Pressable style={styles.scanButton} onPress={() => setScannerVisible(true)} disabled={submitting}>
+            <Text style={[typography.bodyStrong, styles.scanButtonText]}>Scan QR code instead</Text>
+          </Pressable>
+        )}
       </View>
+
+      <QRScanner
+        visible={scannerVisible}
+        onClose={() => setScannerVisible(false)}
+        title="Scan the QR code on your meter"
+        onScanned={(data) => {
+          setScannerVisible(false);
+          const match = data.toUpperCase().match(/[0-9A-F]{6}/);
+          setCode(match ? match[0] : data.toUpperCase().slice(0, 6));
+          setError(null);
+        }}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -121,4 +141,6 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.5 },
   buttonText: { color: colors.neutral.white },
+  scanButton: { alignItems: "center", marginTop: spacing.lg, padding: spacing.sm },
+  scanButtonText: { color: colors.indigo[300], textDecorationLine: "underline" },
 });
