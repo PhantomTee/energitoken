@@ -118,10 +118,17 @@ export default function ProfileScreen() {
         <CopyableField label="Email" value={email ?? "Not linked"} mono={false} />
         <View style={{ height: spacing.md }} />
         <CopyableField label="Wallet address" value={walletAddress ?? "—"} />
+        <View style={styles.divider} />
+        <SettingsRow
+          label="Active session"
+          onPress={handleLogout}
+          value={
+            <Pressable style={styles.logoutChip} onPress={handleLogout}>
+              <Text style={styles.logoutChipText}>Log out</Text>
+            </Pressable>
+          }
+        />
       </View>
-      <Pressable style={styles.logoutButton} onPress={handleLogout}>
-        <Text style={[typography.bodyStrong, styles.logoutText]}>Log out</Text>
-      </Pressable>
 
       {/* ── Meter ── */}
       <SectionHeader>METER</SectionHeader>
@@ -309,15 +316,14 @@ const styles = StyleSheet.create({
   chevron: { color: colors.textSecondary, fontSize: 16 },
   radioOn: { color: colors.terracotta[400] },
   radioOff: { color: colors.textSecondary },
-  logoutButton: {
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
-    alignItems: "center",
+  logoutChip: {
+    borderRadius: radius.pill,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    marginTop: spacing.md,
+    borderColor: colors.danger,
   },
-  logoutText: { color: colors.danger },
+  logoutChipText: { color: colors.danger, fontWeight: "700", fontSize: 13 },
   qrButton: {
     backgroundColor: colors.indigo[500],
     borderRadius: radius.md,

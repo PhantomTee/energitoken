@@ -107,61 +107,78 @@ export function TopUpModal({ visible, onClose, walletAddress, onMinted }: Props)
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade">
-      <View style={styles.overlay}>
-        <View style={styles.card}>
+    <Modal visible={visible} animationType="slide" onRequestClose={handleClose}>
+      <View style={styles.screen}>
+        <View style={styles.header}>
+          <Pressable onPress={handleClose} hitSlop={12} style={styles.backButton}>
+            <Text style={styles.backArrow}>←</Text>
+          </Pressable>
+          <Text style={[typography.h2, styles.headerTitle]}>Top Up</Text>
+          <View style={styles.backButton} />
+        </View>
+
+        <View style={styles.body}>
           {success ? (
-            <>
-              <Text style={[typography.h2, styles.title]}>Top-up confirmed!</Text>
-              <Text style={[typography.body, styles.subtitle]}>
+            <View style={styles.centerBlock}>
+              <Text style={[typography.h1, styles.resultTitle]}>Top-up confirmed!</Text>
+              <Text style={[typography.body, styles.resultSubtitle]}>
                 Your ENGY balance has been updated. It may take a moment to reflect on the dashboard.
               </Text>
-              <Pressable style={styles.button} onPress={handleClose}>
-                <Text style={[typography.bodyStrong, styles.buttonText]}>Done</Text>
+              <Pressable style={styles.payButton} onPress={handleClose}>
+                <Text style={[typography.bodyStrong, styles.payButtonText]}>Done</Text>
               </Pressable>
-            </>
+            </View>
           ) : polling ? (
-            <>
-              <ActivityIndicator color={colors.indigo[400]} style={{ marginBottom: spacing.md }} />
-              <Text style={[typography.h2, styles.title]}>Confirming payment…</Text>
-              <Text style={[typography.body, styles.subtitle]}>
+            <View style={styles.centerBlock}>
+              <ActivityIndicator color={colors.terracotta[400]} style={{ marginBottom: spacing.md }} />
+              <Text style={[typography.h1, styles.resultTitle]}>Confirming payment…</Text>
+              <Text style={[typography.body, styles.resultSubtitle]}>
                 Waiting for your payment to be confirmed. This can take up to a minute.
               </Text>
-            </>
+            </View>
           ) : (
             <>
-              <Text style={[typography.h2, styles.title]}>Top Up</Text>
-              <Text style={[typography.body, styles.subtitle]}>
-                ₦1,000 = 1 unit (1 kWh) · minimum ₦{MIN_TOP_UP_NGN}. You'll be redirected to a secure checkout page.
-              </Text>
-              <Text style={[typography.label, styles.fieldLabel]}>AMOUNT (NGN)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="0"
-                placeholderTextColor={colors.neutral[500]}
-                value={amountNgn}
-                onChangeText={setAmountNgn}
-                keyboardType="numeric"
-                editable={!loading}
-              />
-              {amountNgn.length > 0 && (
-                <Text style={[typography.caption, styles.preview]}>
-                  = {unitsPreview} unit{Number(unitsPreview) !== 1 ? "s" : ""} ({Number(amountNgn).toLocaleString()} Wh)
-                </Text>
-              )}
-              {error && <Text style={[typography.caption, styles.errorText]}>{error}</Text>}
-              <View style={styles.actions}>
-                <Pressable style={[styles.secondaryButton, { flex: 1 }]} onPress={handleClose} disabled={loading}>
-                  <Text style={[typography.bodyStrong, styles.secondaryButtonText]}>Cancel</Text>
-                </Pressable>
-                <Pressable style={[styles.button, { flex: 1 }]} onPress={handlePay} disabled={loading}>
-                  {loading ? (
-                    <ActivityIndicator color={colors.neutral.white} />
-                  ) : (
-                    <Text style={[typography.bodyStrong, styles.buttonText]}>Top Up</Text>
-                  )}
-                </Pressable>
+              <View style={styles.amountCard}>
+                <Text style={[typography.label, styles.amountCardLabel]}>ENTER AMOUNT</Text>
+                <View style={styles.amountRow}>
+                  <Text style={styles.currencySymbol}>₦</Text>
+                  <TextInput
+                    style={styles.amountInput}
+                    placeholder="0"
+                    placeholderTextColor={colors.neutral[500]}
+                    value={amountNgn}
+                    onChangeText={setAmountNgn}
+                    keyboardType="numeric"
+                    editable={!loading}
+                  />
+                </View>
+                {amountNgn.length > 0 && (
+                  <View style={styles.conversionPill}>
+                    <Text style={[typography.dataSm, styles.conversionText]}>
+                      ⇄ ≈ {unitsPreview} unit{Number(unitsPreview) !== 1 ? "s" : ""} ENGY
+                    </Text>
+                  </View>
+                )}
               </View>
+
+              <Text style={[typography.caption, styles.minNote]}>
+                ₦1,000 = 1 unit (1 kWh) · minimum ₦{MIN_TOP_UP_NGN}
+              </Text>
+              {error && <Text style={[typography.caption, styles.errorText]}>{error}</Text>}
+
+              <Pressable style={[styles.payButton, loading && styles.payButtonDisabled]} onPress={handlePay} disabled={loading}>
+                {loading ? (
+                  <ActivityIndicator color={colors.neutral.white} />
+                ) : (
+                  <Text style={[typography.bodyStrong, styles.payButtonText]}>🏦  Pay with bank</Text>
+                )}
+              </Pressable>
+
+              <Pressable onPress={handleClose} disabled={loading} style={styles.cancelLink}>
+                <Text style={[typography.caption, styles.cancelLinkText]}>Cancel</Text>
+              </Pressable>
+
+              <Text style={[typography.dataXs, styles.poweredBy]}>🛡 POWERED BY FLUTTERWAVE</Text>
             </>
           )}
         </View>
@@ -171,27 +188,66 @@ export function TopUpModal({ visible, onClose, walletAddress, onMinted }: Props)
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: "rgba(8,7,15,0.7)", justifyContent: "center", padding: spacing.lg },
-  card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg },
-  title: { color: colors.textPrimary, marginBottom: spacing.xs },
-  subtitle: { color: colors.textSecondary, marginBottom: spacing.md },
-  fieldLabel: { color: colors.textSecondary, marginBottom: spacing.xs },
-  input: {
-    backgroundColor: colors.background,
-    color: colors.textPrimary,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    fontSize: 18,
-    fontFamily: typography.dataMd.fontFamily,
-    borderWidth: 1,
-    borderColor: colors.border,
+  screen: { flex: 1, backgroundColor: colors.indigo[900] },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.md,
   },
-  preview: { color: colors.indigo[300], marginTop: spacing.xs },
-  errorText: { color: colors.danger, marginTop: spacing.xs },
-  actions: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.lg },
-  button: { backgroundColor: colors.indigo[500], borderRadius: radius.md, paddingVertical: spacing.md, alignItems: "center" },
-  buttonText: { color: colors.neutral.white },
-  secondaryButton: { borderRadius: radius.md, paddingVertical: spacing.md, alignItems: "center", borderWidth: 1, borderColor: colors.border },
-  secondaryButtonText: { color: colors.textPrimary },
+  backButton: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
+  backArrow: { color: colors.neutral.white, fontSize: 20 },
+  headerTitle: { color: colors.neutral.white },
+  body: { flex: 1, justifyContent: "center", paddingHorizontal: spacing.xl, gap: spacing.md },
+  centerBlock: { alignItems: "center", gap: spacing.md },
+  resultTitle: { color: colors.neutral.white, textAlign: "center" },
+  resultSubtitle: { color: colors.indigo[100], textAlign: "center", opacity: 0.85 },
+  amountCard: {
+    backgroundColor: colors.indigo[700],
+    borderRadius: radius.lg,
+    padding: spacing.xl,
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  amountCardLabel: { color: colors.indigo[100], opacity: 0.8 },
+  amountRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.lg,
+    width: "100%",
+  },
+  currencySymbol: { color: colors.textSecondary, fontSize: 22, marginRight: spacing.sm },
+  amountInput: {
+    flex: 1,
+    color: colors.textPrimary,
+    fontSize: 32,
+    fontFamily: typography.dataMd.fontFamily,
+    paddingVertical: spacing.md,
+  },
+  conversionPill: {
+    backgroundColor: "rgba(194,100,58,0.2)",
+    borderWidth: 1,
+    borderColor: colors.terracotta[400],
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  conversionText: { color: colors.terracotta[300] },
+  minNote: { color: colors.indigo[100], opacity: 0.7, textAlign: "center" },
+  errorText: { color: colors.terracotta[300], textAlign: "center" },
+  payButton: {
+    backgroundColor: colors.terracotta[400],
+    borderRadius: radius.pill,
+    paddingVertical: spacing.md,
+    alignItems: "center",
+  },
+  payButtonDisabled: { opacity: 0.6 },
+  payButtonText: { color: colors.neutral.white },
+  cancelLink: { alignItems: "center", padding: spacing.sm },
+  cancelLinkText: { color: colors.indigo[100] },
+  poweredBy: { color: colors.indigo[300], textAlign: "center", opacity: 0.7, letterSpacing: 0.5 },
 });

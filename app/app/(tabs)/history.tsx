@@ -95,19 +95,15 @@ const DIRECTION_META: Record<TxDirection, { label: string; symbol: string; color
   burn: { label: "Consumed", symbol: "−", color: colors.textSecondary },
 };
 
-type FilterTab = "all" | "received" | "sent" | "consumption";
+type FilterTab = "transactions" | "consumption";
 
 const FILTER_TABS: { key: FilterTab; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "received", label: "Received" },
-  { key: "sent", label: "Sent" },
+  { key: "transactions", label: "Transactions" },
   { key: "consumption", label: "Consumption" },
 ];
 
 function matchesFilter(direction: TxDirection, filter: FilterTab): boolean {
-  if (filter === "all") return true;
-  if (filter === "received") return direction === "mint" || direction === "transfer-in";
-  if (filter === "sent") return direction === "transfer-out";
+  if (filter === "transactions") return direction !== "burn";
   return direction === "burn"; // consumption
 }
 
@@ -123,13 +119,15 @@ function formatCounterparty(counterparty: string) {
 function TransactionRow({ tx }: { tx: TxRecord }) {
   const meta = DIRECTION_META[tx.direction];
   return (
-    <View style={styles.row}>
+    <View style={styles.card}>
       <View style={[styles.symbolBadge, { backgroundColor: meta.color }]}>
         <Text style={styles.symbolText}>{meta.symbol}</Text>
       </View>
       <View style={styles.rowBody}>
         <Text style={[typography.bodyStrong, styles.rowTitle]}>{meta.label}</Text>
-        <Text style={[typography.caption, styles.rowCounterparty]}>{formatCounterparty(tx.counterparty)}</Text>
+        <Text style={[typography.caption, styles.rowCounterparty]}>
+          {formatCounterparty(tx.counterparty)} · {formatTimestamp(tx.timestamp)}
+        </Text>
         <Pressable onPress={() => Linking.openURL(`${AMOY_EXPLORER_TX}${tx.hash}`)}>
           <Text style={[typography.dataXs, styles.rowLink]}>{tx.hash.slice(0, 10)}…{tx.hash.slice(-6)} ↗</Text>
         </Pressable>
@@ -138,7 +136,9 @@ function TransactionRow({ tx }: { tx: TxRecord }) {
         <Text style={[typography.dataSm, { color: meta.color }]}>
           {meta.symbol}{tx.amountWh.toLocaleString()} Wh
         </Text>
-        <Text style={[typography.dataXs, styles.rowTime]}>{formatTimestamp(tx.timestamp)}</Text>
+        <View style={styles.statusPill}>
+          <Text style={[typography.dataXs, styles.statusPillText]}>Confirmed</Text>
+        </View>
       </View>
     </View>
   );
@@ -148,7 +148,7 @@ function TransactionRow({ tx }: { tx: TxRecord }) {
 export default function HistoryScreen() {
   const { walletAddress } = useWallet();
   const { transactions, loading, error, refresh } = useTransactionHistory(walletAddress);
-  const [filter, setFilter] = useState<FilterTab>("all");
+  const [filter, setFilter] = useState<FilterTab>("transactions");
 
   const filteredTransactions = useMemo(
     () => transactions.filter((tx) => matchesFilter(tx.direction, filter)),
@@ -183,14 +183,16 @@ export default function HistoryScreen() {
 
       <View style={styles.filterRow}>
         {FILTER_TABS.map((tab) => (
-          <Pressable
-            key={tab.key}
-            onPress={() => setFilter(tab.key)}
-            style={[styles.filterChip, filter === tab.key && styles.filterChipActive]}
-          >
-            <Text style={[typography.caption, filter === tab.key ? styles.filterTextActive : styles.filterText]}>
-              {tab.label}
+          <Pressable key={tab.key} onPress={() => setFilter(tab.key)} style={styles.filterTab}>
+            <Text
+              style={[
+                typography.label,
+                filter === tab.key ? styles.filterTabTextActive : styles.filterTabText,
+              ]}
+            >
+              {tab.label.toUpperCase()}
             </Text>
+            {filter === tab.key && <View style={styles.filterTabUnderline} />}
           </Pressable>
         ))}
       </View>
@@ -223,19 +225,21 @@ export default function HistoryScreen() {
 
       {!loading && !error && transactions.length > 0 && filteredTransactions.length === 0 && (
         <Text style={[typography.caption, styles.statusText, styles.emptyText]}>
-          No {FILTER_TABS.find((t) => t.key === filter)?.label.toLowerCase()} transactions yet.
+          No {FILTER_TABS.find((t) => t.key === filter)?.label.toLowerCase()} yet.
         </Text>
       )}
 
-      <FlatList
-        data={filteredTransactions}
-        keyExtractor={(item) => item.hash}
-        renderItem={({ item }) => <TransactionRow tx={item} />}
-        contentContainerStyle={styles.listContent}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
-        refreshing={loading}
-        onRefresh={refresh}
-      />
+      {filter === "transactions" && (
+        <FlatList
+          data={filteredTransactions}
+          keyExtractor={(item) => item.hash}
+          renderItem={({ item }) => <TransactionRow tx={item} />}
+          contentContainerStyle={styles.listContent}
+          ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
+          refreshing={loading}
+          onRefresh={refresh}
+        />
+      )}
     </View>
   );
 }
@@ -262,18 +266,24 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   exportButtonText: { color: colors.indigo[400] },
-  filterRow: { flexDirection: "row", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
-  filterChip: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    backgroundColor: colors.surface,
+  filterRow: {
+    flexDirection: "row",
+    gap: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
-  filterChipActive: { backgroundColor: colors.indigo[400], borderColor: colors.indigo[400] },
-  filterText: { color: colors.textSecondary },
-  filterTextActive: { color: colors.neutral.white },
+  filterTab: { paddingBottom: spacing.sm, alignItems: "center" },
+  filterTabText: { color: colors.textSecondary },
+  filterTabTextActive: { color: colors.indigo[500] },
+  filterTabUnderline: {
+    position: "absolute",
+    bottom: -1,
+    height: 2,
+    width: "100%",
+    backgroundColor: colors.indigo[500],
+  },
   statusRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -311,15 +321,28 @@ const styles = StyleSheet.create({
   },
   dailyTableLabel: { color: colors.textSecondary },
   dailyTableValue: { color: colors.textPrimary },
-  listContent: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl },
-  row: { flexDirection: "row", alignItems: "center", paddingVertical: spacing.md },
-  symbolBadge: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
+  listContent: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xxl },
+  card: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+  },
+  symbolBadge: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
   symbolText: { color: colors.neutral.white, fontFamily: fonts.monoBold, fontSize: 16 },
   rowBody: { flex: 1, marginLeft: spacing.md },
   rowTitle: { color: colors.textPrimary },
   rowCounterparty: { color: colors.textSecondary, marginTop: 2 },
   rowLink: { color: colors.indigo[400], marginTop: 2 },
-  rowRight: { alignItems: "flex-end" },
-  rowTime: { color: colors.textSecondary, marginTop: 2 },
-  separator: { height: 1, backgroundColor: colors.border },
+  rowRight: { alignItems: "flex-end", gap: 4 },
+  statusPill: {
+    backgroundColor: colors.indigo[100],
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+  },
+  statusPillText: { color: colors.indigo[700] },
 });
