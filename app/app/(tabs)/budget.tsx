@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, Platform } from "react-native";
 import { useFocusEffect, Link } from "expo-router";
 import { colors, RelayTier } from "../../src/theme/colors";
@@ -8,11 +8,53 @@ import { BudgetRing } from "../../src/components/BudgetRing";
 import { RelayIndicator } from "../../src/components/RelayIndicator";
 import { useWallet } from "../../src/hooks/useWallet";
 import { useMeterData } from "../../src/hooks/useMeterData";
+import { useTransactionHistory } from "../../src/hooks/useTransactionHistory";
 import { getEngyBalance } from "../../src/services/contract";
 import { setBudgetWh } from "../../src/services/budget";
 import { ensureFirebaseSession } from "../../src/services/firebaseSession";
 import { whToUnits, unitsToWh, tokensToUnits } from "../../src/services/units";
 import { setRelayOverride } from "../../src/services/relayOverride";
+
+const PERIOD_OPTIONS = [7, 14, 30] as const;
+type PeriodDays = (typeof PERIOD_OPTIONS)[number];
+
+function dayKey(ts: number) {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+/** Buckets burn (consumption) transactions into calendar days over the trailing
+ * `periodDays` window, so it can be compared against the daily budget as a
+ * rough over/under trend -- built from the same on-chain burn events the
+ * History screen's Consumption tab already reads, not a separate log. */
+function useDailyUsage(walletAddress: string | null, periodDays: PeriodDays) {
+  const { transactions, loading, error } = useTransactionHistory(walletAddress);
+
+  const days = useMemo(() => {
+    const now = Date.now();
+    const cutoff = now - periodDays * 24 * 60 * 60 * 1000;
+    const byDay = new Map<string, number>();
+    for (const tx of transactions) {
+      if (tx.direction !== "burn" || tx.timestamp < cutoff) continue;
+      const key = dayKey(tx.timestamp);
+      byDay.set(key, (byDay.get(key) ?? 0) + tx.amountWh);
+    }
+
+    const result: { key: string; label: string; wh: number }[] = [];
+    for (let i = periodDays - 1; i >= 0; i--) {
+      const d = new Date(now - i * 24 * 60 * 60 * 1000);
+      const key = dayKey(d.getTime());
+      result.push({
+        key,
+        label: d.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+        wh: byDay.get(key) ?? 0,
+      });
+    }
+    return result;
+  }, [transactions, periodDays]);
+
+  return { days, loading, error };
+}
 
 const isWeb = Platform.OS === "web";
 
@@ -77,8 +119,10 @@ export default function BudgetScreen() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [relayBusyTier, setRelayBusyTier] = useState<RelayTier | null>(null);
   const [relayError, setRelayError] = useState<string | null>(null);
+  const [periodDays, setPeriodDays] = useState<PeriodDays>(7);
 
   const { reading, loading, error, deviceId, hasDevice } = useMeterData(walletAddress, "live");
+  const { days: dailyUsage } = useDailyUsage(walletAddress, periodDays);
 
   const handleRelayToggle = async (tier: RelayTier, next: boolean | null) => {
     if (!deviceId) return;
@@ -267,6 +311,57 @@ export default function BudgetScreen() {
           </Text>
           <ShedLadder percentUsed={percentUsed} />
 
+          {/* ── Period trend: daily allowance vs actual usage ── */}
+          <Text style={[typography.h2, styles.sectionTitle]}>Allowance vs. actual</Text>
+          <View style={styles.periodRow}>
+            {PERIOD_OPTIONS.map((opt) => (
+              <Pressable
+                key={opt}
+                style={[styles.periodChip, periodDays === opt && styles.periodChipActive]}
+                onPress={() => setPeriodDays(opt)}
+              >
+                <Text style={[typography.caption, periodDays === opt ? styles.periodTextActive : styles.periodText]}>
+                  {opt}d
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          {currentBudgetUnits === null ? (
+            <Text style={[typography.caption, styles.statusText]}>
+              Set a daily budget below to see it plotted against actual usage.
+            </Text>
+          ) : (
+            <>
+              <View style={styles.trendChart}>
+                {dailyUsage.map((day) => {
+                  const dayUnits = whToUnits(day.wh);
+                  const barPct = Math.min(100, (dayUnits / currentBudgetUnits) * 100);
+                  const over = dayUnits > currentBudgetUnits;
+                  return (
+                    <View key={day.key} style={styles.trendBarWrap}>
+                      <View style={styles.trendBarTrack}>
+                        <View
+                          style={[
+                            styles.trendBarFill,
+                            { height: `${barPct}%` },
+                            over ? styles.trendBarOver : styles.trendBarUnder,
+                          ]}
+                        />
+                      </View>
+                      {periodDays <= 14 && (
+                        <Text style={[typography.dataXs, styles.trendBarLabel]}>{day.label.split(" ")[1]}</Text>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+              <Text style={[typography.caption, styles.trendSummary]}>
+                Over the last {periodDays} days: {whToUnits(dailyUsage.reduce((s, d) => s + d.wh, 0)).toLocaleString()}{" "}
+                units used against a {(currentBudgetUnits * periodDays).toLocaleString()}-unit allowance.
+              </Text>
+            </>
+          )}
+
           {/* ── Live relay state ── */}
           {reading?.relays && (
             <>
@@ -425,6 +520,36 @@ const styles = StyleSheet.create({
   ladderTextCrossed: { color: colors.terracotta[400] },
   ladderStateOff: { color: colors.terracotta[400], width: 48, textAlign: "right" },
   ladderStateOk: { color: colors.textSecondary, width: 48, textAlign: "right" },
+  periodRow: { flexDirection: "row", gap: spacing.sm },
+  periodChip: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    backgroundColor: colors.surface,
+  },
+  periodChipActive: { backgroundColor: colors.indigo[400], borderColor: colors.indigo[400] },
+  periodText: { color: colors.textSecondary },
+  periodTextActive: { color: colors.neutral.white },
+  trendChart: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    height: 100,
+    gap: 4,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.sm,
+  },
+  trendBarWrap: { flex: 1, alignItems: "center", height: "100%", justifyContent: "flex-end", gap: 4 },
+  trendBarTrack: { width: "100%", flex: 1, justifyContent: "flex-end" },
+  trendBarFill: { width: "100%", borderRadius: 3, minHeight: 2 },
+  trendBarUnder: { backgroundColor: colors.indigo[400] },
+  trendBarOver: { backgroundColor: colors.terracotta[500] },
+  trendBarLabel: { color: colors.textSecondary, fontSize: 9 },
+  trendSummary: { color: colors.textSecondary },
   fieldLabel: { color: colors.textSecondary },
   presetRow: { flexDirection: "row", gap: spacing.sm },
   presetChip: {
