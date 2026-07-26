@@ -228,12 +228,15 @@ export default function TransferScreen() {
       }
     >
       <View style={styles.titleRow}>
-        <Text style={[typography.h1, styles.title]}>Send credit</Text>
+        <Text style={[typography.h1, styles.title]}>Send Energy</Text>
         <AdinkraAccent size={28} color={colors.terracotta[400]} dotColor={colors.indigo[400]} opacity={1} />
       </View>
-      <Text style={[typography.body, styles.subtitle]}>
-        Share surplus watt-hours with another household, by email or wallet address.
-      </Text>
+      <View style={styles.availablePill}>
+        <Text style={[typography.caption, styles.availablePillLabel]}>Available to send:</Text>
+        <Text style={[typography.dataSm, styles.availablePillValue]}>
+          {balanceWh === null ? "···" : `${balanceWh.toLocaleString()} Wh`}
+        </Text>
+      </View>
 
       <Text style={[typography.label, styles.fieldLabel]}>RECIPIENT</Text>
       <View style={styles.tabRow}>
@@ -313,7 +316,14 @@ export default function TransferScreen() {
         </>
       )}
 
-      <Text style={[typography.label, styles.fieldLabel]}>AMOUNT (Wh)</Text>
+      <View style={styles.amountLabelRow}>
+        <Text style={[typography.label, styles.fieldLabel, { marginTop: 0 }]}>AMOUNT (Wh)</Text>
+        {balanceWh !== null && (
+          <Pressable onPress={() => setAmount(String(balanceWh))} disabled={txState !== "idle"}>
+            <Text style={[typography.dataXs, styles.sendMaxLink]}>Send Max</Text>
+          </Pressable>
+        )}
+      </View>
       <TextInput
         style={styles.input}
         placeholder="0"
@@ -323,9 +333,6 @@ export default function TransferScreen() {
         keyboardType="numeric"
         editable={txState === "idle"}
       />
-      <Text style={[typography.dataXs, styles.balanceHint]}>
-        Available: {balanceWh === null ? "loading…" : `${balanceWh.toLocaleString()} Wh`}
-      </Text>
       {amount.length > 0 && balanceWh !== null && !isValidAmount && (
         <Text style={[typography.caption, styles.errorHint]}>
           {amountWh <= 0 ? "Enter an amount greater than 0." : "Amount exceeds your available balance."}
@@ -356,7 +363,7 @@ export default function TransferScreen() {
           disabled={!canSubmit}
           onPress={() => setShowConfirm(true)}
         >
-          <Text style={[typography.bodyStrong, styles.buttonText]}>Review transfer</Text>
+          <Text style={[typography.bodyStrong, styles.buttonText]}>Send Energy  →</Text>
         </Pressable>
       ) : (
         <View style={styles.statusWrap}>
@@ -431,7 +438,6 @@ const styles = StyleSheet.create({
     : { padding: spacing.lg, paddingBottom: spacing.xxl },
   titleRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   title: { color: colors.textPrimary, marginBottom: spacing.xs },
-  subtitle: { color: colors.textSecondary, marginBottom: spacing.lg },
   fieldLabel: { color: colors.textSecondary, marginBottom: spacing.xs, marginTop: spacing.md },
   input: {
     backgroundColor: colors.surface,
@@ -468,6 +474,23 @@ const styles = StyleSheet.create({
   },
   qrPlaceholderText: { color: colors.textSecondary, textAlign: "center" },
   balanceHint: { color: colors.textSecondary, marginTop: spacing.xs },
+  availablePill: {
+    flexDirection: "row",
+    alignSelf: "center",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  availablePillLabel: { color: colors.textSecondary },
+  availablePillValue: { color: colors.indigo[900] },
+  amountLabelRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  sendMaxLink: { color: colors.terracotta[500], fontWeight: "700" },
   errorHint: { color: colors.danger, marginTop: spacing.xs },
   resolveRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs, marginTop: spacing.xs },
   resolveText: { color: colors.textSecondary },
