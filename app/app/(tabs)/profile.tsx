@@ -10,6 +10,8 @@ import { useWallet } from "../../src/hooks/useWallet";
 import { getDeviceForWallet, unbindDevice } from "../../src/services/deviceBinding";
 import { clearFirebaseSession } from "../../src/services/firebaseSession";
 import { displayNameFromEmail } from "../../src/services/displayName";
+import { useTransactionHistory } from "../../src/hooks/useTransactionHistory";
+import { exportTransactionsCsv } from "../../src/services/exportReport";
 
 const isWeb = Platform.OS === "web";
 
@@ -62,6 +64,7 @@ export default function ProfileScreen() {
   const [budgetWarnings, setBudgetWarnings] = useState(true);
   const [language, setLanguage] = useState<(typeof LANGUAGES)[number]["code"]>("en");
   const displayName = displayNameFromEmail(email);
+  const { transactions: exportTransactions } = useTransactionHistory(isWeb ? walletAddress : null);
 
   const loadDevice = React.useCallback(() => {
     if (!walletAddress) return;
@@ -102,121 +105,237 @@ export default function ProfileScreen() {
         <AdinkraAccent size={28} color={colors.terracotta[400]} dotColor={colors.indigo[400]} opacity={1} />
       </View>
 
-      <View style={styles.identityCard}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarInitial}>{displayName.charAt(0)}</Text>
-        </View>
-        <View>
-          <Text style={[typography.h2, styles.displayName]}>{displayName}</Text>
-          <Text style={[typography.caption, styles.displayEmail]}>{email ?? "Not linked"}</Text>
-        </View>
-      </View>
+      {isWeb ? (
+        <>
+          <Text style={[typography.body, styles.desktopSubtitle]}>
+            Manage your account preferences and device connections.
+          </Text>
 
-      {/* ── Account ── */}
-      <SectionHeader>ACCOUNT</SectionHeader>
-      <View style={styles.card}>
-        <CopyableField label="Email" value={email ?? "Not linked"} mono={false} />
-        <View style={{ height: spacing.md }} />
-        <CopyableField label="Wallet address" value={walletAddress ?? "—"} />
-        <View style={styles.divider} />
-        <SettingsRow
-          label="Active session"
-          onPress={handleLogout}
-          value={
-            <Pressable style={styles.logoutChip} onPress={handleLogout}>
-              <Text style={styles.logoutChipText}>Log out</Text>
+          <View style={styles.desktopGridRow}>
+            {/* ── Account Details ── */}
+            <View style={styles.desktopCard}>
+              <Text style={[typography.h2, styles.desktopCardTitle]}>Account Details</Text>
+              <CopyableField label="Email address" value={email ?? "Not linked"} mono={false} />
+              <View style={{ height: spacing.md }} />
+              <CopyableField label="Wallet address" value={walletAddress ?? "—"} />
+              <View style={styles.divider} />
+              <SettingsRow
+                label="Active Session"
+                onPress={handleLogout}
+                value={
+                  <Pressable style={styles.logoutChip} onPress={handleLogout}>
+                    <Text style={styles.logoutChipText}>Log out</Text>
+                  </Pressable>
+                }
+              />
+            </View>
+
+            {/* ── Linked Meter ── */}
+            <View style={styles.desktopCard}>
+              <Text style={[typography.h2, styles.desktopCardTitle]}>Linked Meter</Text>
+              <View style={styles.meterBox}>
+                <Text style={[typography.caption, styles.meterBoxLabel]}>Device ID</Text>
+                <Text style={[typography.dataMd, styles.meterBoxValue]}>
+                  {deviceId === undefined ? "Loading…" : deviceId ?? "Not paired"}
+                </Text>
+                {deviceId && (
+                  <View style={styles.meterStatusRow}>
+                    <View style={styles.liveDot} />
+                    <Text style={[typography.caption, styles.meterStatusText]}>Status: Online & Syncing</Text>
+                  </View>
+                )}
+              </View>
+              {deviceId && (
+                <Pressable style={styles.unbindButton} onPress={() => setUnbindVisible(true)}>
+                  <Text style={[typography.bodyStrong, styles.unbindButtonText]}>⊘ Unbind Device</Text>
+                </Pressable>
+              )}
+            </View>
+          </View>
+
+          <View style={styles.desktopGridRow}>
+            {/* ── Alerts & Warnings ── */}
+            <View style={styles.desktopCard}>
+              <Text style={[typography.h2, styles.desktopCardTitle]}>🔔 Alerts &amp; Warnings</Text>
+              <SettingsRow
+                label="Relay shed alerts"
+                value={
+                  <Switch
+                    value={relayAlerts}
+                    onValueChange={setRelayAlerts}
+                    trackColor={{ true: colors.indigo[500], false: colors.border }}
+                  />
+                }
+              />
+              <View style={styles.divider} />
+              <SettingsRow
+                label="Low budget warnings"
+                value={
+                  <Switch
+                    value={budgetWarnings}
+                    onValueChange={setBudgetWarnings}
+                    trackColor={{ true: colors.indigo[500], false: colors.border }}
+                  />
+                }
+              />
+            </View>
+
+            {/* ── Localization ── */}
+            <View style={styles.desktopCard}>
+              <Text style={[typography.h2, styles.desktopCardTitle]}>🌐 Localization</Text>
+              <Text style={[typography.label, styles.fieldLabel]}>DISPLAY LANGUAGE</Text>
+              <View style={styles.languageBox}>
+                <Text style={[typography.body, styles.rowLabel]}>English (US)</Text>
+              </View>
+              <Text style={[typography.label, styles.fieldLabel]}>DATA EXPORT</Text>
+              <Text style={[typography.caption, styles.exportHint]}>
+                Download a copy of your historical consumption data.
+              </Text>
+              <Pressable
+                style={styles.csvExportButton}
+                disabled={exportTransactions.length === 0 || !walletAddress}
+                onPress={() => walletAddress && exportTransactionsCsv(exportTransactions, walletAddress)}
+              >
+                <Text style={[typography.bodyStrong, styles.csvExportButtonText]}>↓ Request CSV Export</Text>
+              </Pressable>
+            </View>
+          </View>
+
+          {walletAddress && (
+            <Pressable style={styles.qrButton} onPress={() => setQrVisible(true)}>
+              <Text style={[typography.bodyStrong, styles.qrButtonText]}>Share my QR code</Text>
             </Pressable>
-          }
-        />
-      </View>
+          )}
 
-      {/* ── Meter ── */}
-      <SectionHeader>METER</SectionHeader>
-      <View style={styles.card}>
-        <SettingsRow
-          label="Device code"
-          value={
-            <Text style={[typography.dataSm, styles.rowValue]}>
-              {deviceId === undefined ? "Loading…" : deviceId ?? "Not paired"}
-            </Text>
-          }
-        />
-        {deviceId && (
-          <>
+          <View style={styles.desktopFooter}>
+            <Text style={[typography.caption, styles.rowValue]}>{APP_VERSION}</Text>
+            <Pressable onPress={() => Linking.openURL(EXPLORER_URL)}>
+              <Text style={[typography.dataXs, styles.footerLink]}>Contract ↗</Text>
+            </Pressable>
+            <Pressable onPress={() => Linking.openURL(GITHUB_URL)}>
+              <Text style={[typography.dataXs, styles.footerLink]}>GitHub ↗</Text>
+            </Pressable>
+          </View>
+        </>
+      ) : (
+        <>
+          <View style={styles.identityCard}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarInitial}>{displayName.charAt(0)}</Text>
+            </View>
+            <View>
+              <Text style={[typography.h2, styles.displayName]}>{displayName}</Text>
+              <Text style={[typography.caption, styles.displayEmail]}>{email ?? "Not linked"}</Text>
+            </View>
+          </View>
+
+          {/* ── Account ── */}
+          <SectionHeader>ACCOUNT</SectionHeader>
+          <View style={styles.card}>
+            <CopyableField label="Email" value={email ?? "Not linked"} mono={false} />
+            <View style={{ height: spacing.md }} />
+            <CopyableField label="Wallet address" value={walletAddress ?? "—"} />
             <View style={styles.divider} />
             <SettingsRow
-              label="Unbind meter"
-              danger
-              onPress={() => setUnbindVisible(true)}
-              value={<Text style={styles.chevron}>›</Text>}
+              label="Active session"
+              onPress={handleLogout}
+              value={
+                <Pressable style={styles.logoutChip} onPress={handleLogout}>
+                  <Text style={styles.logoutChipText}>Log out</Text>
+                </Pressable>
+              }
             />
-          </>
-        )}
-      </View>
+          </View>
 
-      {/* ── Notifications ── */}
-      <SectionHeader>NOTIFICATIONS</SectionHeader>
-      <View style={styles.card}>
-        <SettingsRow
-          label="Relay shed alerts"
-          value={
-            <Switch
-              value={relayAlerts}
-              onValueChange={setRelayAlerts}
-              trackColor={{ true: colors.terracotta[400], false: colors.border }}
+          {/* ── Meter ── */}
+          <SectionHeader>METER</SectionHeader>
+          <View style={styles.card}>
+            <SettingsRow
+              label="Device code"
+              value={
+                <Text style={[typography.dataSm, styles.rowValue]}>
+                  {deviceId === undefined ? "Loading…" : deviceId ?? "Not paired"}
+                </Text>
+              }
             />
-          }
-        />
-        <View style={styles.divider} />
-        <SettingsRow
-          label="Low budget warnings"
-          value={
-            <Switch
-              value={budgetWarnings}
-              onValueChange={setBudgetWarnings}
-              trackColor={{ true: colors.terracotta[400], false: colors.border }}
+            {deviceId && (
+              <>
+                <View style={styles.divider} />
+                <SettingsRow
+                  label="Unbind meter"
+                  danger
+                  onPress={() => setUnbindVisible(true)}
+                  value={<Text style={styles.chevron}>›</Text>}
+                />
+              </>
+            )}
+          </View>
+
+          {/* ── Notifications ── */}
+          <SectionHeader>NOTIFICATIONS</SectionHeader>
+          <View style={styles.card}>
+            <SettingsRow
+              label="Relay shed alerts"
+              value={
+                <Switch
+                  value={relayAlerts}
+                  onValueChange={setRelayAlerts}
+                  trackColor={{ true: colors.terracotta[400], false: colors.border }}
+                />
+              }
             />
-          }
-        />
-      </View>
+            <View style={styles.divider} />
+            <SettingsRow
+              label="Low budget warnings"
+              value={
+                <Switch
+                  value={budgetWarnings}
+                  onValueChange={setBudgetWarnings}
+                  trackColor={{ true: colors.terracotta[400], false: colors.border }}
+                />
+              }
+            />
+          </View>
 
-      {/* ── Language ── */}
-      <SectionHeader>LANGUAGE</SectionHeader>
-      <View style={styles.card}>
-        {LANGUAGES.map((lang) => (
-          <Pressable key={lang.code} style={styles.row} onPress={() => setLanguage(lang.code)}>
-            <Text style={[typography.body, styles.rowLabel]}>{lang.label}</Text>
-            <Text style={[typography.bodyStrong, language === lang.code ? styles.radioOn : styles.radioOff]}>
-              {language === lang.code ? "●" : "○"}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
+          {/* ── Language ── */}
+          <SectionHeader>LANGUAGE</SectionHeader>
+          <View style={styles.card}>
+            {LANGUAGES.map((lang) => (
+              <Pressable key={lang.code} style={styles.row} onPress={() => setLanguage(lang.code)}>
+                <Text style={[typography.body, styles.rowLabel]}>{lang.label}</Text>
+                <Text style={[typography.bodyStrong, language === lang.code ? styles.radioOn : styles.radioOff]}>
+                  {language === lang.code ? "●" : "○"}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
 
-      {/* ── Share QR ── */}
-      {walletAddress && (
-        <Pressable style={styles.qrButton} onPress={() => setQrVisible(true)}>
-          <Text style={[typography.bodyStrong, styles.qrButtonText]}>Share my QR code</Text>
-        </Pressable>
+          {/* ── Share QR ── */}
+          {walletAddress && (
+            <Pressable style={styles.qrButton} onPress={() => setQrVisible(true)}>
+              <Text style={[typography.bodyStrong, styles.qrButtonText]}>Share my QR code</Text>
+            </Pressable>
+          )}
+
+          {/* ── About ── */}
+          <SectionHeader>ABOUT</SectionHeader>
+          <View style={styles.card}>
+            <SettingsRow label="App version" value={<Text style={styles.rowValue}>{APP_VERSION}</Text>} />
+            <View style={styles.divider} />
+            <SettingsRow
+              label="Contract address"
+              onPress={() => Linking.openURL(EXPLORER_URL)}
+              value={<Text style={styles.chevron}>↗</Text>}
+            />
+            <View style={styles.divider} />
+            <SettingsRow
+              label="GitHub"
+              onPress={() => Linking.openURL(GITHUB_URL)}
+              value={<Text style={styles.chevron}>↗</Text>}
+            />
+          </View>
+        </>
       )}
-
-      {/* ── About ── */}
-      <SectionHeader>ABOUT</SectionHeader>
-      <View style={styles.card}>
-        <SettingsRow label="App version" value={<Text style={styles.rowValue}>{APP_VERSION}</Text>} />
-        <View style={styles.divider} />
-        <SettingsRow
-          label="Contract address"
-          onPress={() => Linking.openURL(EXPLORER_URL)}
-          value={<Text style={styles.chevron}>↗</Text>}
-        />
-        <View style={styles.divider} />
-        <SettingsRow
-          label="GitHub"
-          onPress={() => Linking.openURL(GITHUB_URL)}
-          value={<Text style={styles.chevron}>↗</Text>}
-        />
-      </View>
 
       {/* ── Unbind confirmation ── */}
       <Modal visible={unbindVisible} transparent animationType="fade">
@@ -274,7 +393,7 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   content: isWeb
-    ? { padding: spacing.xxl, paddingBottom: spacing.xxl, maxWidth: 640, width: "100%", alignSelf: "center" }
+    ? { padding: spacing.xxl, paddingBottom: spacing.xxl, maxWidth: 1000, width: "100%", alignSelf: "center", gap: spacing.lg }
     : { padding: spacing.lg, paddingBottom: spacing.xxl },
   titleRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.lg },
   title: { color: colors.textPrimary },
@@ -356,4 +475,51 @@ const styles = StyleSheet.create({
   },
   buttonText: { color: colors.neutral.white },
   qrWrap: { alignItems: "center", justifyContent: "center", paddingVertical: spacing.lg, backgroundColor: colors.neutral.white, borderRadius: radius.md },
+  desktopSubtitle: { color: colors.textSecondary, marginTop: -spacing.sm },
+  desktopGridRow: { flexDirection: "row", gap: spacing.lg, alignItems: "stretch" },
+  desktopCard: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.xl,
+    gap: spacing.sm,
+  },
+  desktopCardTitle: { color: colors.textPrimary, marginBottom: spacing.sm },
+  meterBox: { backgroundColor: colors.background, borderRadius: radius.md, padding: spacing.md },
+  meterBoxLabel: { color: colors.textSecondary },
+  meterBoxValue: { color: colors.indigo[900], marginTop: 2 },
+  meterStatusRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs, marginTop: spacing.sm },
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.success },
+  meterStatusText: { color: colors.success },
+  unbindButton: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    alignItems: "center",
+    marginTop: spacing.md,
+  },
+  unbindButtonText: { color: colors.danger },
+  languageBox: {
+    backgroundColor: colors.background,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  exportHint: { color: colors.textSecondary, marginBottom: spacing.sm },
+  csvExportButton: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    alignItems: "center",
+  },
+  csvExportButtonText: { color: colors.indigo[500] },
+  desktopFooter: { flexDirection: "row", alignItems: "center", gap: spacing.lg, justifyContent: "center", marginTop: spacing.md },
+  footerLink: { color: colors.indigo[500] },
+  fieldLabel: { color: colors.textSecondary, marginBottom: spacing.xs },
 });

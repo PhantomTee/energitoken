@@ -21,8 +21,22 @@ import { useWallet } from "../../src/hooks/useWallet";
 import { getEngyBalance, getWritableContract, runTransferPreflight, checkNetworkAndGas } from "../../src/services/contract";
 import { resolveEmailToAddress } from "../../src/services/directory";
 import { QRScanner } from "../../src/components/QRScanner";
+import { useTransactionHistory } from "../../src/hooks/useTransactionHistory";
+import { TxDirection } from "../../src/services/contractEvents";
+import { exportTransactionsCsv } from "../../src/services/exportReport";
 
 const isWeb = Platform.OS === "web";
+
+const TX_DIRECTION_META: Record<TxDirection, string> = {
+  mint: "Purchased",
+  "transfer-in": "Received",
+  "transfer-out": "Sent",
+  burn: "Consumed",
+};
+
+function formatTxDate(ts: number) {
+  return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
 
 /**
  * Recipients can be a raw wallet address or an email -- emails are resolved
@@ -51,11 +65,16 @@ function PreflightRow({
 
 type RecipientMode = "email" | "address" | "qr";
 
-const RECIPIENT_TABS: { key: RecipientMode; label: string }[] = [
-  { key: "email", label: "Email" },
-  { key: "address", label: "Wallet Address" },
-  { key: "qr", label: "QR Code" },
-];
+const RECIPIENT_TABS: { key: RecipientMode; label: string }[] = Platform.OS === "web"
+  ? [
+      { key: "email", label: "Email" },
+      { key: "address", label: "Wallet Address" },
+    ]
+  : [
+      { key: "email", label: "Email" },
+      { key: "address", label: "Wallet Address" },
+      { key: "qr", label: "QR Code" },
+    ];
 
 export default function TransferScreen() {
   const { walletAddress, getSigner } = useWallet();
@@ -77,6 +96,10 @@ export default function TransferScreen() {
   const [networkOk, setNetworkOk] = useState<boolean | null>(null);
   const [gasOk, setGasOk] = useState<boolean | null>(null);
   const [checkingChain, setCheckingChain] = useState(false);
+
+  const { transactions: historyTransactions, refresh: refreshHistory } = useTransactionHistory(
+    isWeb ? walletAddress : null
+  );
 
   const refreshBalance = useCallback(async () => {
     if (!walletAddress) return;
@@ -195,6 +218,7 @@ export default function TransferScreen() {
       await tx.wait();
       setTxState("confirmed");
       await refreshBalance();
+      if (isWeb) refreshHistory();
     } catch (err) {
       setTxState("failed");
       setTxError(err instanceof Error ? err.message : "Something went wrong.");
@@ -237,6 +261,9 @@ export default function TransferScreen() {
           {balanceWh === null ? "···" : `${balanceWh.toLocaleString()} Wh`}
         </Text>
       </View>
+
+      <View style={isWeb ? styles.desktopRow : undefined}>
+      <View style={isWeb ? styles.desktopFormCol : undefined}>
 
       <Text style={[typography.label, styles.fieldLabel]}>RECIPIENT</Text>
       <View style={styles.tabRow}>
@@ -377,6 +404,73 @@ export default function TransferScreen() {
           )}
         </View>
       )}
+
+      </View>
+
+      {isWeb && (
+        <View style={styles.historyCol}>
+          <View style={styles.historyCard}>
+            <View style={styles.historyCardHeader}>
+              <View>
+                <Text style={[typography.h2, styles.cardTitle]}>Transfer History</Text>
+                <Text style={[typography.caption, styles.historyCardSubtitle]}>
+                  Review your recent energy token movements.
+                </Text>
+              </View>
+              {historyTransactions.length > 0 && walletAddress && (
+                <Pressable
+                  style={styles.exportButton}
+                  onPress={() => exportTransactionsCsv(historyTransactions, walletAddress)}
+                >
+                  <Text style={[typography.dataXs, styles.exportButtonText]}>↓ Export CSV</Text>
+                </Pressable>
+              )}
+            </View>
+
+            <View style={styles.historyTableHeader}>
+              <Text style={[typography.label, styles.thDate]}>DATE</Text>
+              <Text style={[typography.label, styles.thType]}>TYPE</Text>
+              <Text style={[typography.label, styles.thCounterparty]}>RECIPIENT / SENDER</Text>
+              <Text style={[typography.label, styles.thAmount]}>AMOUNT</Text>
+              <Text style={[typography.label, styles.thStatus]}>STATUS</Text>
+            </View>
+            {historyTransactions.length === 0 ? (
+              <Text style={[typography.caption, styles.statusText]}>No transactions yet for this wallet.</Text>
+            ) : (
+              historyTransactions.slice(0, 20).map((tx) => (
+                <View key={tx.hash} style={styles.historyTableRow}>
+                  <Text style={[typography.caption, styles.thDate, styles.historyCellText]}>
+                    {formatTxDate(tx.timestamp)}
+                  </Text>
+                  <Text style={[typography.caption, styles.thType, styles.historyCellText]}>
+                    {TX_DIRECTION_META[tx.direction]}
+                  </Text>
+                  <Text style={[typography.dataXs, styles.thCounterparty, styles.historyCellText]} numberOfLines={1}>
+                    {tx.counterparty}
+                  </Text>
+                  <Text
+                    style={[
+                      typography.dataSm,
+                      styles.thAmount,
+                      { color: tx.direction === "transfer-out" || tx.direction === "burn" ? colors.textPrimary : colors.success },
+                    ]}
+                  >
+                    {tx.direction === "transfer-out" || tx.direction === "burn" ? "-" : "+"}
+                    {tx.amountWh.toLocaleString()} Wh
+                  </Text>
+                  <View style={styles.thStatus}>
+                    <View style={styles.historyStatusPill}>
+                      <Text style={[typography.dataXs, styles.historyStatusPillText]}>Confirmed</Text>
+                    </View>
+                  </View>
+                </View>
+              ))
+            )}
+          </View>
+        </View>
+      )}
+
+      </View>
 
       <Modal visible={showConfirm} transparent animationType="fade">
         <View style={styles.modalOverlay}>
@@ -533,4 +627,47 @@ const styles = StyleSheet.create({
   summaryValue: { color: colors.textPrimary },
   modalActions: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md },
   modalConfirm: { flex: 1, marginTop: 0 },
+  desktopRow: { flexDirection: "row", gap: spacing.xl, alignItems: "flex-start" },
+  desktopFormCol: { flex: 1, minWidth: 320 },
+  historyCol: { flex: 1.4, minWidth: 380 },
+  cardTitle: { color: colors.textPrimary },
+  historyCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.xl,
+  },
+  historyCardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: spacing.lg },
+  historyCardSubtitle: { color: colors.textSecondary, marginTop: 2 },
+  exportButton: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  exportButtonText: { color: colors.indigo[500] },
+  historyTableHeader: {
+    flexDirection: "row",
+    paddingBottom: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  historyTableRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  historyCellText: { color: colors.textPrimary },
+  thDate: { flex: 1.2 },
+  thType: { flex: 1 },
+  thCounterparty: { flex: 1.6 },
+  thAmount: { flex: 1.2, textAlign: "right" },
+  thStatus: { flex: 1, alignItems: "flex-end" },
+  historyStatusPill: { backgroundColor: colors.indigo[100], borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 2 },
+  historyStatusPillText: { color: colors.indigo[700] },
+  statusText: { color: colors.textSecondary },
 });

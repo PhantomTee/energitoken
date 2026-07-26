@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, Platform } from "react-native";
+import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, Platform, Switch } from "react-native";
 import { useFocusEffect, Link } from "expo-router";
-import { colors, RelayTier } from "../../src/theme/colors";
+import { colors, RelayTier, relayTierLabels } from "../../src/theme/colors";
 import { typography, spacing, radius } from "../../src/theme/typography";
 import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
 import { BudgetRing } from "../../src/components/BudgetRing";
@@ -70,6 +70,13 @@ const SHED_TIERS = [
   { pct: 85, label: "Optional loads cut", detail: "TV, sockets" },
   { pct: 95, label: "Essential loads cut", detail: "fans, some lights" },
 ] as const;
+
+const RELAY_TABLE_ROWS: { tier: RelayTier; devices: string; threshold: string }[] = [
+  { tier: "r1", devices: "Lighting, phone charging", threshold: "Always on" },
+  { tier: "r2", devices: "Fans, some lights", threshold: "Sheds at 95% used" },
+  { tier: "r3", devices: "TV, sockets", threshold: "Sheds at 85% used" },
+  { tier: "r4", devices: "Water heater, AC", threshold: "Sheds at 70% used" },
+];
 
 function ShedLadder({ percentUsed }: { percentUsed: number }) {
   return (
@@ -225,7 +232,7 @@ export default function BudgetScreen() {
       }
     >
       <View style={styles.titleRow}>
-        <Text style={[typography.h1, styles.title]}>Budget</Text>
+        <Text style={[typography.h1, styles.title]}>{isWeb ? "Budget Planning" : "Budget"}</Text>
         <View style={styles.titleRight}>
           {isWeb && (
             <Pressable onPress={handleRefresh} style={styles.refreshButton} disabled={refreshing}>
@@ -238,8 +245,9 @@ export default function BudgetScreen() {
         </View>
       </View>
       <Text style={[typography.body, styles.subtitle]}>
-        1 unit = 1 kWh. As usage approaches this budget, your meter sheds loads gently, least
-        important first — instead of everything going dark at once.
+        {isWeb
+          ? "Allocate your EnergiTokens efficiently and monitor your consumption against daily allowances."
+          : "1 unit = 1 kWh. As usage approaches this budget, your meter sheds loads gently, least important first — instead of everything going dark at once."}
       </Text>
 
       {loading && (
@@ -264,7 +272,154 @@ export default function BudgetScreen() {
         </View>
       )}
 
-      {!loading && !error && hasDevice && (
+      {!loading && !error && hasDevice && isWeb && (
+        <>
+          {/* ── Desktop: Consumption Curve + Allocate Budget ── */}
+          <View style={styles.desktopRow}>
+            <View style={styles.consumptionCard}>
+              <View style={styles.consumptionCardHeader}>
+                <Text style={[typography.h2, styles.cardTitle]}>Consumption Curve</Text>
+                <View style={styles.legendRow}>
+                  <View style={styles.legendItem}>
+                    <View style={[styles.legendDot, { backgroundColor: colors.indigo[500] }]} />
+                    <Text style={[typography.caption, styles.legendText]}>Actual</Text>
+                  </View>
+                  <View style={styles.legendItem}>
+                    <View style={[styles.legendDot, { backgroundColor: colors.terracotta[500] }]} />
+                    <Text style={[typography.caption, styles.legendText]}>Over allowance</Text>
+                  </View>
+                </View>
+              </View>
+              <Text style={[typography.caption, styles.consumptionCardSubtitle]}>Actual vs Allowance (Last 7 Days)</Text>
+              {currentBudgetUnits === null ? (
+                <Text style={[typography.caption, styles.statusText]}>Set a budget below to see this chart.</Text>
+              ) : (
+                <View style={styles.desktopChart}>
+                  {dailyUsage.map((day) => {
+                    const dayUnits = whToUnits(day.wh);
+                    const barPct = Math.min(100, (dayUnits / Math.max(currentBudgetUnits, 1)) * 100);
+                    const over = dayUnits > currentBudgetUnits;
+                    return (
+                      <View key={day.key} style={styles.desktopChartBarWrap}>
+                        <View style={styles.desktopChartTrack}>
+                          <View
+                            style={[
+                              styles.desktopChartFill,
+                              { height: `${Math.max(2, barPct)}%` },
+                              { backgroundColor: over ? colors.terracotta[500] : colors.indigo[500] },
+                            ]}
+                          />
+                        </View>
+                        <Text style={[typography.dataXs, styles.desktopChartLabel]}>
+                          {new Date(Date.now() - (6 - dailyUsage.indexOf(day)) * 86400000).toLocaleDateString(undefined, { weekday: "short" })}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+
+            <View style={styles.allocateCard}>
+              <Text style={[typography.h2, styles.cardTitle]}>Allocate Budget</Text>
+              <View style={styles.currentBalanceBox}>
+                <Text style={[typography.caption, styles.currentBalanceLabel]}>Current Balance</Text>
+                <Text style={[typography.dataMd, styles.currentBalanceValue]}>
+                  {availableUnits === null ? "···" : availableUnits.toLocaleString()}
+                  <Text style={[typography.dataXs, styles.summaryUnit]}> ENGY</Text>
+                </Text>
+              </View>
+
+              <Text style={[typography.label, styles.fieldLabel]}>DURATION (DAYS)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. 30"
+                placeholderTextColor={colors.neutral[500]}
+                value={durationInput}
+                onChangeText={(text) => {
+                  setDurationInput(text);
+                  setSaveSuccess(false);
+                  setSaveError(null);
+                }}
+                keyboardType="number-pad"
+                editable={!saving}
+              />
+
+              {durationValid && computedDailyUnits !== null && (
+                <View style={styles.dailyAllowanceBox}>
+                  <Text style={[typography.caption, styles.dailyAllowanceLabel]}>Daily Allowance</Text>
+                  <Text style={[typography.dataMd, styles.dailyAllowanceValue]}>
+                    {computedDailyUnits.toFixed(1)} <Text style={typography.dataXs}>ENGY/day</Text>
+                  </Text>
+                </View>
+              )}
+              {durationValid && computedDailyUnits !== null && !computedDailyValid && (
+                <Text style={[typography.caption, styles.warnText]}>
+                  That's more than the {MAX_BUDGET_UNITS}/day maximum -- try a longer duration.
+                </Text>
+              )}
+              {saveError && <Text style={[typography.caption, styles.errorText]}>{saveError}</Text>}
+              {saveSuccess && <Text style={[typography.caption, styles.successText]}>Budget updated.</Text>}
+
+              <Pressable
+                style={[styles.button, (!durationValid || !computedDailyValid || saving) && styles.buttonDisabled]}
+                onPress={handleSetBudget}
+                disabled={!durationValid || !computedDailyValid || saving}
+              >
+                {saving ? (
+                  <ActivityIndicator color={colors.neutral.white} />
+                ) : (
+                  <Text style={[typography.bodyStrong, styles.buttonText]}>✓ Set Budget</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+
+          {/* ── Desktop: Relay Thresholds table ── */}
+          <View style={styles.thresholdCard}>
+            <Text style={[typography.h2, styles.cardTitle]}>Relay Thresholds (R1–R4)</Text>
+            <Text style={[typography.caption, styles.loadGuideIntro]}>
+              Configure how your household circuits prioritize energy when approaching budget limits.
+              Lower priority relays will be disconnected first.
+            </Text>
+            <View style={styles.thresholdHeaderRow}>
+              <Text style={[typography.label, styles.thCol1]}>RELAY</Text>
+              <Text style={[typography.label, styles.thCol2]}>CONNECTED CIRCUITS</Text>
+              <Text style={[typography.label, styles.thCol3]}>CUTOFF THRESHOLD</Text>
+              <Text style={[typography.label, styles.thCol4]}>STATUS</Text>
+            </View>
+            {RELAY_TABLE_ROWS.map((row) => {
+              const override = reading?.relayOverrides?.[row.tier];
+              const isManual = override !== undefined;
+              const on = isManual ? override : (reading?.relays?.[row.tier] ?? false);
+              const busy = relayBusyTier === row.tier;
+              return (
+                <View key={row.tier} style={styles.thresholdRow}>
+                  <View style={styles.thCol1}>
+                    <Text style={[typography.bodyStrong, styles.thRelayName]}>
+                      {row.tier.toUpperCase()} {relayTierLabels[row.tier]}
+                    </Text>
+                  </View>
+                  <Text style={[typography.caption, styles.thCol2, styles.thDevices]}>{row.devices}</Text>
+                  <Text style={[typography.dataXs, styles.thCol3, styles.thThreshold]}>{row.threshold}</Text>
+                  <View style={styles.thCol4}>
+                    <Switch
+                      value={on}
+                      disabled={busy || !deviceId}
+                      onValueChange={(next) => {
+                        if (deviceId) handleRelayToggle(row.tier, next);
+                      }}
+                      trackColor={{ true: colors.indigo[500], false: colors.border }}
+                    />
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        </>
+      )}
+
+      {!loading && !error && hasDevice && !isWeb && (
         <>
           {/* ── Progress: ring + summary ── */}
           <View style={styles.progressCard}>
@@ -467,6 +622,80 @@ const styles = StyleSheet.create({
   warnText: { color: colors.warning },
   pairLink: { marginLeft: spacing.sm },
   pairLinkText: { color: colors.indigo[400] },
+  cardTitle: { color: colors.textPrimary },
+  desktopRow: { flexDirection: "row", gap: spacing.xl, alignItems: "stretch" },
+  consumptionCard: {
+    flex: 2,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.xl,
+    gap: spacing.xs,
+  },
+  consumptionCardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  legendRow: { flexDirection: "row", gap: spacing.md },
+  legendItem: { flexDirection: "row", alignItems: "center", gap: 4 },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendText: { color: colors.textSecondary },
+  consumptionCardSubtitle: { color: colors.textSecondary, marginBottom: spacing.md },
+  desktopChart: { flexDirection: "row", alignItems: "flex-end", height: 180, gap: spacing.sm },
+  desktopChartBarWrap: { flex: 1, alignItems: "center", height: "100%", justifyContent: "flex-end", gap: spacing.xs },
+  desktopChartTrack: { width: "100%", flex: 1, justifyContent: "flex-end", backgroundColor: colors.background, borderRadius: radius.sm, overflow: "hidden" },
+  desktopChartFill: { width: "100%", borderRadius: radius.sm },
+  desktopChartLabel: { color: colors.textSecondary },
+  allocateCard: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.xl,
+    gap: spacing.sm,
+  },
+  currentBalanceBox: {
+    backgroundColor: colors.background,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  currentBalanceLabel: { color: colors.textSecondary },
+  currentBalanceValue: { color: colors.indigo[900], marginTop: 2 },
+  dailyAllowanceBox: {
+    backgroundColor: colors.indigo[100],
+    borderRadius: radius.md,
+    padding: spacing.md,
+  },
+  dailyAllowanceLabel: { color: colors.indigo[700] },
+  dailyAllowanceValue: { color: colors.indigo[900], marginTop: 2 },
+  thresholdCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.xl,
+    gap: spacing.md,
+  },
+  thresholdHeaderRow: {
+    flexDirection: "row",
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingBottom: spacing.sm,
+  },
+  thresholdRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  thCol1: { flex: 1.2 },
+  thCol2: { flex: 2 },
+  thCol3: { flex: 1.4 },
+  thCol4: { flex: 0.8, alignItems: "flex-end" },
+  thRelayName: { color: colors.textPrimary },
+  thDevices: { color: colors.textSecondary },
+  thThreshold: { color: colors.textSecondary },
   progressCard: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,

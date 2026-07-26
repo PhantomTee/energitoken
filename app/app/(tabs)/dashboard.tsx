@@ -13,7 +13,7 @@ import { TopUpModal } from "../../src/components/TopUpModal";
 import { getEngyBalance } from "../../src/services/contract";
 import { useMeterData, MeterMode } from "../../src/hooks/useMeterData";
 import { writeDirectoryEntry } from "../../src/services/directory";
-import { tokensToUnits } from "../../src/services/units";
+import { tokensToUnits, whToUnits } from "../../src/services/units";
 import { clearFirebaseSession } from "../../src/services/firebaseSession";
 import { useNotifications } from "../../src/hooks/useNotifications";
 import { usePushNotifications } from "../../src/hooks/usePushNotifications";
@@ -212,32 +212,19 @@ export default function DashboardScreen() {
         </View>
       )}
 
-      <View style={styles.topSection}>
-        <View style={styles.topSectionLeft}>
-          <View style={styles.balanceCard}>
-            <View style={styles.balanceMain}>
-              <Text style={[typography.label, styles.balanceLabel]}>Available credit</Text>
-              <Text style={[typography.data, styles.balanceValue]}>
-                {balanceWh === null ? "···" : tokensToUnits(balanceWh).toLocaleString()}
-              </Text>
-              <Text style={[typography.dataSm, styles.balanceUnit]}>units · 1 unit = 1 kWh</Text>
-            </View>
-            <BudgetRing percentUsed={reading?.percentUsed ?? 0} size={96} />
+      {isWeb ? (
+        <>
+          {/* ── Desktop: 4-metric row ── */}
+          <View style={styles.metricRow}>
+            <MetricTile label="Voltage" value={reading ? reading.voltage.toFixed(1) : "—"} unit="V" />
+            <MetricTile label="Current" value={reading ? reading.current.toFixed(1) : "—"} unit="A" />
+            <MetricTile label="Power" value={reading ? reading.power.toFixed(0) : "—"} unit="W" />
+            <MetricTile
+              label="Energy"
+              value={reading?.energyWh != null ? whToUnits(reading.energyWh).toFixed(1) : "—"}
+              unit="kWh"
+            />
           </View>
-
-          {walletAddress && (
-            <View style={styles.quickActionsRow}>
-              <Pressable style={[styles.quickActionButton, styles.topUpButton]} onPress={() => setTopUpVisible(true)}>
-                <Text style={[typography.bodyStrong, styles.quickActionText]}>Top Up</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.quickActionButton, styles.setBudgetButton]}
-                onPress={() => router.push("/(tabs)/budget")}
-              >
-                <Text style={[typography.bodyStrong, styles.quickActionText]}>Set Budget</Text>
-              </Pressable>
-            </View>
-          )}
 
           {mode === "live" && !hasDevice && !meterLoading && (
             <View style={styles.meterStatusRow}>
@@ -247,72 +234,160 @@ export default function DashboardScreen() {
               </Link>
             </View>
           )}
-          {mode === "live" && meterLoading && (
-            <View style={styles.meterStatusRow}>
-              <ActivityIndicator color={colors.indigo[400]} />
-              <Text style={[typography.caption, styles.meterStatusText]}>Loading live meter data…</Text>
-            </View>
-          )}
           {mode === "live" && meterError && (
             <Text style={[typography.caption, styles.errorText]}>Couldn't load live data: {meterError}</Text>
           )}
-        </View>
 
-        <View style={styles.topSectionRight}>
-          <View style={styles.readingsCard}>
-            <View style={styles.readingsCardHeader}>
-              <Text style={[typography.bodyStrong, styles.readingsCardTitle]}>Live Readings</Text>
-              {meterStatus === "live" && (
-                <View style={styles.liveBadgeRow}>
-                  <View style={styles.liveDot} />
-                  <Text style={[typography.dataXs, styles.liveBadgeText]}>LIVE</Text>
-                </View>
+          {/* ── Desktop: Daily Budget ring + Wallet ── */}
+          <View style={styles.desktopRow}>
+            <View style={styles.dailyBudgetCard}>
+              <Text style={[typography.h2, styles.cardTitle]}>Daily Budget</Text>
+              <BudgetRing percentUsed={reading?.percentUsed ?? 0} size={140} />
+              <Text style={[typography.dataSm, styles.dailyBudgetSummary]}>
+                {reading?.energyWh != null ? reading.energyWh.toLocaleString() : "—"} Wh consumed of{" "}
+                {reading?.budgetWh != null ? reading.budgetWh.toLocaleString() : "—"} Wh
+              </Text>
+            </View>
+
+            <View style={styles.walletCard}>
+              <View style={styles.walletCardHeader}>
+                <Text style={[typography.h2, styles.cardTitle]}>Wallet</Text>
+                <Text style={styles.walletIcon}>💳</Text>
+              </View>
+              <Text style={[typography.label, styles.walletLabel]}>Available Balance</Text>
+              <Text style={[typography.dataMd, styles.walletValue]}>
+                {balanceWh === null ? "···" : tokensToUnits(balanceWh).toLocaleString()}
+                <Text style={[typography.dataXs, styles.walletUnit]}> ENGY</Text>
+              </Text>
+              {walletAddress && (
+                <Pressable style={styles.walletTopUpButton} onPress={() => setTopUpVisible(true)}>
+                  <Text style={[typography.bodyStrong, styles.quickActionText]}>+ Top Up Balance</Text>
+                </Pressable>
               )}
             </View>
-            <View style={styles.tileGrid}>
-              <View style={styles.tileRow}>
-                <MetricTile label="Voltage" value={reading ? reading.voltage.toFixed(1) : "—"} unit="V" />
-                <MetricTile label="Current" value={reading ? reading.current.toFixed(1) : "—"} unit="A" />
+          </View>
+
+          {/* ── Desktop: Relay Control Status ── */}
+          <View style={styles.relayCard}>
+            <Text style={[typography.h2, styles.cardTitle]}>Relay Control Status</Text>
+            <RelayIndicator
+              variant="compact"
+              relays={reading?.relays ?? { r1: false, r2: false, r3: false, r4: false }}
+              overrides={reading?.relayOverrides}
+              onToggle={deviceId ? handleRelayToggle : undefined}
+              disabledTier={relayBusyTier}
+            />
+            {relayError && <Text style={[typography.caption, styles.errorText]}>{relayError}</Text>}
+          </View>
+        </>
+      ) : (
+        <>
+          <View style={styles.topSection}>
+            <View style={styles.topSectionLeft}>
+              <View style={styles.balanceCard}>
+                <View style={styles.balanceMain}>
+                  <Text style={[typography.label, styles.balanceLabel]}>Available credit</Text>
+                  <Text style={[typography.data, styles.balanceValue]}>
+                    {balanceWh === null ? "···" : tokensToUnits(balanceWh).toLocaleString()}
+                  </Text>
+                  <Text style={[typography.dataSm, styles.balanceUnit]}>units · 1 unit = 1 kWh</Text>
+                </View>
+                <BudgetRing percentUsed={reading?.percentUsed ?? 0} size={96} />
               </View>
-              <View style={styles.tileRow}>
-                <MetricTile label="Power" value={reading ? reading.power.toFixed(0) : "—"} unit="W" />
-                <MetricTile
-                  label="Frequency"
-                  value={reading?.frequency != null ? reading.frequency.toFixed(1) : "—"}
-                  unit="Hz"
-                />
-              </View>
+
+              {walletAddress && (
+                <View style={styles.quickActionsRow}>
+                  <Pressable
+                    style={[styles.quickActionButton, styles.topUpButton]}
+                    onPress={() => setTopUpVisible(true)}
+                  >
+                    <Text style={[typography.bodyStrong, styles.quickActionText]}>Top Up</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.quickActionButton, styles.setBudgetButton]}
+                    onPress={() => router.push("/(tabs)/budget")}
+                  >
+                    <Text style={[typography.bodyStrong, styles.quickActionText]}>Set Budget</Text>
+                  </Pressable>
+                </View>
+              )}
+
+              {mode === "live" && !hasDevice && !meterLoading && (
+                <View style={styles.meterStatusRow}>
+                  <Text style={[typography.caption, styles.meterStatusText]}>No device paired yet</Text>
+                  <Link href="/onboarding" style={styles.pairLink}>
+                    <Text style={[typography.dataXs, styles.pairLinkText]}>Pair a device →</Text>
+                  </Link>
+                </View>
+              )}
+              {mode === "live" && meterLoading && (
+                <View style={styles.meterStatusRow}>
+                  <ActivityIndicator color={colors.indigo[400]} />
+                  <Text style={[typography.caption, styles.meterStatusText]}>Loading live meter data…</Text>
+                </View>
+              )}
+              {mode === "live" && meterError && (
+                <Text style={[typography.caption, styles.errorText]}>Couldn't load live data: {meterError}</Text>
+              )}
             </View>
 
-            <Pressable onPress={() => setShowMoreReadings((v) => !v)} style={styles.moreToggle}>
-              <Text style={[typography.caption, styles.moreToggleText]}>
-                {showMoreReadings ? "Show less ▲" : "More readings ▼"}
-              </Text>
-            </Pressable>
-            {showMoreReadings && (
-              <View style={styles.tileRow}>
-                <MetricTile
-                  label="Power factor"
-                  value={reading?.powerFactor != null ? reading.powerFactor.toFixed(2) : "—"}
-                  unit=""
-                />
-              </View>
-            )}
-          </View>
-        </View>
-      </View>
+            <View style={styles.topSectionRight}>
+              <View style={styles.readingsCard}>
+                <View style={styles.readingsCardHeader}>
+                  <Text style={[typography.bodyStrong, styles.readingsCardTitle]}>Live Readings</Text>
+                  {meterStatus === "live" && (
+                    <View style={styles.liveBadgeRow}>
+                      <View style={styles.liveDot} />
+                      <Text style={[typography.dataXs, styles.liveBadgeText]}>LIVE</Text>
+                    </View>
+                  )}
+                </View>
+                <View style={styles.tileGrid}>
+                  <View style={styles.tileRow}>
+                    <MetricTile label="Voltage" value={reading ? reading.voltage.toFixed(1) : "—"} unit="V" />
+                    <MetricTile label="Current" value={reading ? reading.current.toFixed(1) : "—"} unit="A" />
+                  </View>
+                  <View style={styles.tileRow}>
+                    <MetricTile label="Power" value={reading ? reading.power.toFixed(0) : "—"} unit="W" />
+                    <MetricTile
+                      label="Frequency"
+                      value={reading?.frequency != null ? reading.frequency.toFixed(1) : "—"}
+                      unit="Hz"
+                    />
+                  </View>
+                </View>
 
-      <View style={styles.relayCard}>
-        <Text style={[typography.bodyStrong, styles.relayCardTitle]}>Relay Status</Text>
-        <RelayIndicator
-          variant="compact"
-          relays={reading?.relays ?? { r1: false, r2: false, r3: false, r4: false }}
-          overrides={reading?.relayOverrides}
-          onToggle={deviceId ? handleRelayToggle : undefined}
-          disabledTier={relayBusyTier}
-        />
-        {relayError && <Text style={[typography.caption, styles.errorText]}>{relayError}</Text>}
-      </View>
+                <Pressable onPress={() => setShowMoreReadings((v) => !v)} style={styles.moreToggle}>
+                  <Text style={[typography.caption, styles.moreToggleText]}>
+                    {showMoreReadings ? "Show less ▲" : "More readings ▼"}
+                  </Text>
+                </Pressable>
+                {showMoreReadings && (
+                  <View style={styles.tileRow}>
+                    <MetricTile
+                      label="Power factor"
+                      value={reading?.powerFactor != null ? reading.powerFactor.toFixed(2) : "—"}
+                      unit=""
+                    />
+                  </View>
+                )}
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.relayCard}>
+            <Text style={[typography.bodyStrong, styles.relayCardTitle]}>Relay Status</Text>
+            <RelayIndicator
+              variant="compact"
+              relays={reading?.relays ?? { r1: false, r2: false, r3: false, r4: false }}
+              overrides={reading?.relayOverrides}
+              onToggle={deviceId ? handleRelayToggle : undefined}
+              disabledTier={relayBusyTier}
+            />
+            {relayError && <Text style={[typography.caption, styles.errorText]}>{relayError}</Text>}
+          </View>
+        </>
+      )}
 
       {walletAddress && (
         <TopUpModal visible={topUpVisible} onClose={() => setTopUpVisible(false)} walletAddress={walletAddress} />
@@ -403,6 +478,40 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   relayCardTitle: { color: colors.textPrimary },
+  cardTitle: { color: colors.textPrimary, marginBottom: spacing.md },
+  metricRow: { flexDirection: "row", gap: spacing.md },
+  desktopRow: { flexDirection: "row", gap: spacing.xl, alignItems: "stretch" },
+  dailyBudgetCard: {
+    flex: 2,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.xl,
+    alignItems: "center",
+  },
+  dailyBudgetSummary: { color: colors.textPrimary, marginTop: spacing.lg },
+  walletCard: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.xl,
+    justifyContent: "space-between",
+  },
+  walletCardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  walletIcon: { fontSize: 18 },
+  walletLabel: { color: colors.textSecondary, marginTop: spacing.md },
+  walletValue: { color: colors.indigo[900], marginTop: spacing.xs },
+  walletUnit: { color: colors.textSecondary },
+  walletTopUpButton: {
+    backgroundColor: colors.terracotta[500],
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    alignItems: "center",
+    marginTop: spacing.xl,
+  },
   readingsCard: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
