@@ -24,8 +24,7 @@ import { QRScanner } from "../../src/components/QRScanner";
 import { useTransactionHistory } from "../../src/hooks/useTransactionHistory";
 import { TxDirection } from "../../src/services/contractEvents";
 import { exportTransactionsCsv } from "../../src/services/exportReport";
-
-const isWeb = Platform.OS === "web";
+import { useIsDesktopWeb } from "../../src/hooks/useIsDesktopWeb";
 
 const TX_DIRECTION_META: Record<TxDirection, string> = {
   mint: "Purchased",
@@ -77,6 +76,7 @@ const RECIPIENT_TABS: { key: RecipientMode; label: string }[] = Platform.OS === 
     ];
 
 export default function TransferScreen() {
+  const isDesktop = useIsDesktopWeb();
   const { walletAddress, getSigner } = useWallet();
   const [recipientMode, setRecipientMode] = useState<RecipientMode>("email");
   const [recipient, setRecipient] = useState("");
@@ -98,7 +98,7 @@ export default function TransferScreen() {
   const [checkingChain, setCheckingChain] = useState(false);
 
   const { transactions: historyTransactions, refresh: refreshHistory } = useTransactionHistory(
-    isWeb ? walletAddress : null
+    isDesktop ? walletAddress : null
   );
 
   const refreshBalance = useCallback(async () => {
@@ -218,7 +218,7 @@ export default function TransferScreen() {
       await tx.wait();
       setTxState("confirmed");
       await refreshBalance();
-      if (isWeb) refreshHistory();
+      if (isDesktop) refreshHistory();
     } catch (err) {
       setTxState("failed");
       setTxError(err instanceof Error ? err.message : "Something went wrong.");
@@ -241,7 +241,7 @@ export default function TransferScreen() {
   return (
     <ScrollView
       style={styles.screen}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, isDesktop && styles.contentDesktop]}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -262,8 +262,8 @@ export default function TransferScreen() {
         </Text>
       </View>
 
-      <View style={isWeb ? styles.desktopRow : undefined}>
-      <View style={isWeb ? styles.desktopFormCol : undefined}>
+      <View style={isDesktop ? styles.desktopRow : undefined}>
+      <View style={isDesktop ? styles.desktopFormCol : undefined}>
 
       <Text style={[typography.label, styles.fieldLabel]}>RECIPIENT</Text>
       <View style={styles.tabRow}>
@@ -407,7 +407,7 @@ export default function TransferScreen() {
 
       </View>
 
-      {isWeb && (
+      {isDesktop && (
         <View style={styles.historyCol}>
           <View style={styles.historyCard}>
             <View style={styles.historyCardHeader}>
@@ -527,9 +527,8 @@ export default function TransferScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
-  content: isWeb
-    ? { padding: spacing.xxl, paddingBottom: spacing.xxl, maxWidth: 640, width: "100%", alignSelf: "center" }
-    : { padding: spacing.lg, paddingBottom: spacing.xxl },
+  content: { padding: spacing.lg, paddingBottom: spacing.xxl, width: "100%", alignSelf: "center" },
+  contentDesktop: { padding: spacing.xxl, paddingBottom: spacing.xxl, maxWidth: 1100 },
   titleRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   title: { color: colors.textPrimary, marginBottom: spacing.xs },
   fieldLabel: { color: colors.textSecondary, marginBottom: spacing.xs, marginTop: spacing.md },

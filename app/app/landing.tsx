@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, Platform, Linking } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, Platform, Linking, useWindowDimensions } from "react-native";
 import { useRouter, Redirect } from "expo-router";
 import { colors } from "../src/theme/colors";
 import { typography, spacing, radius } from "../src/theme/typography";
@@ -39,6 +39,8 @@ const STEPS = [
  * this route redirects straight to /login there. */
 export default function LandingScreen() {
   const router = useRouter();
+  const { width } = useWindowDimensions();
+  const isNarrow = width < 700;
 
   if (Platform.OS !== "web") {
     return <Redirect href="/login" />;
@@ -52,8 +54,12 @@ export default function LandingScreen() {
           <Text style={[typography.h2, styles.brandLabel]}>EnergiToken</Text>
         </View>
         <View style={styles.navRight}>
-          <Text style={[typography.body, styles.navLink]}>Features</Text>
-          <Text style={[typography.body, styles.navLink]}>How it Works</Text>
+          {!isNarrow && (
+            <>
+              <Text style={[typography.body, styles.navLink]}>Features</Text>
+              <Text style={[typography.body, styles.navLink]}>How it Works</Text>
+            </>
+          )}
           <Pressable style={styles.navCta} onPress={() => router.push("/login")}>
             <Text style={[typography.bodyStrong, styles.navCtaText]}>Get Started</Text>
           </Pressable>
@@ -61,18 +67,18 @@ export default function LandingScreen() {
       </View>
 
       {/* ── Hero ── */}
-      <View style={styles.hero}>
-        <View style={styles.heroLeft}>
-          <Text style={[typography.display, styles.heroTitle]}>
+      <View style={[styles.hero, isNarrow && styles.heroNarrow]}>
+        <View style={[styles.heroLeft, isNarrow && styles.heroLeftNarrow]}>
+          <Text style={[typography.display, styles.heroTitle, isNarrow && styles.heroTitleNarrow]}>
             Powering Your Future.{"\n"}
             <Text style={styles.heroTitleAccent}>Track. Budget. Share.</Text>
           </Text>
-          <Text style={[typography.body, styles.heroSubtitle]}>
+          <Text style={[typography.body, styles.heroSubtitle, isNarrow && styles.heroSubtitleNarrow]}>
             Take control of your energy consumption with EnergiToken. Real-time monitoring,
             intelligent relay shedding, and seamless wallet-to-wallet surplus sharing in one unified
             platform.
           </Text>
-          <View style={styles.heroButtons}>
+          <View style={[styles.heroButtons, isNarrow && styles.heroButtonsNarrow]}>
             <Pressable style={styles.heroPrimaryButton} onPress={() => router.push("/login")}>
               <Text style={[typography.bodyStrong, styles.heroPrimaryButtonText]}>Get Started</Text>
             </Pressable>
@@ -81,12 +87,14 @@ export default function LandingScreen() {
             </Pressable>
           </View>
         </View>
-        <View style={styles.heroRight}>
-          <View style={styles.heroArt}>
-            <AdinkraAccent size={120} color={colors.indigo[300]} dotColor={colors.terracotta[400]} opacity={0.9} />
-            <Text style={styles.heroArtIcon}>⚡</Text>
+        {!isNarrow && (
+          <View style={styles.heroRight}>
+            <View style={styles.heroArt}>
+              <AdinkraAccent size={120} color={colors.indigo[300]} dotColor={colors.terracotta[400]} opacity={0.9} />
+              <Text style={styles.heroArtIcon}>⚡</Text>
+            </View>
           </View>
-        </View>
+        )}
       </View>
 
       {/* ── Features ── */}
@@ -191,11 +199,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.xxl,
   },
+  heroNarrow: { paddingVertical: spacing.xl },
   heroLeft: { flex: 1, gap: spacing.lg, minWidth: 320 },
+  heroLeftNarrow: { minWidth: 0, alignItems: "center" },
   heroTitle: { color: colors.indigo[900], fontSize: 44, lineHeight: 50 },
+  heroTitleNarrow: { fontSize: 30, lineHeight: 36, textAlign: "center" },
   heroTitleAccent: { color: colors.terracotta[500] },
   heroSubtitle: { color: colors.textSecondary, maxWidth: 460 },
+  heroSubtitleNarrow: { textAlign: "center" },
   heroButtons: { flexDirection: "row", gap: spacing.md, flexWrap: "wrap" },
+  heroButtonsNarrow: { justifyContent: "center" },
   heroPrimaryButton: {
     backgroundColor: colors.terracotta[500],
     borderRadius: radius.pill,

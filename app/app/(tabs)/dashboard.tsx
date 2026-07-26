@@ -20,10 +20,10 @@ import { usePushNotifications } from "../../src/hooks/usePushNotifications";
 import { NotificationsPanel } from "../../src/components/NotificationsPanel";
 import { setRelayOverride } from "../../src/services/relayOverride";
 import { Toast } from "../../src/components/Toast";
+import { useIsDesktopWeb } from "../../src/hooks/useIsDesktopWeb";
 
 /** How stale a reading can be before the status pill drops from Live to No signal. */
 const STALE_AFTER_MS = 30_000;
-const isWeb = Platform.OS === "web";
 
 const SHED_THRESHOLD_PCT: Record<RelayTier, number> = { r1: Infinity, r2: 95, r3: 85, r4: 70 };
 
@@ -38,6 +38,7 @@ function formatSecondsAgo(updatedAt: number, nowMs: number): string {
 }
 
 export default function DashboardScreen() {
+  const isDesktop = useIsDesktopWeb();
   const [mode, setMode] = useState<MeterMode>("mock");
   const { walletAddress, email, logout } = useWallet();
   const [topUpVisible, setTopUpVisible] = useState(false);
@@ -155,7 +156,7 @@ export default function DashboardScreen() {
   return (
     <ScrollView
       style={styles.screen}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, isDesktop && styles.contentDesktop]}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -212,7 +213,7 @@ export default function DashboardScreen() {
         </View>
       )}
 
-      {isWeb ? (
+      {isDesktop ? (
         <>
           {/* ── Desktop: 4-metric row ── */}
           <View style={styles.metricRow}>
@@ -405,12 +406,11 @@ export default function DashboardScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
-  content: isWeb
-    ? { padding: spacing.xxl, paddingBottom: spacing.xxl, gap: spacing.md, maxWidth: 1000, width: "100%", alignSelf: "center" }
-    : { padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md },
-  topSection: isWeb ? { flexDirection: "row", gap: spacing.xl, alignItems: "flex-start" } : {},
-  topSectionLeft: isWeb ? { flex: 1, gap: spacing.md } : { gap: spacing.md },
-  topSectionRight: isWeb ? { flex: 1, gap: spacing.sm } : { gap: spacing.sm },
+  content: { padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md, width: "100%", alignSelf: "center" },
+  contentDesktop: { padding: spacing.xxl, paddingBottom: spacing.xxl, maxWidth: 1000 },
+  topSection: {},
+  topSectionLeft: { gap: spacing.md },
+  topSectionRight: { gap: spacing.sm },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   brandRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   brandWordmark: { color: colors.textPrimary, letterSpacing: 0.5 },

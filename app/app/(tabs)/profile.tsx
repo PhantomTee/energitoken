@@ -12,8 +12,7 @@ import { clearFirebaseSession } from "../../src/services/firebaseSession";
 import { displayNameFromEmail } from "../../src/services/displayName";
 import { useTransactionHistory } from "../../src/hooks/useTransactionHistory";
 import { exportTransactionsCsv } from "../../src/services/exportReport";
-
-const isWeb = Platform.OS === "web";
+import { useIsDesktopWeb } from "../../src/hooks/useIsDesktopWeb";
 
 const APP_VERSION = "EnergiToken v1.0 — Polygon Amoy";
 const CONTRACT_ADDRESS = "0x8493324De9578BF390092ed6c4a5b1033fBF8048";
@@ -54,6 +53,7 @@ function SettingsRow({
  * "coming soon" rather than silently doing nothing.
  */
 export default function ProfileScreen() {
+  const isDesktop = useIsDesktopWeb();
   const { email, walletAddress, logout } = useWallet();
   const [deviceId, setDeviceId] = useState<string | null | undefined>(undefined);
   const [unbindVisible, setUnbindVisible] = useState(false);
@@ -64,7 +64,7 @@ export default function ProfileScreen() {
   const [budgetWarnings, setBudgetWarnings] = useState(true);
   const [language, setLanguage] = useState<(typeof LANGUAGES)[number]["code"]>("en");
   const displayName = displayNameFromEmail(email);
-  const { transactions: exportTransactions } = useTransactionHistory(isWeb ? walletAddress : null);
+  const { transactions: exportTransactions } = useTransactionHistory(isDesktop ? walletAddress : null);
 
   const loadDevice = React.useCallback(() => {
     if (!walletAddress) return;
@@ -99,13 +99,13 @@ export default function ProfileScreen() {
   };
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.screen} contentContainerStyle={[styles.content, isDesktop && styles.contentDesktop]}>
       <View style={styles.titleRow}>
         <Text style={[typography.h1, styles.title]}>Settings</Text>
         <AdinkraAccent size={28} color={colors.terracotta[400]} dotColor={colors.indigo[400]} opacity={1} />
       </View>
 
-      {isWeb ? (
+      {isDesktop ? (
         <>
           <Text style={[typography.body, styles.desktopSubtitle]}>
             Manage your account preferences and device connections.
@@ -392,9 +392,8 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
-  content: isWeb
-    ? { padding: spacing.xxl, paddingBottom: spacing.xxl, maxWidth: 1000, width: "100%", alignSelf: "center", gap: spacing.lg }
-    : { padding: spacing.lg, paddingBottom: spacing.xxl },
+  content: { padding: spacing.lg, paddingBottom: spacing.xxl, width: "100%", alignSelf: "center" },
+  contentDesktop: { padding: spacing.xxl, paddingBottom: spacing.xxl, maxWidth: 1000, gap: spacing.lg },
   titleRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.lg },
   title: { color: colors.textPrimary },
   identityCard: {

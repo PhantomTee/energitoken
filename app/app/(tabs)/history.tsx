@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, Linking, ActivityIndicator, Platform } from "react-native";
+import { View, Text, StyleSheet, FlatList, Pressable, Linking, ActivityIndicator } from "react-native";
 import { colors } from "../../src/theme/colors";
 import { typography, fonts, spacing, radius } from "../../src/theme/typography";
 import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
@@ -8,8 +8,7 @@ import { useTransactionHistory } from "../../src/hooks/useTransactionHistory";
 import { TxRecord, TxDirection } from "../../src/services/contractEvents";
 import { whToUnits } from "../../src/services/units";
 import { exportTransactionsCsv, exportBillingReportPdf } from "../../src/services/exportReport";
-
-const isWeb = Platform.OS === "web";
+import { useIsDesktopWeb } from "../../src/hooks/useIsDesktopWeb";
 
 const CONSUMPTION_DAYS = 14;
 
@@ -146,6 +145,7 @@ function TransactionRow({ tx }: { tx: TxRecord }) {
 
 /** Reads real Transfer/Minted/Consumed event logs for this wallet from Polygon Amoy. */
 export default function HistoryScreen() {
+  const isDesktop = useIsDesktopWeb();
   const { walletAddress } = useWallet();
   const { transactions, loading, error, refresh } = useTransactionHistory(walletAddress);
   const [filter, setFilter] = useState<FilterTab>("transactions");
@@ -157,11 +157,11 @@ export default function HistoryScreen() {
   const dailyConsumption = useDailyConsumption(transactions);
 
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, isDesktop && styles.screenDesktop]}>
       <View style={styles.header}>
         <Text style={[typography.h1, styles.headerTitle]}>History</Text>
         <View style={styles.headerRight}>
-          {isWeb && walletAddress && transactions.length > 0 && (
+          {isDesktop && walletAddress && transactions.length > 0 && (
             <>
               <Pressable
                 style={styles.exportButton}
@@ -245,9 +245,8 @@ export default function HistoryScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: isWeb
-    ? { flex: 1, backgroundColor: colors.background, width: "100%", maxWidth: 900, alignSelf: "center", paddingTop: spacing.lg }
-    : { flex: 1, backgroundColor: colors.background },
+  screen: { flex: 1, backgroundColor: colors.background },
+  screenDesktop: { width: "100%", maxWidth: 900, alignSelf: "center", paddingTop: spacing.lg },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",

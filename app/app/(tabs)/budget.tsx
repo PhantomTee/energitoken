@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, Platform, Switch } from "react-native";
+import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, Switch } from "react-native";
 import { useFocusEffect, Link } from "expo-router";
 import { colors, RelayTier, relayTierLabels } from "../../src/theme/colors";
 import { typography, spacing, radius } from "../../src/theme/typography";
@@ -14,6 +14,7 @@ import { setBudgetWh } from "../../src/services/budget";
 import { ensureFirebaseSession } from "../../src/services/firebaseSession";
 import { whToUnits, unitsToWh, tokensToUnits } from "../../src/services/units";
 import { setRelayOverride } from "../../src/services/relayOverride";
+import { useIsDesktopWeb } from "../../src/hooks/useIsDesktopWeb";
 
 const PERIOD_OPTIONS = [7, 14, 30] as const;
 type PeriodDays = (typeof PERIOD_OPTIONS)[number];
@@ -56,7 +57,6 @@ function useDailyUsage(walletAddress: string | null, periodDays: PeriodDays) {
   return { days, loading, error };
 }
 
-const isWeb = Platform.OS === "web";
 
 /** Sanity ceiling: 100 kWh/day is several times a heavy Nigerian household. */
 const MAX_BUDGET_UNITS = 100;
@@ -115,6 +115,7 @@ function ShedLadder({ percentUsed }: { percentUsed: number }) {
 }
 
 export default function BudgetScreen() {
+  const isDesktop = useIsDesktopWeb();
   const { walletAddress } = useWallet();
   const [refreshing, setRefreshing] = useState(false);
   const [balanceWh, setBalanceWh] = useState<bigint | null>(null);
@@ -221,7 +222,7 @@ export default function BudgetScreen() {
   return (
     <ScrollView
       style={styles.screen}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, isDesktop && styles.contentDesktop]}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -232,9 +233,9 @@ export default function BudgetScreen() {
       }
     >
       <View style={styles.titleRow}>
-        <Text style={[typography.h1, styles.title]}>{isWeb ? "Budget Planning" : "Budget"}</Text>
+        <Text style={[typography.h1, styles.title]}>{isDesktop ? "Budget Planning" : "Budget"}</Text>
         <View style={styles.titleRight}>
-          {isWeb && (
+          {isDesktop && (
             <Pressable onPress={handleRefresh} style={styles.refreshButton} disabled={refreshing}>
               {refreshing
                 ? <ActivityIndicator size="small" color={colors.indigo[400]} />
@@ -245,7 +246,7 @@ export default function BudgetScreen() {
         </View>
       </View>
       <Text style={[typography.body, styles.subtitle]}>
-        {isWeb
+        {isDesktop
           ? "Allocate your EnergiTokens efficiently and monitor your consumption against daily allowances."
           : "1 unit = 1 kWh. As usage approaches this budget, your meter sheds loads gently, least important first — instead of everything going dark at once."}
       </Text>
@@ -272,7 +273,7 @@ export default function BudgetScreen() {
         </View>
       )}
 
-      {!loading && !error && hasDevice && isWeb && (
+      {!loading && !error && hasDevice && isDesktop && (
         <>
           {/* ── Desktop: Consumption Curve + Allocate Budget ── */}
           <View style={styles.desktopRow}>
@@ -419,7 +420,7 @@ export default function BudgetScreen() {
         </>
       )}
 
-      {!loading && !error && hasDevice && !isWeb && (
+      {!loading && !error && hasDevice && !isDesktop && (
         <>
           {/* ── Progress: ring + summary ── */}
           <View style={styles.progressCard}>
@@ -600,9 +601,8 @@ export default function BudgetScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
-  content: isWeb
-    ? { padding: spacing.xxl, paddingBottom: spacing.xxl, gap: spacing.md, maxWidth: 800, width: "100%", alignSelf: "center" }
-    : { padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md },
+  content: { padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md, width: "100%", alignSelf: "center" },
+  contentDesktop: { padding: spacing.xxl, paddingBottom: spacing.xxl, maxWidth: 1000 },
   titleRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   titleRight: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   title: { color: colors.textPrimary },
