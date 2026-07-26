@@ -365,7 +365,11 @@ export default function BudgetScreen() {
           {/* ── Live relay state ── */}
           {reading?.relays && (
             <>
-              <Text style={[typography.h2, styles.sectionTitle]}>Loads right now</Text>
+              <Text style={[typography.h2, styles.sectionTitle]}>Load Priority Guide</Text>
+              <Text style={[typography.caption, styles.loadGuideIntro]}>
+                When energy reserves run low, non-essential relays automatically disconnect to
+                preserve critical systems based on these thresholds. Tap a load to override it.
+              </Text>
               <RelayIndicator
                 relays={reading.relays}
                 overrides={reading.relayOverrides}
@@ -504,6 +508,7 @@ const styles = StyleSheet.create({
   projectionText: { color: colors.textPrimary },
   sectionTitle: { color: colors.textPrimary, marginTop: spacing.sm },
   ladderIntro: { color: colors.textSecondary },
+  loadGuideIntro: { color: colors.textSecondary, marginTop: -spacing.xs },
   ladder: {
     backgroundColor: colors.surface,
     borderRadius: radius.md,

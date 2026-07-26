@@ -7,11 +7,11 @@ import { RelayState, RelayOverrides } from "../mock/mockMeterData";
 const TIERS: RelayTier[] = ["r1", "r2", "r3", "r4"];
 const isWeb = Platform.OS === "web";
 
-const TIER_META: Record<RelayTier, { icon: string; devices: string; threshold: string }> = {
-  r1: { icon: "💡", devices: "Lighting, phone charging", threshold: "Always on" },
-  r2: { icon: "🌀", devices: "Fans, some lights", threshold: "Sheds at 95%" },
-  r3: { icon: "📺", devices: "TV, sockets", threshold: "Sheds at 85%" },
-  r4: { icon: "🔥", devices: "Water heater, AC", threshold: "Sheds at 70%" },
+const TIER_META: Record<RelayTier, { devices: string; threshold: string; accent: string; tint: string }> = {
+  r1: { devices: "Lighting, phone charging", threshold: "Always on", accent: colors.terracotta[500], tint: colors.terracotta[100] },
+  r2: { devices: "Fans, some lights", threshold: "Sheds at 95% used", accent: colors.terracotta[400], tint: colors.background },
+  r3: { devices: "TV, sockets", threshold: "Sheds at 85% used", accent: colors.indigo[500], tint: colors.background },
+  r4: { devices: "Water heater, AC", threshold: "Sheds at 70% used", accent: colors.neutral[500], tint: colors.background },
 };
 
 type Props = {
@@ -23,6 +23,12 @@ type Props = {
    * OFF → Auto. Omit to render a non-interactive strip (e.g. read-only views). */
   onToggle?: (tier: RelayTier, next: boolean | null) => void;
   disabledTier?: RelayTier | null;
+  /** "guide" (default): the descriptive left-accent-bar card list, showing
+   * what's on each tier and when it sheds -- for Budget's load-priority
+   * explainer. "compact": a plain label + ON/OFF pill grid -- for
+   * Dashboard's live relay status, where the "why" is already covered
+   * elsewhere on screen. */
+  variant?: "guide" | "compact";
 };
 
 function nextOverrideValue(current: boolean | undefined): boolean | null {
@@ -31,12 +37,48 @@ function nextOverrideValue(current: boolean | undefined): boolean | null {
   return null; // force OFF -> auto
 }
 
-/** On native this is a stacked list of left-accent-bar cards -- tier,
- * devices, and shed threshold at a glance, same shape as a load-priority
- * guide. On web it's a grid of the same cards so it reads as a real
- * desktop panel instead of a thin list stretched across a wide viewport. */
-export function RelayIndicator({ relays, overrides, onToggle, disabledTier }: Props) {
+export function RelayIndicator({ relays, overrides, onToggle, disabledTier, variant = "guide" }: Props) {
   const interactive = !!onToggle;
+
+  if (variant === "compact") {
+    return (
+      <View style={styles.compactGrid}>
+        {TIERS.map((tier) => {
+          const override = overrides?.[tier];
+          const isManual = override !== undefined;
+          const on = isManual ? override : relays[tier];
+          const busy = disabledTier === tier;
+
+          const pill = (
+            <View style={styles.compactCard}>
+              <Text style={[typography.caption, styles.compactLabel]}>
+                {relayTierLabels[tier]} ({tier.toUpperCase()})
+              </Text>
+              <View style={[styles.compactPill, on ? styles.compactPillOn : styles.compactPillOff]}>
+                <View style={[styles.compactDot, { backgroundColor: on ? colors.terracotta[500] : colors.neutral[500] }]} />
+                <Text style={[typography.dataXs, on ? styles.compactPillTextOn : styles.compactPillTextOff]}>
+                  {busy ? "…" : on ? "ON" : "OFF"}
+                </Text>
+              </View>
+            </View>
+          );
+
+          if (!interactive) return <View key={tier} style={styles.compactItem}>{pill}</View>;
+
+          return (
+            <Pressable
+              key={tier}
+              onPress={() => onToggle(tier, nextOverrideValue(override))}
+              disabled={busy}
+              style={({ pressed }) => [styles.compactItem, pressed && styles.pressed]}
+            >
+              {pill}
+            </Pressable>
+          );
+        })}
+      </View>
+    );
+  }
 
   return (
     <View>
@@ -49,17 +91,15 @@ export function RelayIndicator({ relays, overrides, onToggle, disabledTier }: Pr
           const on = isManual ? override : relays[tier];
           const busy = disabledTier === tier;
           const meta = TIER_META[tier];
-          const barColor = isManual ? colors.terracotta[500] : on ? colors.success : colors.neutral[500];
 
           const card = (
-            <View style={[styles.card, isWeb && styles.cardWeb]}>
-              <View style={[styles.accentBar, { backgroundColor: barColor }]} />
-              <View style={styles.cardIconWrap}>
-                <Text style={styles.cardIcon}>{meta.icon}</Text>
-              </View>
+            <View style={[styles.card, isWeb && styles.cardWeb, { backgroundColor: meta.tint }]}>
+              <View style={[styles.accentBar, { backgroundColor: meta.accent }]} />
               <View style={styles.cardBody}>
                 <View style={styles.cardTopRow}>
-                  <Text style={[typography.bodyStrong, styles.cardLabel]}>{relayTierLabels[tier]}</Text>
+                  <Text style={[typography.bodyStrong, styles.cardLabel, { color: meta.accent }]}>
+                    {tier.toUpperCase()} {relayTierLabels[tier]}
+                  </Text>
                   {isManual && (
                     <View style={styles.manualBadge}>
                       <Text style={styles.manualBadgeText}>MANUAL</Text>
@@ -74,7 +114,7 @@ export function RelayIndicator({ relays, overrides, onToggle, disabledTier }: Pr
                 >
                   {busy ? "…" : on ? "ON" : "SHED"}
                 </Text>
-                <Text style={[typography.caption, styles.cardThreshold]}>{meta.threshold}</Text>
+                <Text style={[typography.caption, styles.cardThreshold, { color: meta.accent }]}>{meta.threshold}</Text>
               </View>
             </View>
           );
@@ -113,25 +153,20 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.surface,
     borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
     overflow: "hidden",
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.md,
     paddingRight: spacing.md,
   },
   cardWeb: { flexBasis: 260, flexGrow: 1, minWidth: 240 },
   accentBar: { width: 4, alignSelf: "stretch", marginRight: spacing.md },
-  cardIconWrap: { marginRight: spacing.sm },
-  cardIcon: { fontSize: 20 },
   cardBody: { flex: 1, gap: 2 },
   cardTopRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  cardLabel: { color: colors.textPrimary },
+  cardLabel: {},
   cardDevices: { color: colors.textSecondary },
-  cardRight: { alignItems: "flex-end", gap: 2, minWidth: 78 },
+  cardRight: { alignItems: "flex-end", gap: 2, minWidth: 90 },
   cardStatus: { letterSpacing: 0.5 },
-  cardThreshold: { color: colors.textSecondary, fontSize: 11 },
+  cardThreshold: { fontSize: 11 },
   manualBadge: {
     backgroundColor: colors.terracotta[500],
     borderRadius: radius.pill,
@@ -140,4 +175,33 @@ const styles = StyleSheet.create({
   },
   manualBadgeText: { color: colors.neutral.white, fontSize: 9, fontWeight: "700" },
   hint: { color: colors.textSecondary, opacity: 0.85, marginTop: spacing.sm },
+
+  // ── Compact (Dashboard "Relay Status") ──
+  compactGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  compactItem: { flexBasis: "47%", flexGrow: 1, minWidth: 140 },
+  compactCard: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: colors.background,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  compactLabel: { color: colors.textPrimary },
+  compactPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+  },
+  compactPillOn: { backgroundColor: colors.terracotta[100] },
+  compactPillOff: { backgroundColor: colors.neutral[100] },
+  compactDot: { width: 6, height: 6, borderRadius: 3 },
+  compactPillTextOn: { color: colors.terracotta[700] },
+  compactPillTextOff: { color: colors.textSecondary },
 });

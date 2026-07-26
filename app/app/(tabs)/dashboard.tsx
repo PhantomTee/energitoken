@@ -302,14 +302,17 @@ export default function DashboardScreen() {
         </View>
       </View>
 
-      <Text style={[typography.h2, styles.sectionTitle]}>Load priority</Text>
-      <RelayIndicator
-        relays={reading?.relays ?? { r1: false, r2: false, r3: false, r4: false }}
-        overrides={reading?.relayOverrides}
-        onToggle={deviceId ? handleRelayToggle : undefined}
-        disabledTier={relayBusyTier}
-      />
-      {relayError && <Text style={[typography.caption, styles.errorText]}>{relayError}</Text>}
+      <View style={styles.relayCard}>
+        <Text style={[typography.bodyStrong, styles.relayCardTitle]}>Relay Status</Text>
+        <RelayIndicator
+          variant="compact"
+          relays={reading?.relays ?? { r1: false, r2: false, r3: false, r4: false }}
+          overrides={reading?.relayOverrides}
+          onToggle={deviceId ? handleRelayToggle : undefined}
+          disabledTier={relayBusyTier}
+        />
+        {relayError && <Text style={[typography.caption, styles.errorText]}>{relayError}</Text>}
+      </View>
 
       {walletAddress && (
         <TopUpModal visible={topUpVisible} onClose={() => setTopUpVisible(false)} walletAddress={walletAddress} />
@@ -391,6 +394,15 @@ const styles = StyleSheet.create({
   errorText: { color: colors.danger },
   pairLink: { marginLeft: spacing.sm },
   pairLinkText: { color: colors.indigo[400] },
+  relayCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  relayCardTitle: { color: colors.textPrimary },
   readingsCard: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
