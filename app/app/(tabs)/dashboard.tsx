@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, Platform } from "react-native";
 import { router, useFocusEffect, Link } from "expo-router";
 import { colors, RelayTier, relayTierLabels } from "../../src/theme/colors";
 import { typography, spacing, radius } from "../../src/theme/typography";
@@ -23,6 +23,7 @@ import { Toast } from "../../src/components/Toast";
 
 /** How stale a reading can be before the status pill drops from Live to No signal. */
 const STALE_AFTER_MS = 30_000;
+const isWeb = Platform.OS === "web";
 
 const SHED_THRESHOLD_PCT: Record<RelayTier, number> = { r1: Infinity, r2: 95, r3: 85, r4: 70 };
 
@@ -211,78 +212,84 @@ export default function DashboardScreen() {
         </View>
       )}
 
-      <View style={styles.balanceCard}>
-        <View style={styles.balanceMain}>
-          <Text style={[typography.label, styles.balanceLabel]}>Available credit</Text>
-          <Text style={[typography.data, styles.balanceValue]}>
-            {balanceWh === null ? "···" : tokensToUnits(balanceWh).toLocaleString()}
-          </Text>
-          <Text style={[typography.dataSm, styles.balanceUnit]}>units · 1 unit = 1 kWh</Text>
-        </View>
-        <BudgetRing percentUsed={reading?.percentUsed ?? 0} size={96} />
-      </View>
+      <View style={styles.topSection}>
+        <View style={styles.topSectionLeft}>
+          <View style={styles.balanceCard}>
+            <View style={styles.balanceMain}>
+              <Text style={[typography.label, styles.balanceLabel]}>Available credit</Text>
+              <Text style={[typography.data, styles.balanceValue]}>
+                {balanceWh === null ? "···" : tokensToUnits(balanceWh).toLocaleString()}
+              </Text>
+              <Text style={[typography.dataSm, styles.balanceUnit]}>units · 1 unit = 1 kWh</Text>
+            </View>
+            <BudgetRing percentUsed={reading?.percentUsed ?? 0} size={96} />
+          </View>
 
-      {walletAddress && (
-        <View style={styles.quickActionsRow}>
-          <Pressable style={[styles.quickActionButton, styles.topUpButton]} onPress={() => setTopUpVisible(true)}>
-            <Text style={[typography.bodyStrong, styles.quickActionText]}>Top Up</Text>
+          {walletAddress && (
+            <View style={styles.quickActionsRow}>
+              <Pressable style={[styles.quickActionButton, styles.topUpButton]} onPress={() => setTopUpVisible(true)}>
+                <Text style={[typography.bodyStrong, styles.quickActionText]}>Top Up</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.quickActionButton, styles.setBudgetButton]}
+                onPress={() => router.push("/(tabs)/budget")}
+              >
+                <Text style={[typography.bodyStrong, styles.quickActionText]}>Set Budget</Text>
+              </Pressable>
+            </View>
+          )}
+
+          {mode === "live" && !hasDevice && !meterLoading && (
+            <View style={styles.meterStatusRow}>
+              <Text style={[typography.caption, styles.meterStatusText]}>No device paired yet</Text>
+              <Link href="/onboarding" style={styles.pairLink}>
+                <Text style={[typography.dataXs, styles.pairLinkText]}>Pair a device →</Text>
+              </Link>
+            </View>
+          )}
+          {mode === "live" && meterLoading && (
+            <View style={styles.meterStatusRow}>
+              <ActivityIndicator color={colors.indigo[400]} />
+              <Text style={[typography.caption, styles.meterStatusText]}>Loading live meter data…</Text>
+            </View>
+          )}
+          {mode === "live" && meterError && (
+            <Text style={[typography.caption, styles.errorText]}>Couldn't load live data: {meterError}</Text>
+          )}
+        </View>
+
+        <View style={styles.topSectionRight}>
+          <View style={styles.tileGrid}>
+            <View style={styles.tileRow}>
+              <MetricTile label="Voltage" value={reading ? reading.voltage.toFixed(1) : "—"} unit="V" />
+              <MetricTile label="Current" value={reading ? reading.current.toFixed(1) : "—"} unit="A" />
+            </View>
+            <View style={styles.tileRow}>
+              <MetricTile label="Power" value={reading ? reading.power.toFixed(0) : "—"} unit="W" />
+              <MetricTile
+                label="Frequency"
+                value={reading?.frequency != null ? reading.frequency.toFixed(1) : "—"}
+                unit="Hz"
+              />
+            </View>
+          </View>
+
+          <Pressable onPress={() => setShowMoreReadings((v) => !v)} style={styles.moreToggle}>
+            <Text style={[typography.caption, styles.moreToggleText]}>
+              {showMoreReadings ? "Show less ▲" : "More readings ▼"}
+            </Text>
           </Pressable>
-          <Pressable
-            style={[styles.quickActionButton, styles.setBudgetButton]}
-            onPress={() => router.push("/(tabs)/budget")}
-          >
-            <Text style={[typography.bodyStrong, styles.quickActionText]}>Set Budget</Text>
-          </Pressable>
-        </View>
-      )}
-
-      {mode === "live" && !hasDevice && !meterLoading && (
-        <View style={styles.meterStatusRow}>
-          <Text style={[typography.caption, styles.meterStatusText]}>No device paired yet</Text>
-          <Link href="/onboarding" style={styles.pairLink}>
-            <Text style={[typography.dataXs, styles.pairLinkText]}>Pair a device →</Text>
-          </Link>
-        </View>
-      )}
-      {mode === "live" && meterLoading && (
-        <View style={styles.meterStatusRow}>
-          <ActivityIndicator color={colors.indigo[400]} />
-          <Text style={[typography.caption, styles.meterStatusText]}>Loading live meter data…</Text>
-        </View>
-      )}
-      {mode === "live" && meterError && (
-        <Text style={[typography.caption, styles.errorText]}>Couldn't load live data: {meterError}</Text>
-      )}
-
-      <View style={styles.tileGrid}>
-        <View style={styles.tileRow}>
-          <MetricTile label="Voltage" value={reading ? reading.voltage.toFixed(1) : "—"} unit="V" />
-          <MetricTile label="Current" value={reading ? reading.current.toFixed(1) : "—"} unit="A" />
-        </View>
-        <View style={styles.tileRow}>
-          <MetricTile label="Power" value={reading ? reading.power.toFixed(0) : "—"} unit="W" />
-          <MetricTile
-            label="Frequency"
-            value={reading?.frequency != null ? reading.frequency.toFixed(1) : "—"}
-            unit="Hz"
-          />
+          {showMoreReadings && (
+            <View style={styles.tileRow}>
+              <MetricTile
+                label="Power factor"
+                value={reading?.powerFactor != null ? reading.powerFactor.toFixed(2) : "—"}
+                unit=""
+              />
+            </View>
+          )}
         </View>
       </View>
-
-      <Pressable onPress={() => setShowMoreReadings((v) => !v)} style={styles.moreToggle}>
-        <Text style={[typography.caption, styles.moreToggleText]}>
-          {showMoreReadings ? "Show less ▲" : "More readings ▼"}
-        </Text>
-      </Pressable>
-      {showMoreReadings && (
-        <View style={styles.tileRow}>
-          <MetricTile
-            label="Power factor"
-            value={reading?.powerFactor != null ? reading.powerFactor.toFixed(2) : "—"}
-            unit=""
-          />
-        </View>
-      )}
 
       <Text style={[typography.h2, styles.sectionTitle]}>Load priority</Text>
       <RelayIndicator
@@ -309,7 +316,12 @@ export default function DashboardScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md },
+  content: isWeb
+    ? { padding: spacing.xxl, paddingBottom: spacing.xxl, gap: spacing.md, maxWidth: 1000, width: "100%", alignSelf: "center" }
+    : { padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md },
+  topSection: isWeb ? { flexDirection: "row", gap: spacing.xl, alignItems: "flex-start" } : {},
+  topSectionLeft: isWeb ? { flex: 1, gap: spacing.md } : { gap: spacing.md },
+  topSectionRight: isWeb ? { flex: 1, gap: spacing.sm } : { gap: spacing.sm },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   brandRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   brandWordmark: { color: colors.textPrimary, letterSpacing: 0.5 },

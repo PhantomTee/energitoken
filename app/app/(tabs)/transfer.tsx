@@ -9,6 +9,7 @@ import {
   Modal,
   ActivityIndicator,
   RefreshControl,
+  Platform,
 } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { isAddress } from "ethers";
@@ -20,6 +21,8 @@ import { useWallet } from "../../src/hooks/useWallet";
 import { getEngyBalance, getWritableContract, runTransferPreflight, checkNetworkAndGas } from "../../src/services/contract";
 import { resolveEmailToAddress } from "../../src/services/directory";
 import { QRScanner } from "../../src/components/QRScanner";
+
+const isWeb = Platform.OS === "web";
 
 /**
  * Recipients can be a raw wallet address or an email -- emails are resolved
@@ -423,7 +426,9 @@ export default function TransferScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.lg, paddingBottom: spacing.xxl },
+  content: isWeb
+    ? { padding: spacing.xxl, paddingBottom: spacing.xxl, maxWidth: 640, width: "100%", alignSelf: "center" }
+    : { padding: spacing.lg, paddingBottom: spacing.xxl },
   titleRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   title: { color: colors.textPrimary, marginBottom: spacing.xs },
   subtitle: { color: colors.textSecondary, marginBottom: spacing.lg },

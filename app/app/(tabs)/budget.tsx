@@ -456,7 +456,9 @@ export default function BudgetScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md },
+  content: isWeb
+    ? { padding: spacing.xxl, paddingBottom: spacing.xxl, gap: spacing.md, maxWidth: 800, width: "100%", alignSelf: "center" }
+    : { padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md },
   titleRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   titleRight: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   title: { color: colors.textPrimary },

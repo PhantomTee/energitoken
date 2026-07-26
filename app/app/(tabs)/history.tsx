@@ -241,7 +241,9 @@ export default function HistoryScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
+  screen: isWeb
+    ? { flex: 1, backgroundColor: colors.background, width: "100%", maxWidth: 900, alignSelf: "center", paddingTop: spacing.lg }
+    : { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",

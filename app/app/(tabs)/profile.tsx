@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, Switch, Linking, Modal, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, Switch, Linking, Modal, ActivityIndicator, Platform } from "react-native";
 import QRCode from "react-native-qrcode-styled";
 import { router } from "expo-router";
 import { colors } from "../../src/theme/colors";
@@ -10,6 +10,8 @@ import { useWallet } from "../../src/hooks/useWallet";
 import { getDeviceForWallet, unbindDevice } from "../../src/services/deviceBinding";
 import { clearFirebaseSession } from "../../src/services/firebaseSession";
 import { displayNameFromEmail } from "../../src/services/displayName";
+
+const isWeb = Platform.OS === "web";
 
 const APP_VERSION = "EnergiToken v1.0 — Polygon Amoy";
 const CONTRACT_ADDRESS = "0x8493324De9578BF390092ed6c4a5b1033fBF8048";
@@ -264,7 +266,9 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.lg, paddingBottom: spacing.xxl },
+  content: isWeb
+    ? { padding: spacing.xxl, paddingBottom: spacing.xxl, maxWidth: 640, width: "100%", alignSelf: "center" }
+    : { padding: spacing.lg, paddingBottom: spacing.xxl },
   titleRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.lg },
   title: { color: colors.textPrimary },
   identityCard: {
