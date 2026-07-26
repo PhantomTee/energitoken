@@ -1,7 +1,7 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl } from "react-native";
 import { router, useFocusEffect, Link } from "expo-router";
-import { colors, RelayTier } from "../../src/theme/colors";
+import { colors, RelayTier, relayTierLabels } from "../../src/theme/colors";
 import { typography, spacing, radius } from "../../src/theme/typography";
 import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
 import { MetricTile } from "../../src/components/MetricTile";
@@ -19,9 +19,12 @@ import { useNotifications } from "../../src/hooks/useNotifications";
 import { usePushNotifications } from "../../src/hooks/usePushNotifications";
 import { NotificationsPanel } from "../../src/components/NotificationsPanel";
 import { setRelayOverride } from "../../src/services/relayOverride";
+import { Toast } from "../../src/components/Toast";
 
 /** How stale a reading can be before the status pill drops from Live to No signal. */
-const STALE_AFTER_MS = 60_000;
+const STALE_AFTER_MS = 30_000;
+
+const SHED_THRESHOLD_PCT: Record<RelayTier, number> = { r1: Infinity, r2: 95, r3: 85, r4: 70 };
 
 type MeterStatus = "live" | "no-signal" | "fault";
 
@@ -46,6 +49,8 @@ export default function DashboardScreen() {
   const [relayBusyTier, setRelayBusyTier] = useState<RelayTier | null>(null);
   const [relayError, setRelayError] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const prevRelaysRef = useRef<Record<RelayTier, boolean> | null>(null);
   const {
     reading,
     loading: meterLoading,
@@ -92,6 +97,25 @@ export default function DashboardScreen() {
     const interval = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(interval);
   }, [mode, reading]);
+
+  // Toast the moment a relay tier flips ON -> OFF (a real shed event, not
+  // just the initial reading arriving). Skips the very first reading so we
+  // don't toast for whatever state the meter happened to already be in.
+  useEffect(() => {
+    if (!reading?.relays) return;
+    const prev = prevRelaysRef.current;
+    prevRelaysRef.current = reading.relays;
+    if (!prev) return;
+
+    (Object.keys(reading.relays) as RelayTier[]).forEach((tier) => {
+      if (prev[tier] && !reading.relays[tier]) {
+        const pct = SHED_THRESHOLD_PCT[tier];
+        setToastMessage(
+          `${relayTierLabels[tier]} circuit disconnected${Number.isFinite(pct) ? ` — ${pct}% budget reached` : ""}`
+        );
+      }
+    });
+  }, [reading?.relays]);
 
   const handleLogout = async () => {
     await clearFirebaseSession();
@@ -140,6 +164,8 @@ export default function DashboardScreen() {
         />
       }
     >
+      <Toast message={toastMessage} onHide={() => setToastMessage(null)} />
+
       <View style={styles.header}>
         <View style={styles.brandRow}>
           <AdinkraAccent size={32} color={colors.terracotta[400]} dotColor={colors.indigo[400]} opacity={1} />
