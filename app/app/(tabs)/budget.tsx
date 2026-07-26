@@ -61,8 +61,6 @@ const isWeb = Platform.OS === "web";
 /** Sanity ceiling: 100 kWh/day is several times a heavy Nigerian household. */
 const MAX_BUDGET_UNITS = 100;
 
-const PRESET_UNITS = [1, 2, 5];
-
 /**
  * The load-shedding ladder — mirrors the ESP32 relay priorities and the
  * oracle's notification thresholds (app/api/oracle/burn.ts).
@@ -113,7 +111,6 @@ export default function BudgetScreen() {
   const { walletAddress } = useWallet();
   const [refreshing, setRefreshing] = useState(false);
   const [balanceWh, setBalanceWh] = useState<bigint | null>(null);
-  const [budgetInput, setBudgetInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -123,6 +120,7 @@ export default function BudgetScreen() {
 
   const { reading, loading, error, deviceId, hasDevice } = useMeterData(walletAddress, "live");
   const { days: dailyUsage } = useDailyUsage(walletAddress, periodDays);
+  const [durationInput, setDurationInput] = useState("");
 
   const handleRelayToggle = async (tier: RelayTier, next: boolean | null) => {
     if (!deviceId) return;
@@ -172,23 +170,29 @@ export default function BudgetScreen() {
       ? availableUnits / currentBudgetUnits
       : null;
 
-  // ── Live input preview ─────────────────────────────────────────────────
-  const inputUnits = Number(budgetInput);
-  const inputValid = Number.isFinite(inputUnits) && inputUnits > 0 && inputUnits <= MAX_BUDGET_UNITS;
-  const inputWh = inputValid ? unitsToWh(inputUnits) : null;
-  const inputProjectionDays =
-    inputValid && availableUnits !== null && inputUnits > 0 ? availableUnits / inputUnits : null;
-  const overBalance = inputValid && availableUnits !== null && inputUnits > availableUnits;
+  // ── Duration-based allocation: pick how many days the balance should
+  // last, and the daily allowance (the real number the meter enforces) is
+  // computed from that -- balance / duration. ─────────────────────────────
+  const durationDays = Number(durationInput);
+  const durationValid = Number.isFinite(durationDays) && durationDays > 0 && Number.isInteger(durationDays);
+  const computedDailyUnits =
+    durationValid && availableUnits !== null && availableUnits > 0 ? availableUnits / durationDays : null;
+  const computedDailyValid = computedDailyUnits !== null && computedDailyUnits <= MAX_BUDGET_UNITS;
 
   const handleSetBudget = async () => {
-    const units = Number(budgetInput);
     if (!walletAddress || !deviceId) return;
-    if (!Number.isFinite(units) || units <= 0) {
-      setSaveError("Enter a budget greater than 0.");
+    if (!durationValid) {
+      setSaveError("Enter a whole number of days, greater than 0.");
       return;
     }
-    if (units > MAX_BUDGET_UNITS) {
-      setSaveError(`That's unrealistically high — the maximum is ${MAX_BUDGET_UNITS} units/day.`);
+    if (availableUnits === null || availableUnits <= 0) {
+      setSaveError("You don't have any credit to allocate yet.");
+      return;
+    }
+    if (computedDailyUnits !== null && computedDailyUnits > MAX_BUDGET_UNITS) {
+      setSaveError(
+        `That works out to more than ${MAX_BUDGET_UNITS} units/day -- spread it over more days.`
+      );
       return;
     }
 
@@ -197,8 +201,8 @@ export default function BudgetScreen() {
     setSaving(true);
     try {
       await ensureFirebaseSession(walletAddress);
-      await setBudgetWh(deviceId, unitsToWh(units));
-      setBudgetInput("");
+      await setBudgetWh(deviceId, unitsToWh(computedDailyUnits!));
+      setDurationInput("");
       setSaveSuccess(true);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Couldn't save that budget.");
@@ -381,77 +385,58 @@ export default function BudgetScreen() {
           )}
 
           {/* ── Set budget ── */}
-          <Text style={[typography.h2, styles.sectionTitle]}>Set daily budget</Text>
-          <Text style={[typography.label, styles.fieldLabel]}>UNITS PER DAY</Text>
-          <View style={styles.presetRow}>
-            {PRESET_UNITS.map((preset) => (
-              <Pressable
-                key={preset}
-                style={[styles.presetChip, budgetInput === String(preset) && styles.presetChipActive]}
-                onPress={() => {
-                  setBudgetInput(String(preset));
-                  setSaveSuccess(false);
-                  setSaveError(null);
-                }}
-                disabled={saving}
-              >
-                <Text
-                  style={[
-                    typography.bodyStrong,
-                    budgetInput === String(preset) ? styles.presetTextActive : styles.presetText,
-                  ]}
-                >
-                  {preset} unit{preset === 1 ? "" : "s"}
+          <View style={styles.setBudgetCard}>
+            <Text style={[typography.h2, styles.setBudgetTitle]}>Set Budget</Text>
+            <Text style={[typography.label, styles.fieldLabel]}>DURATION (DAYS)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. 30"
+              placeholderTextColor={colors.neutral[500]}
+              value={durationInput}
+              onChangeText={(text) => {
+                setDurationInput(text);
+                setSaveSuccess(false);
+                setSaveError(null);
+              }}
+              keyboardType="number-pad"
+              editable={!saving}
+            />
+
+            {durationValid && availableUnits !== null && availableUnits > 0 && (
+              <View style={styles.durationInfoBanner}>
+                <Text style={[typography.caption, styles.durationInfoText]}>
+                  Your <Text style={styles.durationInfoStrong}>{availableUnits.toLocaleString()} units</Text> will
+                  last <Text style={styles.durationInfoStrong}>{durationDays} days</Text> at{" "}
+                  {computedDailyUnits!.toFixed(1)} units/day.
                 </Text>
-              </Pressable>
-            ))}
-          </View>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g. 2"
-            placeholderTextColor={colors.neutral[500]}
-            value={budgetInput}
-            onChangeText={(text) => {
-              setBudgetInput(text);
-              setSaveSuccess(false);
-              setSaveError(null);
-            }}
-            keyboardType="numeric"
-            editable={!saving}
-          />
-
-          {inputValid && (
-            <Text style={[typography.caption, styles.previewText]}>
-              = {inputWh?.toLocaleString()} Wh/day
-              {inputProjectionDays !== null &&
-                ` · your credit would last ≈ ${inputProjectionDays.toFixed(1)} days`}
-            </Text>
-          )}
-          {overBalance && (
-            <Text style={[typography.caption, styles.warnText]}>
-              Heads up: that's more than your available credit ({availableUnits?.toLocaleString()}{" "}
-              units) — you'd run out before the day ends.
-            </Text>
-          )}
-          {saveError && <Text style={[typography.caption, styles.errorText]}>{saveError}</Text>}
-          {saveSuccess && <Text style={[typography.caption, styles.successText]}>Budget updated.</Text>}
-
-          <Pressable
-            style={[styles.button, (!budgetInput || saving) && styles.buttonDisabled]}
-            onPress={handleSetBudget}
-            disabled={!budgetInput || saving}
-          >
-            {saving ? (
-              <ActivityIndicator color={colors.neutral.white} />
-            ) : (
-              <Text style={[typography.bodyStrong, styles.buttonText]}>Save budget</Text>
+              </View>
             )}
-          </Pressable>
+            {durationValid && computedDailyUnits !== null && !computedDailyValid && (
+              <Text style={[typography.caption, styles.warnText]}>
+                That's {computedDailyUnits.toFixed(1)} units/day -- more than the {MAX_BUDGET_UNITS}/day maximum.
+                Try a longer duration.
+              </Text>
+            )}
+            {saveError && <Text style={[typography.caption, styles.errorText]}>{saveError}</Text>}
+            {saveSuccess && <Text style={[typography.caption, styles.successText]}>Budget updated.</Text>}
 
-          <Text style={[typography.caption, styles.keypadNote]}>
-            You can also change the budget from the meter's keypad — handy when there's no
-            internet. The app shows whichever value was set most recently.
-          </Text>
+            <Pressable
+              style={[styles.button, (!durationValid || !computedDailyValid || saving) && styles.buttonDisabled]}
+              onPress={handleSetBudget}
+              disabled={!durationValid || !computedDailyValid || saving}
+            >
+              {saving ? (
+                <ActivityIndicator color={colors.neutral.white} />
+              ) : (
+                <Text style={[typography.bodyStrong, styles.buttonText]}>Apply Budget</Text>
+              )}
+            </Pressable>
+
+            <Text style={[typography.caption, styles.keypadNote]}>
+              You can also change the budget from the meter's keypad — handy when there's no
+              internet. The app shows whichever value was set most recently.
+            </Text>
+          </View>
         </>
       )}
     </ScrollView>
@@ -560,19 +545,22 @@ const styles = StyleSheet.create({
   trendBarLabel: { color: colors.textSecondary, fontSize: 9 },
   trendSummary: { color: colors.textSecondary },
   fieldLabel: { color: colors.textSecondary },
-  presetRow: { flexDirection: "row", gap: spacing.sm },
-  presetChip: {
+  setBudgetCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    backgroundColor: colors.surface,
+    padding: spacing.lg,
+    gap: spacing.sm,
   },
-  presetChipActive: { backgroundColor: colors.indigo[400], borderColor: colors.indigo[400] },
-  presetText: { color: colors.textPrimary },
-  presetTextActive: { color: colors.neutral.white },
-  previewText: { color: colors.indigo[400] },
+  setBudgetTitle: { color: colors.textPrimary },
+  durationInfoBanner: {
+    backgroundColor: colors.terracotta[100],
+    borderRadius: radius.md,
+    padding: spacing.md,
+  },
+  durationInfoText: { color: colors.terracotta[700] },
+  durationInfoStrong: { fontWeight: "700" },
   input: {
     backgroundColor: colors.surface,
     color: colors.textPrimary,

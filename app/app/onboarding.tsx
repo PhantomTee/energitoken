@@ -51,53 +51,81 @@ export default function OnboardingScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <View style={styles.accentTopRight}>
-        <AdinkraAccent size={80} color={colors.terracotta[400]} opacity={0.18} />
-      </View>
+      <View style={styles.card}>
+        <View style={styles.stepRow}>
+          <Pressable hitSlop={12} onPress={() => router.back()}>
+            <Text style={styles.backArrow}>←</Text>
+          </Pressable>
+          <Text style={[typography.label, styles.stepLabel]}>STEP 2 OF 3</Text>
+        </View>
 
-      <View style={styles.content}>
-        <Text style={[typography.label, styles.brandLabel]}>ONE LAST STEP</Text>
-        <Text style={[typography.display, styles.title]}>Link your{"\n"}meter.</Text>
+        <View style={styles.iconWrap}>
+          <AdinkraAccent size={40} color={colors.indigo[900]} dotColor={colors.terracotta[500]} opacity={1} />
+        </View>
+        <Text style={[typography.h1, styles.title]}>Connect Your Meter</Text>
         <Text style={[typography.body, styles.subtitle]}>
-          Enter the 6-character device code shown on your EnergiToken meter's display. This
-          links your wallet to that household's energy data.
+          Link your smart meter to start tracking your energy consumption and savings.
         </Text>
 
-        <TextInput
-          style={styles.input}
-          placeholder="3B9D88"
-          placeholderTextColor={colors.neutral[500]}
-          value={code}
-          onChangeText={(text) => setCode(text.toUpperCase())}
-          autoCapitalize="characters"
-          autoCorrect={false}
-          maxLength={6}
-          editable={!submitting}
-        />
+        {Platform.OS !== "web" && (
+          <Pressable style={styles.scanRow} onPress={() => setScannerVisible(true)} disabled={submitting}>
+            <Text style={styles.scanRowIcon}>⚏</Text>
+            <View style={styles.scanRowBody}>
+              <Text style={[typography.bodyStrong, styles.scanRowTitle]}>Scan QR Code</Text>
+              <Text style={[typography.caption, styles.scanRowSubtitle]}>Fastest way to connect</Text>
+            </View>
+            <Text style={styles.chevron}>›</Text>
+          </Pressable>
+        )}
+
+        <View style={styles.dividerRow}>
+          <View style={styles.dividerLine} />
+          <Text style={[typography.label, styles.dividerText]}>OR</Text>
+          <View style={styles.dividerLine} />
+        </View>
+
+        <View style={styles.manualCard}>
+          <Text style={[typography.label, styles.manualLabel]}>MANUAL ENTRY (6 CHARACTERS)</Text>
+          <View style={styles.manualRow}>
+            <TextInput
+              style={styles.manualInput}
+              placeholder="e.g. A1B2C3"
+              placeholderTextColor={colors.neutral[500]}
+              value={code}
+              onChangeText={(text) => setCode(text.toUpperCase())}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              maxLength={6}
+              editable={!submitting}
+            />
+            <Pressable
+              onPress={handleSubmit}
+              disabled={!isValidFormat || submitting}
+              hitSlop={8}
+            >
+              {submitting ? (
+                <ActivityIndicator color={colors.indigo[500]} />
+              ) : (
+                <Text
+                  style={[
+                    typography.bodyStrong,
+                    styles.linkAction,
+                    (!isValidFormat || submitting) && styles.linkActionDisabled,
+                  ]}
+                >
+                  LINK
+                </Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
+
         {code.length > 0 && !isValidFormat && (
           <Text style={[typography.caption, styles.errorText]}>
             Device code must be 6 characters, 0-9 and A-F only.
           </Text>
         )}
         {error && <Text style={[typography.caption, styles.errorText]}>{error}</Text>}
-
-        <Pressable
-          style={[styles.button, (!isValidFormat || submitting) && styles.buttonDisabled]}
-          onPress={handleSubmit}
-          disabled={!isValidFormat || submitting}
-        >
-          {submitting ? (
-            <ActivityIndicator color={colors.neutral.white} />
-          ) : (
-            <Text style={[typography.bodyStrong, styles.buttonText]}>Link device</Text>
-          )}
-        </Pressable>
-
-        {Platform.OS !== "web" && (
-          <Pressable style={styles.scanButton} onPress={() => setScannerVisible(true)} disabled={submitting}>
-            <Text style={[typography.bodyStrong, styles.scanButtonText]}>Scan QR code instead</Text>
-          </Pressable>
-        )}
       </View>
 
       <QRScanner
@@ -116,31 +144,57 @@ export default function OnboardingScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.indigo[900] },
-  accentTopRight: { position: "absolute", top: spacing.xl, right: spacing.lg },
-  content: { flex: 1, justifyContent: "center", paddingHorizontal: spacing.xl },
-  brandLabel: { color: colors.terracotta[300], marginBottom: spacing.md },
-  title: { color: colors.neutral.white, marginBottom: spacing.md },
-  subtitle: { color: colors.indigo[100], marginBottom: spacing.xl, opacity: 0.85 },
-  input: {
-    backgroundColor: colors.neutral.white,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    fontSize: 20,
-    letterSpacing: 4,
-    textAlign: "center",
-    marginBottom: spacing.md,
+  screen: { flex: 1, backgroundColor: colors.background, alignItems: "center", justifyContent: "center" },
+  card: {
+    width: "100%",
+    maxWidth: 480,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.xl,
+    margin: spacing.lg,
   },
-  errorText: { color: colors.terracotta[300], marginBottom: spacing.md },
-  button: {
-    backgroundColor: colors.terracotta[500],
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
+  stepRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.xl },
+  backArrow: { color: colors.textPrimary, fontSize: 20 },
+  stepLabel: { color: colors.textSecondary },
+  iconWrap: { alignItems: "center", marginBottom: spacing.md },
+  title: { color: colors.textPrimary, textAlign: "center", marginBottom: spacing.sm },
+  subtitle: { color: colors.textSecondary, textAlign: "center", marginBottom: spacing.xl },
+  scanRow: {
+    flexDirection: "row",
     alignItems: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    gap: spacing.md,
   },
-  buttonDisabled: { opacity: 0.5 },
-  buttonText: { color: colors.neutral.white },
-  scanButton: { alignItems: "center", marginTop: spacing.lg, padding: spacing.sm },
-  scanButtonText: { color: colors.indigo[300], textDecorationLine: "underline" },
+  scanRowIcon: { fontSize: 22, color: colors.textPrimary },
+  scanRowBody: { flex: 1 },
+  scanRowTitle: { color: colors.textPrimary },
+  scanRowSubtitle: { color: colors.textSecondary },
+  chevron: { fontSize: 20, color: colors.textSecondary },
+  dividerRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginVertical: spacing.lg },
+  dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
+  dividerText: { color: colors.textSecondary },
+  manualCard: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
+  },
+  manualLabel: { color: colors.textSecondary, marginBottom: spacing.sm },
+  manualRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.md },
+  manualInput: {
+    flex: 1,
+    color: colors.textPrimary,
+    fontSize: 18,
+    letterSpacing: 3,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingBottom: spacing.xs,
+    fontFamily: typography.dataMd.fontFamily,
+  },
+  linkAction: { color: colors.indigo[500] },
+  linkActionDisabled: { color: colors.textSecondary, opacity: 0.5 },
+  errorText: { color: colors.danger, marginTop: spacing.md },
 });

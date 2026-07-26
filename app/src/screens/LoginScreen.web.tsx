@@ -125,73 +125,82 @@ export default function LoginScreen() {
 
   return (
     <View style={styles.screen}>
-      <View style={styles.accentTopRight}>
-        <AdinkraAccent size={96} color={colors.terracotta[500]} />
-      </View>
-
-      <View style={styles.card}>
-        <View style={styles.brandRow}>
-          <AdinkraAccent size={22} color={colors.terracotta[400]} dotColor={colors.indigo[400]} opacity={1} />
-          <Text style={[typography.label, styles.brandLabel]}>ENERGITOKEN</Text>
+      <View style={styles.outer}>
+        <View style={styles.header}>
+          <View style={styles.badge}>
+            <AdinkraAccent size={36} color={colors.indigo[900]} dotColor={colors.terracotta[500]} opacity={1} />
+          </View>
+          <Text style={[typography.h1, styles.wordmark]}>EnergiToken</Text>
         </View>
 
-        <Text style={[typography.display, styles.title]}>Power, budgeted{"\n"}and shared.</Text>
-        <Text style={[typography.body, styles.subtitle]}>
-          {awaitingCode
-            ? `Enter the 6-digit code we sent to ${email}.`
-            : "Sign in with your email to see your household's energy budget and credit balance."}
+        <View style={styles.card}>
+          <Text style={[typography.label, styles.cardLabel]}>{awaitingCode ? "VERIFY CODE" : "SECURE ACCESS"}</Text>
+          <Text style={[typography.caption, styles.subtitle]}>
+            {awaitingCode
+              ? `Enter the 6-digit code we sent to ${email}.`
+              : "Sign in with your email to see your household's energy budget and credit balance."}
+          </Text>
+
+          {!awaitingCode ? (
+            <>
+              <View style={styles.inputRow}>
+                <Text style={styles.inputIcon}>✉</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter your email"
+                  placeholderTextColor={colors.neutral[500]}
+                  value={email}
+                  onChangeText={(t) => { setEmail(t); setFormError(null); }}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  editable={!sendingCode}
+                />
+              </View>
+              <Pressable
+                style={[styles.button, (!email.includes("@") || sendingCode) && styles.buttonDisabled]}
+                onPress={handleSendCode}
+                disabled={!email.includes("@") || sendingCode}
+              >
+                {sendingCode
+                  ? <ActivityIndicator color={colors.neutral.white} />
+                  : <Text style={[typography.bodyStrong, styles.buttonText]}>Continue  →</Text>}
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <View style={styles.inputRow}>
+                <TextInput
+                  style={[styles.input, styles.codeInput]}
+                  placeholder="123456"
+                  placeholderTextColor={colors.neutral[500]}
+                  value={code}
+                  onChangeText={(t) => { setCode(t); setFormError(null); }}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                  editable={state.status !== "submitting-code"}
+                />
+              </View>
+              <Pressable
+                style={[styles.button, (code.trim().length < 4 || state.status === "submitting-code") && styles.buttonDisabled]}
+                onPress={handleSubmitCode}
+                disabled={code.trim().length < 4 || state.status === "submitting-code"}
+              >
+                {state.status === "submitting-code"
+                  ? <ActivityIndicator color={colors.neutral.white} />
+                  : <Text style={[typography.bodyStrong, styles.buttonText]}>Verify & sign in</Text>}
+              </Pressable>
+              <Pressable onPress={() => { otpSent.current = false; setCode(""); setFormError(null); }} style={styles.backLink}>
+                <Text style={[typography.caption, styles.backLinkText]}>← Use a different email</Text>
+              </Pressable>
+            </>
+          )}
+
+          {formError && <Text style={[typography.caption, styles.errorText]}>{formError}</Text>}
+        </View>
+
+        <Text style={[typography.caption, styles.footnote]}>
+          By continuing, you agree to secure data handling.
         </Text>
-
-        {!awaitingCode ? (
-          <>
-            <TextInput
-              style={styles.input}
-              placeholder="you@example.com"
-              placeholderTextColor={colors.neutral[500]}
-              value={email}
-              onChangeText={(t) => { setEmail(t); setFormError(null); }}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              editable={!sendingCode}
-            />
-            <Pressable
-              style={[styles.button, (!email.includes("@") || sendingCode) && styles.buttonDisabled]}
-              onPress={handleSendCode}
-              disabled={!email.includes("@") || sendingCode}
-            >
-              {sendingCode
-                ? <ActivityIndicator color={colors.neutral.white} />
-                : <Text style={[typography.bodyStrong, styles.buttonText]}>Continue with email</Text>}
-            </Pressable>
-          </>
-        ) : (
-          <>
-            <TextInput
-              style={[styles.input, styles.codeInput]}
-              placeholder="123456"
-              placeholderTextColor={colors.neutral[500]}
-              value={code}
-              onChangeText={(t) => { setCode(t); setFormError(null); }}
-              keyboardType="number-pad"
-              maxLength={6}
-              editable={state.status !== "submitting-code"}
-            />
-            <Pressable
-              style={[styles.button, (code.trim().length < 4 || state.status === "submitting-code") && styles.buttonDisabled]}
-              onPress={handleSubmitCode}
-              disabled={code.trim().length < 4 || state.status === "submitting-code"}
-            >
-              {state.status === "submitting-code"
-                ? <ActivityIndicator color={colors.neutral.white} />
-                : <Text style={[typography.bodyStrong, styles.buttonText]}>Verify & sign in</Text>}
-            </Pressable>
-            <Pressable onPress={() => { otpSent.current = false; setCode(""); setFormError(null); }} style={styles.backLink}>
-              <Text style={[typography.caption, styles.backLinkText]}>← Use a different email</Text>
-            </Pressable>
-          </>
-        )}
-
-        {formError && <Text style={[typography.caption, styles.errorText]}>{formError}</Text>}
       </View>
     </View>
   );
@@ -210,38 +219,55 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  accentTopRight: { position: "absolute", top: spacing.xl, right: spacing.lg },
-  card: {
-    width: 440,
-    backgroundColor: "rgba(255,255,255,0.05)",
-    borderRadius: 18,
-    paddingHorizontal: 40,
-    paddingVertical: 48,
+  outer: { width: 440, alignItems: "center" },
+  header: { alignItems: "center", marginBottom: spacing.xxl },
+  badge: {
+    width: 72,
+    height: 72,
+    borderRadius: radius.lg,
+    backgroundColor: colors.indigo[100],
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: spacing.md,
   },
-  brandRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.md },
-  brandLabel: { color: colors.terracotta[300] },
-  title: { color: colors.neutral.white, marginBottom: spacing.md },
-  subtitle: { color: colors.indigo[100], marginBottom: spacing.xl, opacity: 0.85 },
-  input: {
+  wordmark: { color: colors.neutral.white },
+  card: {
+    width: "100%",
     backgroundColor: colors.surface,
-    color: colors.textPrimary,
+    borderRadius: radius.lg,
+    padding: spacing.xl,
+  },
+  cardLabel: { color: colors.textSecondary, textAlign: "center", marginBottom: spacing.md },
+  subtitle: { color: colors.textSecondary, marginBottom: spacing.lg, textAlign: "center" },
+  inputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.background,
     borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
     paddingHorizontal: spacing.md,
+    marginBottom: spacing.md,
+  },
+  inputIcon: { color: colors.textSecondary, marginRight: spacing.sm },
+  input: {
+    flex: 1,
+    color: colors.textPrimary,
     paddingVertical: spacing.md,
     fontSize: 16,
     fontFamily: typography.body.fontFamily,
-    marginBottom: spacing.md,
   },
-  codeInput: { fontFamily: typography.dataMd.fontFamily, fontSize: 22, letterSpacing: 6, textAlign: "center" },
+  codeInput: { fontFamily: typography.dataMd.fontFamily, fontSize: 20, letterSpacing: 6, textAlign: "center" },
   button: {
-    backgroundColor: colors.terracotta[400],
-    borderRadius: radius.md,
+    backgroundColor: colors.terracotta[500],
+    borderRadius: radius.pill,
     paddingVertical: spacing.md,
     alignItems: "center",
   },
   buttonDisabled: { opacity: 0.5 },
   buttonText: { color: colors.neutral.white },
-  errorText: { color: colors.terracotta[300], marginTop: spacing.md },
+  errorText: { color: colors.danger, marginTop: spacing.md, textAlign: "center" },
   backLink: { alignItems: "center", marginTop: spacing.md },
-  backLinkText: { color: colors.indigo[300], textDecorationLine: "underline" },
+  backLinkText: { color: colors.indigo[400], textDecorationLine: "underline" },
+  footnote: { color: colors.indigo[100], marginTop: spacing.xl, textAlign: "center", opacity: 0.85 },
 });

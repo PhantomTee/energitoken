@@ -109,77 +109,85 @@ export default function LoginScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <View style={styles.accentTopRight}>
-        <AdinkraAccent size={96} color={colors.terracotta[500]} />
-      </View>
-
       {/* On web this View centres itself; on native it fills the screen */}
       <View style={styles.outer}>
-      <View style={styles.content}>
-        <View style={styles.brandRow}>
-          <AdinkraAccent size={22} color={colors.terracotta[400]} dotColor={colors.indigo[400]} opacity={1} />
-          <Text style={[typography.label, styles.brandLabel]}>ENERGITOKEN</Text>
+        <View style={styles.header}>
+          <View style={styles.badge}>
+            <AdinkraAccent size={36} color={colors.indigo[900]} dotColor={colors.terracotta[500]} opacity={1} />
+          </View>
+          <Text style={[typography.h1, styles.wordmark]}>EnergiToken</Text>
         </View>
-        <Text style={[typography.display, styles.title]}>Power, budgeted{"\n"}and shared.</Text>
-        <Text style={[typography.body, styles.subtitle]}>
-          {completing
-            ? "Setting up your wallet..."
-            : awaitingCode
-              ? `Enter the code we sent to ${email}.`
-              : "Sign in with your email to see your household's energy budget and credit balance."}
+
+        <View style={styles.card}>
+          <Text style={[typography.label, styles.cardLabel]}>
+            {completing ? "SETTING UP" : awaitingCode ? "VERIFY CODE" : "SECURE ACCESS"}
+          </Text>
+          <Text style={[typography.caption, styles.subtitle]}>
+            {completing
+              ? "Setting up your wallet..."
+              : awaitingCode
+                ? `Enter the code we sent to ${email}.`
+                : "Sign in with your email to see your household's energy budget and credit balance."}
+          </Text>
+
+          {completing ? (
+            <ActivityIndicator color={colors.terracotta[500]} size="large" style={styles.completingSpinner} />
+          ) : !awaitingCode ? (
+            <>
+              <View style={styles.inputRow}>
+                <Text style={styles.inputIcon}>✉</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter your email"
+                  placeholderTextColor={colors.neutral[500]}
+                  value={email}
+                  onChangeText={setEmail}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  editable={!sendingCode}
+                />
+              </View>
+              <Pressable
+                style={[styles.button, (!email.includes("@") || sendingCode) && styles.buttonDisabled]}
+                onPress={handleSendCode}
+                disabled={!email.includes("@") || sendingCode}
+              >
+                {sendingCode ? (
+                  <ActivityIndicator color={colors.neutral.white} />
+                ) : (
+                  <Text style={[typography.bodyStrong, styles.buttonText]}>Continue  →</Text>
+                )}
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <OtpInput
+                value={code}
+                onChangeText={setCode}
+                editable={state.status !== "submitting-code" && !completing}
+                autoFocus
+              />
+              <Pressable
+                style={[styles.button, (code.length < 6 || state.status === "submitting-code" || completing) && styles.buttonDisabled]}
+                onPress={() => handleSubmitCode(code)}
+                disabled={code.length < 6 || state.status === "submitting-code" || completing}
+              >
+                {state.status === "submitting-code" || completing ? (
+                  <ActivityIndicator color={colors.neutral.white} />
+                ) : (
+                  <Text style={[typography.bodyStrong, styles.buttonText]}>Verify & sign in</Text>
+                )}
+              </Pressable>
+            </>
+          )}
+
+          {error && <Text style={[typography.caption, styles.errorText]}>{error}</Text>}
+          {rawError && <Text style={[typography.caption, styles.rawErrorText]}>Debug: {rawError}</Text>}
+        </View>
+
+        <Text style={[typography.caption, styles.footnote]}>
+          By continuing, you agree to secure data handling.
         </Text>
-
-        {completing ? (
-          <ActivityIndicator color={colors.terracotta[400]} size="large" style={styles.completingSpinner} />
-        ) : !awaitingCode ? (
-          <>
-            <TextInput
-              style={styles.input}
-              placeholder="you@example.com"
-              placeholderTextColor={colors.neutral[500]}
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              editable={!sendingCode}
-            />
-            <Pressable
-              style={[styles.button, (!email.includes("@") || sendingCode) && styles.buttonDisabled]}
-              onPress={handleSendCode}
-              disabled={!email.includes("@") || sendingCode}
-            >
-              {sendingCode ? (
-                <ActivityIndicator color={colors.neutral.white} />
-              ) : (
-                <Text style={[typography.bodyStrong, styles.buttonText]}>Continue with email</Text>
-              )}
-            </Pressable>
-          </>
-        ) : (
-          <>
-            <OtpInput
-              value={code}
-              onChangeText={setCode}
-              editable={state.status !== "submitting-code" && !completing}
-              autoFocus
-            />
-            <Pressable
-              style={[styles.button, (code.length < 6 || state.status === "submitting-code" || completing) && styles.buttonDisabled]}
-              onPress={() => handleSubmitCode(code)}
-              disabled={code.length < 6 || state.status === "submitting-code" || completing}
-            >
-              {state.status === "submitting-code" || completing ? (
-                <ActivityIndicator color={colors.neutral.white} />
-              ) : (
-                <Text style={[typography.bodyStrong, styles.buttonText]}>Verify & sign in</Text>
-              )}
-            </Pressable>
-          </>
-        )}
-
-        {error && <Text style={[typography.caption, styles.errorText]}>{error}</Text>}
-        {rawError && <Text style={[typography.caption, styles.rawErrorText]}>Debug: {rawError}</Text>}
-      </View>
       </View>
     </KeyboardAvoidingView>
   );
@@ -191,45 +199,61 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: colors.indigo[900],
-    alignItems: isWeb ? "center" : "stretch",
+    alignItems: "center",
     justifyContent: "center",
   },
-  accentTopRight: { position: "absolute", top: spacing.xl, right: spacing.lg },
   outer: {
     width: isWeb ? 440 : "100%",
-    flex: isWeb ? 0 : 1,
+    paddingHorizontal: isWeb ? 0 : spacing.xl,
+    alignItems: "center",
   },
-  content: {
-    flex: isWeb ? 0 : 1,
+  header: { alignItems: "center", marginBottom: spacing.xxl },
+  badge: {
+    width: 72,
+    height: 72,
+    borderRadius: radius.lg,
+    backgroundColor: colors.indigo[100],
+    alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: spacing.xl,
-    paddingVertical: isWeb ? 48 : 0,
-    ...(isWeb ? { backgroundColor: "rgba(255,255,255,0.05)", borderRadius: 18 } : {}),
+    marginBottom: spacing.md,
   },
-  brandRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.md },
-  brandLabel: { color: colors.terracotta[300] },
-  title: { color: colors.neutral.white, marginBottom: spacing.md },
-  subtitle: { color: colors.indigo[100], marginBottom: spacing.xl, opacity: 0.85 },
-  input: {
+  wordmark: { color: colors.neutral.white },
+  card: {
+    width: "100%",
     backgroundColor: colors.surface,
-    color: colors.textPrimary,
+    borderRadius: radius.lg,
+    padding: spacing.xl,
+  },
+  cardLabel: { color: colors.textSecondary, textAlign: "center", marginBottom: spacing.md },
+  subtitle: { color: colors.textSecondary, marginBottom: spacing.lg, textAlign: "center" },
+  inputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.background,
     borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
     paddingHorizontal: spacing.md,
+    marginBottom: spacing.md,
+  },
+  inputIcon: { color: colors.textSecondary, marginRight: spacing.sm },
+  input: {
+    flex: 1,
+    color: colors.textPrimary,
     paddingVertical: spacing.md,
     fontSize: 16,
     fontFamily: typography.body.fontFamily,
-    marginBottom: spacing.md,
   },
-  codeInput: { fontFamily: typography.dataMd.fontFamily, fontSize: 22, letterSpacing: 4 },
   button: {
-    backgroundColor: colors.terracotta[400],
-    borderRadius: radius.md,
+    backgroundColor: colors.terracotta[500],
+    borderRadius: radius.pill,
     paddingVertical: spacing.md,
     alignItems: "center",
   },
   buttonDisabled: { opacity: 0.5 },
   buttonText: { color: colors.neutral.white },
-  errorText: { color: colors.terracotta[300], marginTop: spacing.md },
-  rawErrorText: { color: colors.indigo[300], marginTop: spacing.xs, opacity: 0.7 },
+  errorText: { color: colors.danger, marginTop: spacing.md, textAlign: "center" },
+  rawErrorText: { color: colors.textSecondary, marginTop: spacing.xs, opacity: 0.7, textAlign: "center" },
   completingSpinner: { marginTop: spacing.xl },
+  footnote: { color: colors.indigo[100], marginTop: spacing.xl, textAlign: "center", opacity: 0.85 },
 });
