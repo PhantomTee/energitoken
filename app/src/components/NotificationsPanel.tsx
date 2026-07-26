@@ -114,7 +114,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
-  itemUnread: { backgroundColor: colors.panelInset },
+  itemUnread: { backgroundColor: colors.indigo[100] },
   itemIcon: { fontSize: 18, color: colors.indigo[400], width: 24, textAlign: "center", marginTop: 2 },
   warnIcon: { color: colors.terracotta[500] },
   itemBody: { flex: 1 },

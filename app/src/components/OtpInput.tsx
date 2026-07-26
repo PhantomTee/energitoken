@@ -68,8 +68,8 @@ const styles = StyleSheet.create({
   box: {
     width: 44,
     height: 52,
-    backgroundColor: colors.panelInset,
-    color: colors.panelInsetText,
+    backgroundColor: colors.surface,
+    color: colors.textPrimary,
     borderRadius: radius.md,
     fontSize: 22,
     fontFamily: typography.dataMd.fontFamily,

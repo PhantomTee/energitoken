@@ -44,7 +44,7 @@ export function BrandSplash() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background },
+  screen: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.indigo[900] },
   ringWrap: { alignItems: "center", justifyContent: "center", width: 72, height: 72 },
   pulseRing: { position: "absolute" },
   wordmark: { color: colors.terracotta[400], marginTop: spacing.lg, letterSpacing: 2 },

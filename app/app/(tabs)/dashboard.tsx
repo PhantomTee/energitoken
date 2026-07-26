@@ -259,35 +259,46 @@ export default function DashboardScreen() {
         </View>
 
         <View style={styles.topSectionRight}>
-          <View style={styles.tileGrid}>
-            <View style={styles.tileRow}>
-              <MetricTile label="Voltage" value={reading ? reading.voltage.toFixed(1) : "—"} unit="V" />
-              <MetricTile label="Current" value={reading ? reading.current.toFixed(1) : "—"} unit="A" />
+          <View style={styles.readingsCard}>
+            <View style={styles.readingsCardHeader}>
+              <Text style={[typography.bodyStrong, styles.readingsCardTitle]}>Live Readings</Text>
+              {meterStatus === "live" && (
+                <View style={styles.liveBadgeRow}>
+                  <View style={styles.liveDot} />
+                  <Text style={[typography.dataXs, styles.liveBadgeText]}>LIVE</Text>
+                </View>
+              )}
             </View>
-            <View style={styles.tileRow}>
-              <MetricTile label="Power" value={reading ? reading.power.toFixed(0) : "—"} unit="W" />
-              <MetricTile
-                label="Frequency"
-                value={reading?.frequency != null ? reading.frequency.toFixed(1) : "—"}
-                unit="Hz"
-              />
+            <View style={styles.tileGrid}>
+              <View style={styles.tileRow}>
+                <MetricTile label="Voltage" value={reading ? reading.voltage.toFixed(1) : "—"} unit="V" />
+                <MetricTile label="Current" value={reading ? reading.current.toFixed(1) : "—"} unit="A" />
+              </View>
+              <View style={styles.tileRow}>
+                <MetricTile label="Power" value={reading ? reading.power.toFixed(0) : "—"} unit="W" />
+                <MetricTile
+                  label="Frequency"
+                  value={reading?.frequency != null ? reading.frequency.toFixed(1) : "—"}
+                  unit="Hz"
+                />
+              </View>
             </View>
-          </View>
 
-          <Pressable onPress={() => setShowMoreReadings((v) => !v)} style={styles.moreToggle}>
-            <Text style={[typography.caption, styles.moreToggleText]}>
-              {showMoreReadings ? "Show less ▲" : "More readings ▼"}
-            </Text>
-          </Pressable>
-          {showMoreReadings && (
-            <View style={styles.tileRow}>
-              <MetricTile
-                label="Power factor"
-                value={reading?.powerFactor != null ? reading.powerFactor.toFixed(2) : "—"}
-                unit=""
-              />
-            </View>
-          )}
+            <Pressable onPress={() => setShowMoreReadings((v) => !v)} style={styles.moreToggle}>
+              <Text style={[typography.caption, styles.moreToggleText]}>
+                {showMoreReadings ? "Show less ▲" : "More readings ▼"}
+              </Text>
+            </Pressable>
+            {showMoreReadings && (
+              <View style={styles.tileRow}>
+                <MetricTile
+                  label="Power factor"
+                  value={reading?.powerFactor != null ? reading.powerFactor.toFixed(2) : "—"}
+                  unit=""
+                />
+              </View>
+            )}
+          </View>
         </View>
       </View>
 
@@ -364,7 +375,7 @@ const styles = StyleSheet.create({
   balanceMain: { flex: 1, marginRight: spacing.md },
   balanceLabel: { color: colors.terracotta[500] },
   balanceValue: { color: colors.panelInsetText, marginTop: spacing.xs },
-  balanceUnit: { color: colors.indigo[700], marginTop: 2 },
+  balanceUnit: { color: colors.indigo[100], marginTop: 2, opacity: 0.85 },
   quickActionsRow: { flexDirection: "row", gap: spacing.sm },
   quickActionButton: {
     flex: 1,
@@ -380,6 +391,19 @@ const styles = StyleSheet.create({
   errorText: { color: colors.danger },
   pairLink: { marginLeft: spacing.sm },
   pairLinkText: { color: colors.indigo[400] },
+  readingsCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    gap: spacing.sm,
+  },
+  readingsCardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  readingsCardTitle: { color: colors.textPrimary },
+  liveBadgeRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.success },
+  liveBadgeText: { color: colors.success, letterSpacing: 0.5 },
   tileGrid: { gap: spacing.sm },
   tileRow: { flexDirection: "row", gap: spacing.sm },
   moreToggle: { alignSelf: "flex-start" },

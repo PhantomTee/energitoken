@@ -20,7 +20,7 @@ export function LiveMockBanner({
         value={isLive}
         onValueChange={(v) => onToggle(v ? "live" : "mock")}
         trackColor={{ false: colors.neutral[700], true: colors.indigo[400] }}
-        thumbColor={Platform.OS === "android" ? colors.panelInset : undefined}
+        thumbColor={Platform.OS === "android" ? colors.neutral.white : undefined}
       />
     </View>
   );

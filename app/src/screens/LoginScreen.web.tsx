@@ -223,8 +223,8 @@ const styles = StyleSheet.create({
   title: { color: colors.neutral.white, marginBottom: spacing.md },
   subtitle: { color: colors.indigo[100], marginBottom: spacing.xl, opacity: 0.85 },
   input: {
-    backgroundColor: colors.panelInset,
-    color: colors.panelInsetText,
+    backgroundColor: colors.surface,
+    color: colors.textPrimary,
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,

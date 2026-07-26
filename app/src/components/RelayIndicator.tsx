@@ -7,11 +7,11 @@ import { RelayState, RelayOverrides } from "../mock/mockMeterData";
 const TIERS: RelayTier[] = ["r1", "r2", "r3", "r4"];
 const isWeb = Platform.OS === "web";
 
-const TIER_META: Record<RelayTier, { icon: string; detail: string }> = {
-  r1: { icon: "💡", detail: "Lighting, phone charging — never shed" },
-  r2: { icon: "🌀", detail: "Fans, some lights — sheds at 95%" },
-  r3: { icon: "📺", detail: "TV, sockets — sheds at 85%" },
-  r4: { icon: "🔥", detail: "Water heater, AC — sheds at 70%" },
+const TIER_META: Record<RelayTier, { icon: string; devices: string; threshold: string }> = {
+  r1: { icon: "💡", devices: "Lighting, phone charging", threshold: "Always on" },
+  r2: { icon: "🌀", devices: "Fans, some lights", threshold: "Sheds at 95%" },
+  r3: { icon: "📺", devices: "TV, sockets", threshold: "Sheds at 85%" },
+  r4: { icon: "🔥", devices: "Water heater, AC", threshold: "Sheds at 70%" },
 };
 
 type Props = {
@@ -31,137 +31,74 @@ function nextOverrideValue(current: boolean | undefined): boolean | null {
   return null; // force OFF -> auto
 }
 
-/** On native this is a compact stacked list, one row per tier -- the right
- * shape for a narrow phone screen. On web it's a grid of cards so it reads
- * as a real desktop panel instead of the same thin list just stretched
- * across a wide viewport. */
+/** On native this is a stacked list of left-accent-bar cards -- tier,
+ * devices, and shed threshold at a glance, same shape as a load-priority
+ * guide. On web it's a grid of the same cards so it reads as a real
+ * desktop panel instead of a thin list stretched across a wide viewport. */
 export function RelayIndicator({ relays, overrides, onToggle, disabledTier }: Props) {
   const interactive = !!onToggle;
 
-  if (isWeb) {
-    return (
-      <View>
-        <View style={styles.grid}>
-          {TIERS.map((tier) => {
-            const override = overrides?.[tier];
-            const isManual = override !== undefined;
-            const on = isManual ? override : relays[tier];
-            const busy = disabledTier === tier;
-            const meta = TIER_META[tier];
+  return (
+    <View>
+      <View style={isWeb ? styles.grid : styles.list}>
+        {TIERS.map((tier) => {
+          const override = overrides?.[tier];
+          const isManual = override !== undefined;
+          // Manual override wins visually over the live relay state, since it
+          // represents user intent even before firmware has caught up to it.
+          const on = isManual ? override : relays[tier];
+          const busy = disabledTier === tier;
+          const meta = TIER_META[tier];
+          const barColor = isManual ? colors.terracotta[500] : on ? colors.success : colors.neutral[500];
 
-            const card = (
-              <View style={[styles.card, on ? styles.cardOn : styles.cardOff]}>
+          const card = (
+            <View style={[styles.card, isWeb && styles.cardWeb]}>
+              <View style={[styles.accentBar, { backgroundColor: barColor }]} />
+              <View style={styles.cardIconWrap}>
+                <Text style={styles.cardIcon}>{meta.icon}</Text>
+              </View>
+              <View style={styles.cardBody}>
                 <View style={styles.cardTopRow}>
-                  <Text style={styles.cardIcon}>{meta.icon}</Text>
+                  <Text style={[typography.bodyStrong, styles.cardLabel]}>{relayTierLabels[tier]}</Text>
                   {isManual && (
                     <View style={styles.manualBadge}>
                       <Text style={styles.manualBadgeText}>MANUAL</Text>
                     </View>
                   )}
                 </View>
-                <Text style={[typography.bodyStrong, styles.cardLabel]}>{relayTierLabels[tier]}</Text>
+                <Text style={[typography.caption, styles.cardDevices]}>{meta.devices}</Text>
+              </View>
+              <View style={styles.cardRight}>
                 <Text
-                  style={[
-                    typography.dataSm,
-                    styles.cardStatus,
-                    { color: on ? colors.success : colors.textSecondary },
-                  ]}
+                  style={[typography.dataXs, styles.cardStatus, { color: on ? colors.success : colors.textSecondary }]}
                 >
                   {busy ? "…" : on ? "ON" : "SHED"}
                 </Text>
-                <View style={styles.cardBar}>
-                  <View
-                    style={[
-                      styles.cardBarFill,
-                      { width: on ? "100%" : "12%", backgroundColor: on ? colors.success : colors.neutral[700] },
-                    ]}
-                  />
-                </View>
-                <Text style={[typography.caption, styles.cardDetail]}>{meta.detail}</Text>
+                <Text style={[typography.caption, styles.cardThreshold]}>{meta.threshold}</Text>
               </View>
-            );
+            </View>
+          );
 
-            if (!interactive) {
-              return <View key={tier}>{card}</View>;
-            }
+          if (!interactive) {
+            return <View key={tier}>{card}</View>;
+          }
 
-            return (
-              <Pressable
-                key={tier}
-                onPress={() => onToggle(tier, nextOverrideValue(override))}
-                disabled={busy}
-                style={({ pressed, hovered }: any) => [pressed && styles.pressed, hovered && styles.hovered]}
-              >
-                {card}
-              </Pressable>
-            );
-          })}
-        </View>
-        {interactive && (
-          <Text style={[typography.caption, styles.hint]}>
-            Click a load to force it on or off. Click again to clear the override and return to automatic budget
-            control.
-          </Text>
-        )}
+          return (
+            <Pressable
+              key={tier}
+              onPress={() => onToggle(tier, nextOverrideValue(override))}
+              disabled={busy}
+              style={({ pressed, hovered }: any) => [pressed && styles.pressed, hovered && styles.hovered]}
+            >
+              {card}
+            </Pressable>
+          );
+        })}
       </View>
-    );
-  }
-
-  return (
-    <View style={styles.list}>
-      {TIERS.map((tier) => {
-        const override = overrides?.[tier];
-        const isManual = override !== undefined;
-        // Manual override wins visually over the live relay state, since it
-        // represents user intent even before firmware has caught up to it.
-        const on = isManual ? override : relays[tier];
-        const busy = disabledTier === tier;
-
-        const row = (
-          <View style={styles.row}>
-            <Text style={[typography.label, styles.tierLabel]}>{relayTierLabels[tier]}</Text>
-            <View style={styles.track}>
-              <View
-                style={[
-                  styles.fill,
-                  {
-                    width: on ? "100%" : "18%",
-                    backgroundColor: on ? colors.success : colors.neutral[700],
-                  },
-                ]}
-              />
-            </View>
-            <View style={styles.statusGroup}>
-              {isManual && (
-                <View style={styles.manualBadge}>
-                  <Text style={styles.manualBadgeText}>MANUAL</Text>
-                </View>
-              )}
-              <Text style={[typography.dataXs, styles.status, { color: on ? colors.success : colors.textSecondary }]}>
-                {busy ? "…" : on ? "ON" : "SHED"}
-              </Text>
-            </View>
-          </View>
-        );
-
-        if (!interactive) {
-          return <View key={tier}>{row}</View>;
-        }
-
-        return (
-          <Pressable
-            key={tier}
-            onPress={() => onToggle(tier, nextOverrideValue(override))}
-            disabled={busy}
-            style={({ pressed }) => [styles.pressableRow, pressed && styles.pressed]}
-          >
-            {row}
-          </Pressable>
-        );
-      })}
       {interactive && (
         <Text style={[typography.caption, styles.hint]}>
-          Tap a load to force it on or off. Tap again to clear the override and return to automatic budget control.
+          {isWeb ? "Click" : "Tap"} a load to force it on or off. {isWeb ? "Click" : "Tap"} again to clear the
+          override and return to automatic budget control.
         </Text>
       )}
     </View>
@@ -170,22 +107,31 @@ export function RelayIndicator({ relays, overrides, onToggle, disabledTier }: Pr
 
 const styles = StyleSheet.create({
   list: { gap: spacing.sm },
-  row: { flexDirection: "row", alignItems: "center" },
-  pressableRow: { borderRadius: radius.md },
-  pressed: { opacity: 0.6 },
-  hovered: { opacity: 0.85 },
-  tierLabel: { color: colors.textPrimary, width: 84 },
-  track: {
-    flex: 1,
-    height: 6,
-    borderRadius: radius.pill,
+  grid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  pressed: { opacity: 0.7 },
+  hovered: { opacity: 0.9 },
+  card: {
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
     overflow: "hidden",
-    marginHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingRight: spacing.md,
   },
-  fill: { height: "100%", borderRadius: radius.pill },
-  statusGroup: { flexDirection: "row", alignItems: "center", gap: spacing.xs, minWidth: 88, justifyContent: "flex-end" },
-  status: { width: 40, textAlign: "right" },
+  cardWeb: { flexBasis: 260, flexGrow: 1, minWidth: 240 },
+  accentBar: { width: 4, alignSelf: "stretch", marginRight: spacing.md },
+  cardIconWrap: { marginRight: spacing.sm },
+  cardIcon: { fontSize: 20 },
+  cardBody: { flex: 1, gap: 2 },
+  cardTopRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  cardLabel: { color: colors.textPrimary },
+  cardDevices: { color: colors.textSecondary },
+  cardRight: { alignItems: "flex-end", gap: 2, minWidth: 78 },
+  cardStatus: { letterSpacing: 0.5 },
+  cardThreshold: { color: colors.textSecondary, fontSize: 11 },
   manualBadge: {
     backgroundColor: colors.terracotta[500],
     borderRadius: radius.pill,
@@ -193,32 +139,5 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   manualBadgeText: { color: colors.neutral.white, fontSize: 9, fontWeight: "700" },
-  hint: { color: colors.textSecondary, opacity: 0.75, marginTop: spacing.sm },
-
-  // ── Web grid ──
-  grid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md },
-  card: {
-    flexBasis: 200,
-    flexGrow: 1,
-    minWidth: 180,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    padding: spacing.lg,
-    gap: spacing.xs,
-  },
-  cardOn: { backgroundColor: colors.surface, borderColor: colors.border },
-  cardOff: { backgroundColor: colors.surface, borderColor: colors.border, opacity: 0.85 },
-  cardTopRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
-  cardIcon: { fontSize: 22 },
-  cardLabel: { color: colors.textPrimary, marginTop: spacing.xs },
-  cardStatus: { letterSpacing: 0.5 },
-  cardBar: {
-    height: 6,
-    borderRadius: radius.pill,
-    backgroundColor: colors.background,
-    overflow: "hidden",
-    marginTop: spacing.xs,
-  },
-  cardBarFill: { height: "100%", borderRadius: radius.pill },
-  cardDetail: { color: colors.textSecondary, opacity: 0.75, marginTop: spacing.xs },
+  hint: { color: colors.textSecondary, opacity: 0.85, marginTop: spacing.sm },
 });

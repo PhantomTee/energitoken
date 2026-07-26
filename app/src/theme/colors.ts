@@ -1,11 +1,14 @@
 /**
  * Adire indigo as the primary brand color (the deep blue of hand-dyed cloth),
  * laterite terracotta as the accent (the red-brown clay common across West
- * African soil and pottery). The canvas is dark — an indigo-tinted near-black
- * rather than a neutral charcoal, so it still reads as "dyed cloth" rather
- * than generic dashboard chrome. `panelInset` is the one warm, light surface
- * in the system: raw, undyed cotton before it meets the indigo vat — used
- * sparingly, for the one card per screen that should pull focus.
+ * African soil and pottery). Main app screens (Dashboard, Budget, Transfer,
+ * History, Settings) sit on a soft "Paper" canvas with white cards — indigo
+ * is reserved for hero moments (Splash, Login, Welcome, onboarding, the Top
+ * Up backdrop), which build their own dark backgrounds directly from
+ * `colors.indigo[900]` rather than these shared tokens. `panelInset` is the
+ * one dark accent card per screen that should pull focus (e.g. the ENGY
+ * balance card) — navy surface, light text, the inverse of everything
+ * around it.
  */
 export const colors = {
   indigo: {
@@ -32,18 +35,18 @@ export const colors = {
     100: "#F2F0F6",
     white: "#FFFFFF",
   },
-  success: "#4FB377",
-  warning: "#D9A53E",
-  danger: "#D1453F",
+  success: "#2F8F5B",
+  warning: "#B4791A",
+  danger: "#BA1A1A",
 
-  // Dark theme surfaces
-  background: "#121022",
-  surface: "#1B1830",
-  panelInset: "#EDE6DC",
-  panelInsetText: "#161A4A",
-  textPrimary: "#F3EFE6",
-  textSecondary: "#9590B0",
-  border: "#322C54",
+  // Light "Paper" theme surfaces
+  background: "#FBF9F8",
+  surface: "#FFFFFF",
+  panelInset: "#161A4A",
+  panelInsetText: "#FFFFFF",
+  textPrimary: "#1B1C1C",
+  textSecondary: "#5C596B",
+  border: "#E4E2E1",
 };
 
 export type RelayTier = "r1" | "r2" | "r3" | "r4";
