@@ -1,31 +1,37 @@
 import React from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, Platform } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, Platform, Linking } from "react-native";
 import { useRouter, Redirect } from "expo-router";
 import { colors } from "../src/theme/colors";
 import { typography, spacing, radius } from "../src/theme/typography";
 import { AdinkraAccent } from "../src/theme/motifs/AdinkraAccent";
 
+const CONTRACT_ADDRESS = "0x8493324De9578BF390092ed6c4a5b1033fBF8048";
+const EXPLORER_URL = `https://amoy.polygonscan.com/address/${CONTRACT_ADDRESS}`;
+const GITHUB_URL = "https://github.com/PhantomTee/energitoken";
+
 const FEATURES = [
   {
-    icon: "⚡",
-    title: "Live metering",
-    body: "Voltage, current, power and frequency update in real time from your household's meter.",
+    icon: "📈",
+    title: "Track",
+    body: "Real-time meter readings direct to your dashboard. Monitor kWh usage instantly with high-precision data streams.",
   },
   {
     icon: "◐",
-    title: "Budgeted, not blacked out",
-    body: "Set a daily budget. As usage approaches it, non-critical loads shed gently -- lighting and phone charging protected to the very end.",
+    title: "Budget",
+    body: "Set firm consumption limits. Automated relay shedding protection kicks in before you exceed your allowance, saving costs.",
   },
   {
     icon: "⇄",
-    title: "Share credit like airtime",
-    body: "Send surplus watt-hours to another household by email, wallet address, or QR code.",
+    title: "Share",
+    body: "Excess capacity? Transfer surplus energy tokens directly wallet-to-wallet with peers in your micro-grid instantly.",
   },
-  {
-    icon: "≡",
-    title: "A real record",
-    body: "Every top-up, transfer, and unit consumed is a transaction on Polygon -- verifiable, not just a number in an app.",
-  },
+] as const;
+
+const STEPS = [
+  { n: 1, title: "Top Up", body: "Add EnergiTokens to your secure digital wallet.", accent: "terracotta" },
+  { n: 2, title: "Set Budget", body: "Allocate tokens to specific appliances or timeframes.", accent: "indigo" },
+  { n: 3, title: "Meter Enforces", body: "Smart relay automatically manages supply based on limits.", accent: "indigo" },
+  { n: 4, title: "Share Surplus", body: "Send unused tokens back to the community grid.", accent: "terracotta" },
 ] as const;
 
 /** Web-only marketing landing page shown before login. Native skips this
@@ -42,50 +48,122 @@ export default function LandingScreen() {
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <View style={styles.nav}>
         <View style={styles.brandRow}>
-          <AdinkraAccent size={24} color={colors.terracotta[400]} dotColor={colors.indigo[400]} opacity={1} />
-          <Text style={[typography.label, styles.brandLabel]}>ENERGITOKEN</Text>
+          <AdinkraAccent size={26} color={colors.terracotta[500]} dotColor={colors.indigo[500]} opacity={1} />
+          <Text style={[typography.h2, styles.brandLabel]}>EnergiToken</Text>
         </View>
-        <Pressable style={styles.navButton} onPress={() => router.push("/login")}>
-          <Text style={[typography.bodyStrong, styles.navButtonText]}>Sign in</Text>
-        </Pressable>
+        <View style={styles.navRight}>
+          <Text style={[typography.body, styles.navLink]}>Features</Text>
+          <Text style={[typography.body, styles.navLink]}>How it Works</Text>
+          <Pressable style={styles.navCta} onPress={() => router.push("/login")}>
+            <Text style={[typography.bodyStrong, styles.navCtaText]}>Get Started</Text>
+          </Pressable>
+        </View>
       </View>
 
+      {/* ── Hero ── */}
       <View style={styles.hero}>
-        <Text style={[typography.display, styles.heroTitle]}>Power, budgeted{"\n"}and shared.</Text>
-        <Text style={[typography.body, styles.heroSubtitle]}>
-          EnergiToken turns prepaid electricity into a household credit balance you can see, budget,
-          and share -- backed by a real smart meter, not a guess.
-        </Text>
-        <Pressable style={styles.heroButton} onPress={() => router.push("/login")}>
-          <Text style={[typography.bodyStrong, styles.heroButtonText]}>Get started</Text>
-        </Pressable>
-      </View>
-
-      <View style={styles.featureGrid}>
-        {FEATURES.map((f) => (
-          <View key={f.title} style={styles.featureCard}>
-            <Text style={styles.featureIcon}>{f.icon}</Text>
-            <Text style={[typography.bodyStrong, styles.featureTitle]}>{f.title}</Text>
-            <Text style={[typography.caption, styles.featureBody]}>{f.body}</Text>
+        <View style={styles.heroLeft}>
+          <Text style={[typography.display, styles.heroTitle]}>
+            Powering Your Future.{"\n"}
+            <Text style={styles.heroTitleAccent}>Track. Budget. Share.</Text>
+          </Text>
+          <Text style={[typography.body, styles.heroSubtitle]}>
+            Take control of your energy consumption with EnergiToken. Real-time monitoring,
+            intelligent relay shedding, and seamless wallet-to-wallet surplus sharing in one unified
+            platform.
+          </Text>
+          <View style={styles.heroButtons}>
+            <Pressable style={styles.heroPrimaryButton} onPress={() => router.push("/login")}>
+              <Text style={[typography.bodyStrong, styles.heroPrimaryButtonText]}>Get Started</Text>
+            </Pressable>
+            <Pressable style={styles.heroSecondaryButton} onPress={() => router.push("/login")}>
+              <Text style={[typography.bodyStrong, styles.heroSecondaryButtonText]}>View Demo</Text>
+            </Pressable>
           </View>
-        ))}
+        </View>
+        <View style={styles.heroRight}>
+          <View style={styles.heroArt}>
+            <AdinkraAccent size={120} color={colors.indigo[300]} dotColor={colors.terracotta[400]} opacity={0.9} />
+            <Text style={styles.heroArtIcon}>⚡</Text>
+          </View>
+        </View>
       </View>
 
-      <View style={styles.footer}>
-        <Text style={[typography.caption, styles.footerText]}>
-          Your energy. Your budget. Your control.
+      {/* ── Features ── */}
+      <View style={styles.featuresSection}>
+        <Text style={[typography.h1, styles.sectionTitle]}>Intelligent Energy Management</Text>
+        <Text style={[typography.body, styles.sectionSubtitle]}>
+          Everything you need to monitor, control, and distribute your energy resources efficiently.
         </Text>
+        <View style={styles.featureGrid}>
+          {FEATURES.map((f) => (
+            <View key={f.title} style={styles.featureCard}>
+              <View style={styles.featureIconWrap}>
+                <Text style={styles.featureIcon}>{f.icon}</Text>
+              </View>
+              <Text style={[typography.h2, styles.featureTitle]}>{f.title}</Text>
+              <Text style={[typography.body, styles.featureBody]}>{f.body}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+
+      {/* ── How It Works ── */}
+      <View style={styles.stepsSection}>
+        <Text style={[typography.h1, styles.sectionTitle]}>How It Works</Text>
+        <View style={styles.stepsRow}>
+          {STEPS.map((s) => (
+            <View key={s.n} style={styles.stepCol}>
+              <View
+                style={[
+                  styles.stepCircle,
+                  { borderColor: s.accent === "terracotta" ? colors.terracotta[500] : colors.indigo[500] },
+                ]}
+              >
+                <Text
+                  style={[
+                    typography.dataMd,
+                    { color: s.accent === "terracotta" ? colors.terracotta[500] : colors.indigo[500] },
+                  ]}
+                >
+                  {s.n}
+                </Text>
+              </View>
+              <Text style={[typography.h2, styles.stepTitle]}>{s.title}</Text>
+              <Text style={[typography.caption, styles.stepBody]}>{s.body}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+
+      {/* ── Footer ── */}
+      <View style={styles.footer}>
+        <View style={styles.footerBrandRow}>
+          <AdinkraAccent size={20} color={colors.terracotta[500]} dotColor={colors.indigo[500]} opacity={1} />
+          <Text style={[typography.bodyStrong, styles.footerBrand]}>EnergiToken</Text>
+        </View>
+        <View style={styles.footerLinks}>
+          <Pressable onPress={() => Linking.openURL(EXPLORER_URL)}>
+            <Text style={[typography.dataXs, styles.footerLink]}>
+              {CONTRACT_ADDRESS.slice(0, 6)}…{CONTRACT_ADDRESS.slice(-4)}
+            </Text>
+          </Pressable>
+          <Pressable onPress={() => Linking.openURL(GITHUB_URL)}>
+            <Text style={[typography.dataXs, styles.footerLink]}>GitHub</Text>
+          </Pressable>
+          <Text style={[typography.dataXs, styles.footerLink]}>hello@energitoken.io</Text>
+        </View>
       </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.indigo[900] },
-  content: { paddingBottom: spacing.xxl, alignItems: "center" },
+  screen: { flex: 1, backgroundColor: colors.background },
+  content: { alignItems: "center" },
   nav: {
     width: "100%",
-    maxWidth: 1080,
+    maxWidth: 1180,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
@@ -93,51 +171,140 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.lg,
   },
   brandRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  brandLabel: { color: colors.terracotta[300] },
-  navButton: {
-    borderWidth: 1,
-    borderColor: colors.indigo[400],
+  brandLabel: { color: colors.indigo[900] },
+  navRight: { flexDirection: "row", alignItems: "center", gap: spacing.xl },
+  navLink: { color: colors.textSecondary },
+  navCta: {
+    backgroundColor: colors.terracotta[500],
     borderRadius: radius.pill,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
   },
-  navButtonText: { color: colors.neutral.white },
+  navCtaText: { color: colors.neutral.white },
+
   hero: {
     width: "100%",
-    maxWidth: 720,
+    maxWidth: 1180,
+    flexDirection: "row",
     alignItems: "center",
+    gap: spacing.xl,
     paddingHorizontal: spacing.xl,
-    paddingTop: spacing.xxl,
-    paddingBottom: spacing.xxl,
+    paddingVertical: spacing.xxl,
   },
-  heroTitle: { color: colors.neutral.white, textAlign: "center", marginBottom: spacing.md },
-  heroSubtitle: { color: colors.indigo[100], textAlign: "center", opacity: 0.85, marginBottom: spacing.xl },
-  heroButton: {
-    backgroundColor: colors.terracotta[400],
-    borderRadius: radius.md,
+  heroLeft: { flex: 1, gap: spacing.lg, minWidth: 320 },
+  heroTitle: { color: colors.indigo[900], fontSize: 44, lineHeight: 50 },
+  heroTitleAccent: { color: colors.terracotta[500] },
+  heroSubtitle: { color: colors.textSecondary, maxWidth: 460 },
+  heroButtons: { flexDirection: "row", gap: spacing.md, flexWrap: "wrap" },
+  heroPrimaryButton: {
+    backgroundColor: colors.terracotta[500],
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.xl,
     paddingVertical: spacing.md,
-    paddingHorizontal: spacing.xxl,
   },
-  heroButtonText: { color: colors.neutral.white },
+  heroPrimaryButtonText: { color: colors.neutral.white },
+  heroSecondaryButton: {
+    borderWidth: 1,
+    borderColor: colors.indigo[300],
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+  },
+  heroSecondaryButtonText: { color: colors.indigo[900] },
+  heroRight: { flex: 1, minWidth: 280, alignItems: "center" },
+  heroArt: {
+    width: "100%",
+    maxWidth: 420,
+    height: 320,
+    borderRadius: radius.lg,
+    backgroundColor: colors.indigo[100],
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  heroArtIcon: { position: "absolute", fontSize: 40 },
+
+  featuresSection: {
+    width: "100%",
+    backgroundColor: colors.surface,
+    paddingVertical: spacing.xxl,
+    paddingHorizontal: spacing.xl,
+    alignItems: "center",
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  sectionTitle: { color: colors.indigo[900], textAlign: "center" },
+  sectionSubtitle: { color: colors.textSecondary, textAlign: "center", marginTop: spacing.sm, maxWidth: 560 },
   featureGrid: {
     width: "100%",
     maxWidth: 1080,
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.lg,
-    paddingHorizontal: spacing.xl,
+    marginTop: spacing.xl,
     justifyContent: "center",
   },
   featureCard: {
-    width: 240,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    flexBasis: 300,
+    flexGrow: 1,
+    minWidth: 260,
+    maxWidth: 340,
+    backgroundColor: colors.background,
     borderRadius: radius.lg,
-    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.xl,
     gap: spacing.sm,
   },
-  featureIcon: { fontSize: 28 },
-  featureTitle: { color: colors.neutral.white },
-  featureBody: { color: colors.indigo[100], opacity: 0.8 },
-  footer: { marginTop: spacing.xxl, paddingHorizontal: spacing.xl },
-  footerText: { color: colors.indigo[300], opacity: 0.7 },
+  featureIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.indigo[100],
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  featureIcon: { fontSize: 22 },
+  featureTitle: { color: colors.indigo[900] },
+  featureBody: { color: colors.textSecondary },
+
+  stepsSection: {
+    width: "100%",
+    maxWidth: 1180,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.xxl,
+    alignItems: "center",
+  },
+  stepsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xl,
+    justifyContent: "center",
+    marginTop: spacing.xl,
+  },
+  stepCol: { alignItems: "center", width: 220, gap: spacing.sm },
+  stepCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 2,
+    backgroundColor: colors.surface,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepTitle: { color: colors.indigo[900] },
+  stepBody: { color: colors.textSecondary, textAlign: "center" },
+
+  footer: {
+    width: "100%",
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.xl,
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  footerBrandRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  footerBrand: { color: colors.indigo[900] },
+  footerLinks: { flexDirection: "row", gap: spacing.lg, flexWrap: "wrap", justifyContent: "center" },
+  footerLink: { color: colors.textSecondary },
 });
