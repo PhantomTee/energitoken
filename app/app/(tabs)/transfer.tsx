@@ -45,8 +45,17 @@ function PreflightRow({
   );
 }
 
+type RecipientMode = "email" | "address" | "qr";
+
+const RECIPIENT_TABS: { key: RecipientMode; label: string }[] = [
+  { key: "email", label: "Email" },
+  { key: "address", label: "Wallet Address" },
+  { key: "qr", label: "QR Code" },
+];
+
 export default function TransferScreen() {
   const { walletAddress, getSigner } = useWallet();
+  const [recipientMode, setRecipientMode] = useState<RecipientMode>("email");
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
   const [showConfirm, setShowConfirm] = useState(false);
@@ -84,7 +93,7 @@ export default function TransferScreen() {
     setRefreshing(false);
   }, [refreshBalance]);
 
-  const isEmailEntry = recipient.includes("@");
+  const isEmailEntry = recipientMode === "email";
 
   // Debounced email -> wallet lookup against the /directory node.
   useEffect(() => {
@@ -179,6 +188,7 @@ export default function TransferScreen() {
   };
 
   const reset = () => {
+    setRecipientMode("email");
     setRecipient("");
     setAmount("");
     setTxState("idle");
@@ -210,31 +220,64 @@ export default function TransferScreen() {
       </Text>
 
       <Text style={[typography.label, styles.fieldLabel]}>RECIPIENT</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="email@example.com or 0x..."
-        placeholderTextColor={colors.neutral[500]}
-        value={recipient}
-        onChangeText={setRecipient}
-        autoCapitalize="none"
-        editable={txState === "idle"}
-      />
-      {isEmailEntry && resolving && (
-        <View style={styles.resolveRow}>
-          <ActivityIndicator size="small" color={colors.indigo[400]} />
-          <Text style={[typography.caption, styles.resolveText]}>Looking up that email…</Text>
+      <View style={styles.tabRow}>
+        {RECIPIENT_TABS.map((tab) => (
+          <Pressable
+            key={tab.key}
+            style={[styles.tabChip, recipientMode === tab.key && styles.tabChipActive]}
+            disabled={txState !== "idle"}
+            onPress={() => {
+              setRecipientMode(tab.key);
+              setRecipient("");
+              setResolvedAddress(null);
+              setResolveError(null);
+            }}
+          >
+            <Text style={[typography.caption, recipientMode === tab.key ? styles.tabTextActive : styles.tabText]}>
+              {tab.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {recipientMode === "qr" ? (
+        <View style={styles.qrPlaceholder}>
+          <Text style={[typography.body, styles.qrPlaceholderText]}>
+            Scanning a recipient's QR code needs the device camera, which isn't available in this
+            update yet -- use Email or Wallet Address for now. Camera scanning is coming in a future
+            app update.
+          </Text>
         </View>
-      )}
-      {isEmailEntry && !resolving && resolvedAddress && (
-        <Text style={[typography.caption, styles.resolveSuccess]}>
-          Resolved to {resolvedAddress.slice(0, 6)}…{resolvedAddress.slice(-4)}
-        </Text>
-      )}
-      {isEmailEntry && !resolving && resolveError && (
-        <Text style={[typography.caption, styles.errorHint]}>{resolveError}</Text>
-      )}
-      {recipient.length > 0 && !isEmailEntry && !isValidRecipient && (
-        <Text style={[typography.caption, styles.errorHint]}>That doesn't look like a valid wallet address.</Text>
+      ) : (
+        <>
+          <TextInput
+            style={styles.input}
+            placeholder={recipientMode === "email" ? "email@example.com" : "0x..."}
+            placeholderTextColor={colors.neutral[500]}
+            value={recipient}
+            onChangeText={setRecipient}
+            autoCapitalize="none"
+            keyboardType={recipientMode === "email" ? "email-address" : "default"}
+            editable={txState === "idle"}
+          />
+          {isEmailEntry && resolving && (
+            <View style={styles.resolveRow}>
+              <ActivityIndicator size="small" color={colors.indigo[400]} />
+              <Text style={[typography.caption, styles.resolveText]}>Looking up that email…</Text>
+            </View>
+          )}
+          {isEmailEntry && !resolving && resolvedAddress && (
+            <Text style={[typography.caption, styles.resolveSuccess]}>
+              Resolved to {resolvedAddress.slice(0, 6)}…{resolvedAddress.slice(-4)}
+            </Text>
+          )}
+          {isEmailEntry && !resolving && resolveError && (
+            <Text style={[typography.caption, styles.errorHint]}>{resolveError}</Text>
+          )}
+          {recipient.length > 0 && !isEmailEntry && !isValidRecipient && (
+            <Text style={[typography.caption, styles.errorHint]}>That doesn't look like a valid wallet address.</Text>
+          )}
+        </>
       )}
 
       <Text style={[typography.label, styles.fieldLabel]}>AMOUNT (Wh)</Text>
@@ -350,6 +393,27 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  tabRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.sm },
+  tabChip: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    paddingVertical: spacing.xs,
+    alignItems: "center",
+    backgroundColor: colors.surface,
+  },
+  tabChipActive: { backgroundColor: colors.indigo[400], borderColor: colors.indigo[400] },
+  tabText: { color: colors.textSecondary },
+  tabTextActive: { color: colors.neutral.white },
+  qrPlaceholder: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+  },
+  qrPlaceholderText: { color: colors.textSecondary, textAlign: "center" },
   balanceHint: { color: colors.textSecondary, marginTop: spacing.xs },
   errorHint: { color: colors.danger, marginTop: spacing.xs },
   resolveRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs, marginTop: spacing.xs },
