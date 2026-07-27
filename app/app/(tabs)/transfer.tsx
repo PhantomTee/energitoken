@@ -27,6 +27,7 @@ import { useTransactionHistory } from "../../src/hooks/useTransactionHistory";
 import { TxDirection } from "../../src/services/contractEvents";
 import { exportTransactionsCsv } from "../../src/services/exportReport";
 import { useIsDesktopWeb } from "../../src/hooks/useIsDesktopWeb";
+import { displayNameFromEmail } from "../../src/services/displayName";
 
 const TX_DIRECTION_META: Record<TxDirection, string> = {
   mint: "Purchased",
@@ -66,15 +67,15 @@ function PreflightRow({
 
 type RecipientMode = "email" | "address" | "qr";
 
-const RECIPIENT_TABS: { key: RecipientMode; label: string }[] = Platform.OS === "web"
+const RECIPIENT_TABS: { key: RecipientMode; label: string; icon: keyof typeof Ionicons.glyphMap }[] = Platform.OS === "web"
   ? [
-      { key: "email", label: "Email" },
-      { key: "address", label: "Wallet Address" },
+      { key: "email", label: "Email", icon: "mail-outline" },
+      { key: "address", label: "Wallet Address", icon: "card-outline" },
     ]
   : [
-      { key: "email", label: "Email" },
-      { key: "address", label: "Wallet Address" },
-      { key: "qr", label: "QR Code" },
+      { key: "email", label: "Email", icon: "mail-outline" },
+      { key: "address", label: "Wallet Address", icon: "card-outline" },
+      { key: "qr", label: "QR Code", icon: "qr-code-outline" },
     ];
 
 export default function TransferScreen() {
@@ -261,7 +262,7 @@ export default function TransferScreen() {
       <View style={styles.availablePill}>
         <Text style={[typography.caption, styles.availablePillLabel]}>Available to send:</Text>
         <Text style={[typography.dataSm, styles.availablePillValue]}>
-          {balanceWh === null ? "···" : `${balanceWh.toLocaleString()} Wh`}
+          {balanceWh === null ? "···" : `${balanceWh.toLocaleString()} ENGY`}
         </Text>
       </View>
 
@@ -284,6 +285,12 @@ export default function TransferScreen() {
               setScanError(null);
             }}
           >
+            <Ionicons
+              name={tab.icon}
+              size={14}
+              color={recipientMode === tab.key ? colors.neutral.white : colors.textSecondary}
+              style={styles.tabIcon}
+            />
             <Text style={[typography.caption, recipientMode === tab.key ? styles.tabTextActive : styles.tabText]}>
               {tab.label}
             </Text>
@@ -316,16 +323,24 @@ export default function TransferScreen() {
         </View>
       ) : (
         <>
-          <TextInput
-            style={styles.input}
-            placeholder={recipientMode === "email" ? "email@example.com" : "0x..."}
-            placeholderTextColor={colors.neutral[500]}
-            value={recipient}
-            onChangeText={setRecipient}
-            autoCapitalize="none"
-            keyboardType={recipientMode === "email" ? "email-address" : "default"}
-            editable={txState === "idle"}
-          />
+          <View style={styles.inputRow}>
+            <Ionicons
+              name={isEmailEntry ? "search-outline" : "wallet-outline"}
+              size={16}
+              color={colors.textSecondary}
+              style={styles.inputRowIcon}
+            />
+            <TextInput
+              style={styles.inputRowField}
+              placeholder={recipientMode === "email" ? "email@example.com" : "0x..."}
+              placeholderTextColor={colors.neutral[500]}
+              value={recipient}
+              onChangeText={setRecipient}
+              autoCapitalize="none"
+              keyboardType={recipientMode === "email" ? "email-address" : "default"}
+              editable={txState === "idle"}
+            />
+          </View>
           {isEmailEntry && resolving && (
             <View style={styles.resolveRow}>
               <ActivityIndicator size="small" color={colors.indigo[400]} />
@@ -333,9 +348,18 @@ export default function TransferScreen() {
             </View>
           )}
           {isEmailEntry && !resolving && resolvedAddress && (
-            <Text style={[typography.caption, styles.resolveSuccess]}>
-              Resolved to {resolvedAddress.slice(0, 6)}…{resolvedAddress.slice(-4)}
-            </Text>
+            <View style={styles.contactCard}>
+              <View style={styles.contactAvatar}>
+                <Text style={styles.contactAvatarText}>{displayNameFromEmail(recipient).charAt(0)}</Text>
+              </View>
+              <View style={styles.contactBody}>
+                <Text style={[typography.bodyStrong, styles.contactName]}>{displayNameFromEmail(recipient)}</Text>
+                <Text style={[typography.caption, styles.contactSending]}>Sending to: {recipient}</Text>
+              </View>
+              <Pressable onPress={() => setRecipient("")} hitSlop={8} disabled={txState !== "idle"}>
+                <Ionicons name="close" size={18} color={colors.textSecondary} />
+              </Pressable>
+            </View>
           )}
           {isEmailEntry && !resolving && resolveError && (
             <Text style={[typography.caption, styles.errorHint]}>{resolveError}</Text>
@@ -347,7 +371,7 @@ export default function TransferScreen() {
       )}
 
       <View style={styles.amountLabelRow}>
-        <Text style={[typography.label, styles.fieldLabel, { marginTop: 0 }]}>AMOUNT (Wh)</Text>
+        <Text style={[typography.label, styles.fieldLabel, { marginTop: 0 }]}>AMOUNT (ENGY)</Text>
         {balanceWh !== null && (
           <Pressable onPress={() => setAmount(String(balanceWh))} disabled={txState !== "idle"}>
             <Text style={[typography.dataXs, styles.sendMaxLink]}>Send Max</Text>
@@ -496,7 +520,7 @@ export default function TransferScreen() {
             )}
             <View style={styles.summaryRow}>
               <Text style={[typography.body, styles.summaryLabel]}>Amount</Text>
-              <Text style={[typography.dataSm, styles.summaryValue]}>{amountWh.toLocaleString()} Wh</Text>
+              <Text style={[typography.dataSm, styles.summaryValue]}>{amountWh.toLocaleString()} ENGY</Text>
             </View>
             <View style={styles.modalActions}>
               <Pressable style={[styles.secondaryButton, { flex: 1 }]} onPress={() => setShowConfirm(false)}>
@@ -550,16 +574,59 @@ const styles = StyleSheet.create({
   tabRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.sm },
   tabChip: {
     flex: 1,
+    flexDirection: "row",
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.pill,
     paddingVertical: spacing.xs,
     alignItems: "center",
+    justifyContent: "center",
     backgroundColor: colors.surface,
   },
   tabChipActive: { backgroundColor: colors.indigo[400], borderColor: colors.indigo[400] },
+  tabIcon: { marginRight: 4 },
   tabText: { color: colors.textSecondary },
   tabTextActive: { color: colors.neutral.white },
+  inputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+  },
+  inputRowIcon: { marginRight: spacing.sm },
+  inputRowField: {
+    flex: 1,
+    color: colors.textPrimary,
+    paddingVertical: spacing.md,
+    fontSize: 16,
+    fontFamily: typography.body.fontFamily,
+  },
+  contactCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+  },
+  contactAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.indigo[100],
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  contactAvatarText: { color: colors.indigo[700], fontWeight: "700" },
+  contactBody: { flex: 1 },
+  contactName: { color: colors.textPrimary },
+  contactSending: { color: colors.textSecondary, marginTop: 1 },
   qrPlaceholder: {
     backgroundColor: colors.surface,
     borderRadius: radius.md,

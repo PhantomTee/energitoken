@@ -198,6 +198,17 @@ export default function DashboardScreen() {
         </View>
       </View>
 
+      {isDesktop ? (
+        <View style={styles.pageHeading}>
+          <Text style={[typography.h1, styles.pageTitle]}>Overview</Text>
+          <Text style={[typography.body, styles.pageSubtitle]}>Live metrics and energy management status.</Text>
+        </View>
+      ) : (
+        <View style={styles.heroBand}>
+          <Text style={[typography.display, styles.heroBandTitle]}>System Dashboard</Text>
+        </View>
+      )}
+
       <LiveMockBanner mode={mode} onToggle={setMode} />
 
       {meterStatus && (
@@ -284,99 +295,67 @@ export default function DashboardScreen() {
         </>
       ) : (
         <>
-          <View style={styles.topSection}>
-            <View style={styles.topSectionLeft}>
-              <View style={styles.balanceCard}>
-                <View style={styles.balanceMain}>
-                  <Text style={[typography.label, styles.balanceLabel]}>Available credit</Text>
-                  <Text style={[typography.data, styles.balanceValue]}>
-                    {balanceWh === null ? "···" : tokensToUnits(balanceWh).toLocaleString()}
-                  </Text>
-                  <Text style={[typography.dataSm, styles.balanceUnit]}>units · 1 unit = 1 kWh</Text>
-                </View>
-                <BudgetRing percentUsed={reading?.percentUsed ?? 0} size={96} />
-              </View>
+          {mode === "live" && !hasDevice && !meterLoading && (
+            <View style={styles.meterStatusRow}>
+              <Text style={[typography.caption, styles.meterStatusText]}>No device paired yet</Text>
+              <Link href="/onboarding" style={styles.pairLink}>
+                <Text style={[typography.dataXs, styles.pairLinkText]}>Pair a device →</Text>
+              </Link>
+            </View>
+          )}
+          {mode === "live" && meterLoading && (
+            <View style={styles.meterStatusRow}>
+              <ActivityIndicator color={colors.indigo[400]} />
+              <Text style={[typography.caption, styles.meterStatusText]}>Loading live meter data…</Text>
+            </View>
+          )}
+          {mode === "live" && meterError && (
+            <Text style={[typography.caption, styles.errorText]}>Couldn't load live data: {meterError}</Text>
+          )}
 
-              {walletAddress && (
-                <View style={styles.quickActionsRow}>
-                  <Pressable
-                    style={[styles.quickActionButton, styles.topUpButton]}
-                    onPress={() => setTopUpVisible(true)}
-                  >
-                    <Text style={[typography.bodyStrong, styles.quickActionText]}>Top Up</Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.quickActionButton, styles.setBudgetButton]}
-                    onPress={() => router.push("/(tabs)/budget")}
-                  >
-                    <Text style={[typography.bodyStrong, styles.quickActionText]}>Set Budget</Text>
-                  </Pressable>
+          {/* ── Live Readings ── */}
+          <View style={styles.readingsCard}>
+            <View style={styles.readingsCardHeader}>
+              <Text style={[typography.bodyStrong, styles.readingsCardTitle]}>Live Readings</Text>
+              {meterStatus === "live" && (
+                <View style={styles.liveBadgeRow}>
+                  <View style={styles.liveDot} />
+                  <Text style={[typography.dataXs, styles.liveBadgeText]}>LIVE</Text>
                 </View>
-              )}
-
-              {mode === "live" && !hasDevice && !meterLoading && (
-                <View style={styles.meterStatusRow}>
-                  <Text style={[typography.caption, styles.meterStatusText]}>No device paired yet</Text>
-                  <Link href="/onboarding" style={styles.pairLink}>
-                    <Text style={[typography.dataXs, styles.pairLinkText]}>Pair a device →</Text>
-                  </Link>
-                </View>
-              )}
-              {mode === "live" && meterLoading && (
-                <View style={styles.meterStatusRow}>
-                  <ActivityIndicator color={colors.indigo[400]} />
-                  <Text style={[typography.caption, styles.meterStatusText]}>Loading live meter data…</Text>
-                </View>
-              )}
-              {mode === "live" && meterError && (
-                <Text style={[typography.caption, styles.errorText]}>Couldn't load live data: {meterError}</Text>
               )}
             </View>
-
-            <View style={styles.topSectionRight}>
-              <View style={styles.readingsCard}>
-                <View style={styles.readingsCardHeader}>
-                  <Text style={[typography.bodyStrong, styles.readingsCardTitle]}>Live Readings</Text>
-                  {meterStatus === "live" && (
-                    <View style={styles.liveBadgeRow}>
-                      <View style={styles.liveDot} />
-                      <Text style={[typography.dataXs, styles.liveBadgeText]}>LIVE</Text>
-                    </View>
-                  )}
-                </View>
-                <View style={styles.tileGrid}>
-                  <View style={styles.tileRow}>
-                    <MetricTile label="Voltage" value={reading ? reading.voltage.toFixed(1) : "—"} unit="V" />
-                    <MetricTile label="Current" value={reading ? reading.current.toFixed(1) : "—"} unit="A" />
-                  </View>
-                  <View style={styles.tileRow}>
-                    <MetricTile label="Power" value={reading ? reading.power.toFixed(0) : "—"} unit="W" />
-                    <MetricTile
-                      label="Frequency"
-                      value={reading?.frequency != null ? reading.frequency.toFixed(1) : "—"}
-                      unit="Hz"
-                    />
-                  </View>
-                </View>
-
-                <Pressable onPress={() => setShowMoreReadings((v) => !v)} style={styles.moreToggle}>
-                  <Text style={[typography.caption, styles.moreToggleText]}>
-                    {showMoreReadings ? "Show less ▲" : "More readings ▼"}
-                  </Text>
-                </Pressable>
-                {showMoreReadings && (
-                  <View style={styles.tileRow}>
-                    <MetricTile
-                      label="Power factor"
-                      value={reading?.powerFactor != null ? reading.powerFactor.toFixed(2) : "—"}
-                      unit=""
-                    />
-                  </View>
-                )}
+            <View style={styles.tileGrid}>
+              <View style={styles.tileRow}>
+                <MetricTile label="Voltage" value={reading ? reading.voltage.toFixed(1) : "—"} unit="V" />
+                <MetricTile label="Current" value={reading ? reading.current.toFixed(1) : "—"} unit="A" />
+              </View>
+              <View style={styles.tileRow}>
+                <MetricTile label="Power" value={reading ? reading.power.toFixed(0) : "—"} unit="W" />
+                <MetricTile
+                  label="Frequency"
+                  value={reading?.frequency != null ? reading.frequency.toFixed(1) : "—"}
+                  unit="Hz"
+                />
               </View>
             </View>
+
+            <Pressable onPress={() => setShowMoreReadings((v) => !v)} style={styles.moreToggle}>
+              <Text style={[typography.caption, styles.moreToggleText]}>
+                {showMoreReadings ? "Show less ▲" : "More readings ▼"}
+              </Text>
+            </Pressable>
+            {showMoreReadings && (
+              <View style={styles.tileRow}>
+                <MetricTile
+                  label="Power factor"
+                  value={reading?.powerFactor != null ? reading.powerFactor.toFixed(2) : "—"}
+                  unit=""
+                />
+              </View>
+            )}
           </View>
 
+          {/* ── Relay Status ── */}
           <View style={styles.relayCard}>
             <Text style={[typography.bodyStrong, styles.relayCardTitle]}>Relay Status</Text>
             <RelayIndicator
@@ -387,6 +366,38 @@ export default function DashboardScreen() {
               disabledTier={relayBusyTier}
             />
             {relayError && <Text style={[typography.caption, styles.errorText]}>{relayError}</Text>}
+          </View>
+
+          {/* ── Budget Status ── */}
+          <View style={styles.budgetStatusCard}>
+            <View style={styles.budgetStatusHeader}>
+              <Text style={[typography.bodyStrong, styles.readingsCardTitle]}>Budget Status</Text>
+              <Pressable onPress={() => router.push("/(tabs)/budget")}>
+                <Text style={[typography.dataXs, styles.pairLinkText]}>Set Budget →</Text>
+              </Pressable>
+            </View>
+            <BudgetRing percentUsed={reading?.percentUsed ?? 0} size={120} />
+            <Text style={[typography.dataSm, styles.dailyBudgetSummary]}>
+              {reading?.energyWh != null ? reading.energyWh.toLocaleString() : "—"} Wh used of{" "}
+              {reading?.budgetWh != null ? reading.budgetWh.toLocaleString() : "—"} Wh
+            </Text>
+          </View>
+
+          {/* ── ENGY Balance ── */}
+          <View style={styles.balanceCard}>
+            <Text style={[typography.bodyStrong, styles.balanceCardTitle]}>ENGY Balance</Text>
+            <Text style={[typography.data, styles.balanceValue]}>
+              {balanceWh === null ? "···" : tokensToUnits(balanceWh).toLocaleString()}
+              <Text style={[typography.dataSm, styles.balanceValueUnit]}> ENGY</Text>
+            </Text>
+            <Text style={[typography.dataSm, styles.balanceUnit]}>
+              ≈ {balanceWh === null ? "···" : balanceWh.toLocaleString()} Wh credit
+            </Text>
+            {walletAddress && (
+              <Pressable style={styles.topUpButton} onPress={() => setTopUpVisible(true)}>
+                <Text style={[typography.bodyStrong, styles.quickActionText]}>Top Up</Text>
+              </Pressable>
+            )}
           </View>
         </>
       )}
@@ -409,9 +420,16 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md, width: "100%", alignSelf: "center" },
   contentDesktop: { padding: spacing.xxl, paddingBottom: spacing.xxl, maxWidth: 1000 },
-  topSection: {},
-  topSectionLeft: { gap: spacing.md },
-  topSectionRight: { gap: spacing.sm },
+  pageHeading: { marginBottom: spacing.xs },
+  pageTitle: { color: colors.indigo[900] },
+  pageSubtitle: { color: colors.textSecondary, marginTop: spacing.xs },
+  heroBand: {
+    backgroundColor: colors.indigo[900],
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xl,
+  },
+  heroBandTitle: { color: colors.indigo[700], fontSize: 28 },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   brandRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   brandWordmark: { color: colors.textPrimary, letterSpacing: 0.5 },
@@ -447,24 +465,35 @@ const styles = StyleSheet.create({
     backgroundColor: colors.panelInset,
     borderRadius: radius.lg,
     padding: spacing.lg,
+    gap: spacing.xs,
+  },
+  balanceCardTitle: { color: colors.panelInsetText },
+  balanceValue: { color: colors.panelInsetText, marginTop: spacing.xs },
+  balanceValueUnit: { color: colors.indigo[100] },
+  balanceUnit: { color: colors.indigo[100], opacity: 0.85, marginBottom: spacing.md },
+  topUpButton: {
+    backgroundColor: colors.terracotta[500],
+    borderRadius: radius.pill,
+    paddingVertical: spacing.md,
+    alignItems: "center",
+  },
+  quickActionText: { color: colors.neutral.white },
+  budgetStatusCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  budgetStatusHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    width: "100%",
+    marginBottom: spacing.xs,
   },
-  balanceMain: { flex: 1, marginRight: spacing.md },
-  balanceLabel: { color: colors.terracotta[500] },
-  balanceValue: { color: colors.panelInsetText, marginTop: spacing.xs },
-  balanceUnit: { color: colors.indigo[100], marginTop: 2, opacity: 0.85 },
-  quickActionsRow: { flexDirection: "row", gap: spacing.sm },
-  quickActionButton: {
-    flex: 1,
-    borderRadius: radius.pill,
-    paddingVertical: spacing.sm,
-    alignItems: "center",
-  },
-  topUpButton: { backgroundColor: colors.terracotta[500] },
-  setBudgetButton: { backgroundColor: colors.indigo[500] },
-  quickActionText: { color: colors.neutral.white },
   meterStatusRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   meterStatusText: { color: colors.textSecondary, flex: 1 },
   errorText: { color: colors.danger },
