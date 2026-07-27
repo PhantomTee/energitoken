@@ -57,9 +57,15 @@ export default function Index() {
         setDestination("/landing");
         return;
       }
-      hasSeenOnboarding().then((seen) => {
-        if (!cancelled) setDestination(seen ? "/login" : "/welcome");
-      });
+      hasSeenOnboarding()
+        .then((seen) => {
+          if (!cancelled) setDestination(seen ? "/login" : "/welcome");
+        })
+        .catch(() => {
+          // Don't strand the user on the splash screen if this read fails --
+          // login owns its own recovery path regardless of onboarding state.
+          if (!cancelled) setDestination("/login");
+        });
       return () => {
         cancelled = true;
       };
