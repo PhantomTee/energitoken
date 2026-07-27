@@ -7,11 +7,20 @@ import { RelayState, RelayOverrides } from "../mock/mockMeterData";
 const TIERS: RelayTier[] = ["r1", "r2", "r3", "r4"];
 const isWeb = Platform.OS === "web";
 
-const TIER_META: Record<RelayTier, { devices: string; threshold: string; accent: string; tint: string }> = {
-  r1: { devices: "Lighting, phone charging", threshold: "Always on", accent: colors.terracotta[500], tint: colors.terracotta[100] },
-  r2: { devices: "Fans, some lights", threshold: "Sheds at 95% used", accent: colors.terracotta[400], tint: colors.background },
-  r3: { devices: "TV, sockets", threshold: "Sheds at 85% used", accent: colors.indigo[500], tint: colors.background },
-  r4: { devices: "Water heater, AC", threshold: "Sheds at 70% used", accent: colors.neutral[500], tint: colors.background },
+const TIER_META: Record<
+  RelayTier,
+  { devices: string; threshold: string; accent: string; tint: string; alwaysOn?: boolean }
+> = {
+  r1: {
+    devices: "Lighting, phone charging",
+    threshold: "Always on",
+    accent: colors.terracotta[700],
+    tint: colors.terracotta[100],
+    alwaysOn: true,
+  },
+  r2: { devices: "Fans, some lights", threshold: "Sheds at 95% used", accent: colors.terracotta[500], tint: colors.neutral[100] },
+  r3: { devices: "TV, sockets", threshold: "Sheds at 85% used", accent: colors.indigo[500], tint: colors.neutral[100] },
+  r4: { devices: "Water heater, AC", threshold: "Sheds at 70% used", accent: colors.neutral[500], tint: colors.neutral[100] },
 };
 
 type Props = {
@@ -96,25 +105,27 @@ export function RelayIndicator({ relays, overrides, onToggle, disabledTier, vari
             <View style={[styles.card, isWeb && styles.cardWeb, { backgroundColor: meta.tint }]}>
               <View style={[styles.accentBar, { backgroundColor: meta.accent }]} />
               <View style={styles.cardBody}>
-                <View style={styles.cardTopRow}>
-                  <Text style={[typography.bodyStrong, styles.cardLabel, { color: meta.accent }]}>
-                    {tier.toUpperCase()} {relayTierLabels[tier]}
-                  </Text>
-                  {isManual && (
-                    <View style={styles.manualBadge}>
-                      <Text style={styles.manualBadgeText}>MANUAL</Text>
-                    </View>
-                  )}
-                </View>
+                <Text style={[typography.bodyStrong, styles.cardLabel, { color: meta.accent }]}>
+                  {tier.toUpperCase()} {relayTierLabels[tier]}
+                </Text>
                 <Text style={[typography.caption, styles.cardDevices]}>{meta.devices}</Text>
               </View>
               <View style={styles.cardRight}>
-                <Text
-                  style={[typography.dataXs, styles.cardStatus, { color: on ? colors.success : colors.textSecondary }]}
-                >
-                  {busy ? "…" : on ? "ON" : "SHED"}
-                </Text>
-                <Text style={[typography.caption, styles.cardThreshold, { color: meta.accent }]}>{meta.threshold}</Text>
+                {isManual ? (
+                  <View style={styles.manualBadge}>
+                    <Text style={styles.manualBadgeText}>{busy ? "…" : on ? "FORCED ON" : "FORCED OFF"}</Text>
+                  </View>
+                ) : (
+                  <Text
+                    style={[
+                      typography.dataXs,
+                      styles.cardThreshold,
+                      meta.alwaysOn ? { color: meta.accent, fontWeight: "700" } : styles.cardThresholdDefault,
+                    ]}
+                  >
+                    {meta.threshold}
+                  </Text>
+                )}
               </View>
             </View>
           );
@@ -159,19 +170,18 @@ const styles = StyleSheet.create({
     paddingRight: spacing.md,
   },
   cardWeb: { flexBasis: 260, flexGrow: 1, minWidth: 240 },
-  accentBar: { width: 4, alignSelf: "stretch", marginRight: spacing.md },
+  accentBar: { width: 4, borderRadius: 2, alignSelf: "stretch", marginRight: spacing.md },
   cardBody: { flex: 1, gap: 2 },
-  cardTopRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   cardLabel: {},
   cardDevices: { color: colors.textSecondary },
-  cardRight: { alignItems: "flex-end", gap: 2, minWidth: 90 },
-  cardStatus: { letterSpacing: 0.5 },
-  cardThreshold: { fontSize: 11 },
+  cardRight: { alignItems: "flex-end", justifyContent: "center", minWidth: 84, maxWidth: 100 },
+  cardThreshold: { fontSize: 12, textAlign: "right" },
+  cardThresholdDefault: { color: colors.textPrimary },
   manualBadge: {
     backgroundColor: colors.terracotta[500],
     borderRadius: radius.pill,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
   },
   manualBadgeText: { color: colors.neutral.white, fontSize: 9, fontWeight: "700" },
   hint: { color: colors.textSecondary, opacity: 0.85, marginTop: spacing.sm },

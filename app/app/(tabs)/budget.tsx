@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, Switch } from "react-native";
 import { useFocusEffect, Link } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { colors, RelayTier, relayTierLabels } from "../../src/theme/colors";
 import { typography, spacing, radius } from "../../src/theme/typography";
 import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
@@ -378,7 +379,10 @@ export default function BudgetScreen() {
 
           {/* ── Desktop: Relay Thresholds table ── */}
           <View style={styles.thresholdCard}>
-            <Text style={[typography.h2, styles.cardTitle]}>Relay Thresholds (R1–R4)</Text>
+            <View style={styles.sectionTitleRow}>
+              <Ionicons name="shield-checkmark-outline" size={18} color={colors.terracotta[500]} />
+              <Text style={[typography.h2, styles.cardTitle]}>Relay Thresholds (R1{"–"}R4)</Text>
+            </View>
             <Text style={[typography.caption, styles.loadGuideIntro]}>
               Configure how your household circuits prioritize energy when approaching budget limits.
               Lower priority relays will be disconnected first.
@@ -525,7 +529,10 @@ export default function BudgetScreen() {
           {/* ── Live relay state ── */}
           {reading?.relays && (
             <>
-              <Text style={[typography.h2, styles.sectionTitle]}>Load Priority Guide</Text>
+              <View style={styles.sectionTitleRow}>
+                <Ionicons name="shield-checkmark-outline" size={18} color={colors.terracotta[500]} />
+                <Text style={[typography.h2, styles.sectionTitleInline]}>Load Priority Guide</Text>
+              </View>
               <Text style={[typography.caption, styles.loadGuideIntro]}>
                 When energy reserves run low, non-essential relays automatically disconnect to
                 preserve critical systems based on these thresholds. Tap a load to override it.
@@ -721,6 +728,8 @@ const styles = StyleSheet.create({
   },
   projectionText: { color: colors.textPrimary },
   sectionTitle: { color: colors.textPrimary, marginTop: spacing.sm },
+  sectionTitleRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.sm },
+  sectionTitleInline: { color: colors.textPrimary },
   ladderIntro: { color: colors.textSecondary },
   loadGuideIntro: { color: colors.textSecondary, marginTop: -spacing.xs },
   ladder: {
