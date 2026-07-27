@@ -87,7 +87,7 @@ export function TopUpModal({ visible, onClose, walletAddress, onMinted }: Props)
           setError("Payment was not completed. No charge was made.");
         } else if (result === "mint_failed") {
           setError(
-            "Your payment went through, but we hit a hiccup crediting your balance. This is on our side, not yours — it's being retried and should resolve shortly."
+            "Your payment went through, but we hit a hiccup crediting your balance. This is on our side, not yours. It's being retried and should resolve shortly."
           );
         } else {
           // timeout — payment may still be processing

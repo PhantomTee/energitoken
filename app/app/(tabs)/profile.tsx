@@ -15,7 +15,7 @@ import { exportTransactionsCsv } from "../../src/services/exportReport";
 import { useIsDesktopWeb } from "../../src/hooks/useIsDesktopWeb";
 import { Ionicons } from "@expo/vector-icons";
 
-const APP_VERSION = "EnergiToken v1.0 — Polygon Amoy";
+const APP_VERSION = "EnergiToken v1.0 · Polygon Amoy";
 const CONTRACT_ADDRESS = "0x8493324De9578BF390092ed6c4a5b1033fBF8048";
 const EXPLORER_URL = `https://amoy.polygonscan.com/address/${CONTRACT_ADDRESS}`;
 const GITHUB_URL = "https://github.com/PhantomTee/energitoken";

@@ -16,7 +16,7 @@ const SLIDES = [
   {
     icon: "pie-chart-outline" as const,
     title: "Budget your credit, protect what matters",
-    body: "Set a budget and your meter sheds non-critical loads gently — lighting and phone charging stay on to the very end.",
+    body: "Set a budget and your meter sheds non-critical loads gently. Lighting and phone charging stay on to the very end.",
   },
   {
     icon: "swap-horizontal-outline" as const,

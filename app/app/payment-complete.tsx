@@ -88,8 +88,8 @@ export default function PaymentCompleteScreen() {
       titleColor: colors.danger,
     },
     mint_failed: {
-      title: "Payment received — crediting your balance",
-      body: "Your payment went through, but we hit a hiccup adding the credit to your balance. This is on our side, not yours — it's being retried automatically and should resolve shortly. If it doesn't, contact support with this reference.",
+      title: "Payment received, crediting your balance",
+      body: "Your payment went through, but we hit a hiccup adding the credit to your balance. This is on our side, not yours. It's being retried automatically and should resolve shortly. If it doesn't, contact support with this reference.",
       titleColor: colors.warning,
     },
     cancelled: {

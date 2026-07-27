@@ -114,7 +114,7 @@ export default function DashboardScreen() {
       if (prev[tier] && !reading.relays[tier]) {
         const pct = SHED_THRESHOLD_PCT[tier];
         setToastMessage(
-          `${relayTierLabels[tier]} circuit disconnected${Number.isFinite(pct) ? ` — ${pct}% budget reached` : ""}`
+          `${relayTierLabels[tier]} circuit disconnected${Number.isFinite(pct) ? `, ${pct}% budget reached` : ""}`
         );
       }
     });

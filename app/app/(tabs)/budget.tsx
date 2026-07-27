@@ -106,7 +106,7 @@ function ShedLadder({ percentUsed }: { percentUsed: number }) {
         <Text style={[typography.dataXs, styles.ladderPct]}>∞</Text>
         <View style={styles.ladderBody}>
           <Text style={[typography.bodyStrong, styles.ladderLabel]}>Critical loads protected</Text>
-          <Text style={[typography.caption, styles.ladderDetail]}>lighting, phone charging — never shed</Text>
+          <Text style={[typography.caption, styles.ladderDetail]}>lighting, phone charging, never shed</Text>
         </View>
         <Text style={[typography.dataXs, styles.ladderStateOk]}>SAFE</Text>
       </View>
@@ -248,7 +248,7 @@ export default function BudgetScreen() {
       <Text style={[typography.body, styles.subtitle]}>
         {isDesktop
           ? "Allocate your EnergiTokens efficiently and monitor your consumption against daily allowances."
-          : "1 unit = 1 kWh. As usage approaches this budget, your meter sheds loads gently, least important first — instead of everything going dark at once."}
+          : "1 unit = 1 kWh. As usage approaches this budget, your meter sheds loads gently, least important first, instead of everything going dark at once."}
       </Text>
 
       {loading && (
@@ -589,7 +589,7 @@ export default function BudgetScreen() {
             </Pressable>
 
             <Text style={[typography.caption, styles.keypadNote]}>
-              You can also change the budget from the meter's keypad — handy when there's no
+              You can also change the budget from the meter's keypad, handy when there's no
               internet. The app shows whichever value was set most recently.
             </Text>
           </View>
