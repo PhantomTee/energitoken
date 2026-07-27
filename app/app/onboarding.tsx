@@ -8,6 +8,7 @@ import { useWallet } from "../src/hooks/useWallet";
 import { ensureFirebaseSession } from "../src/services/firebaseSession";
 import { claimDevice, DEVICE_CODE_PATTERN } from "../src/services/deviceBinding";
 import { QRScanner } from "../src/components/QRScanner";
+import { Ionicons } from "@expo/vector-icons";
 
 /**
  * Shown once, right after first login, when the wallet has no device bound
@@ -69,7 +70,7 @@ export default function OnboardingScreen() {
 
         {Platform.OS !== "web" && (
           <Pressable style={styles.scanRow} onPress={() => setScannerVisible(true)} disabled={submitting}>
-            <Text style={styles.scanRowIcon}>⚏</Text>
+            <Ionicons name="qr-code-outline" size={22} color={colors.textPrimary} />
             <View style={styles.scanRowBody}>
               <Text style={[typography.bodyStrong, styles.scanRowTitle]}>Scan QR Code</Text>
               <Text style={[typography.caption, styles.scanRowSubtitle]}>Fastest way to connect</Text>

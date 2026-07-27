@@ -13,6 +13,7 @@ import { displayNameFromEmail } from "../../src/services/displayName";
 import { useTransactionHistory } from "../../src/hooks/useTransactionHistory";
 import { exportTransactionsCsv } from "../../src/services/exportReport";
 import { useIsDesktopWeb } from "../../src/hooks/useIsDesktopWeb";
+import { Ionicons } from "@expo/vector-icons";
 
 const APP_VERSION = "EnergiToken v1.0 — Polygon Amoy";
 const CONTRACT_ADDRESS = "0x8493324De9578BF390092ed6c4a5b1033fBF8048";
@@ -146,8 +147,9 @@ export default function ProfileScreen() {
                 )}
               </View>
               {deviceId && (
-                <Pressable style={styles.unbindButton} onPress={() => setUnbindVisible(true)}>
-                  <Text style={[typography.bodyStrong, styles.unbindButtonText]}>⊘ Unbind Device</Text>
+                <Pressable style={styles.unbindButtonRow} onPress={() => setUnbindVisible(true)}>
+                  <Ionicons name="close-circle-outline" size={16} color={colors.danger} />
+                  <Text style={[typography.bodyStrong, styles.unbindButtonText]}>Unbind Device</Text>
                 </Pressable>
               )}
             </View>
@@ -156,7 +158,10 @@ export default function ProfileScreen() {
           <View style={styles.desktopGridRow}>
             {/* ── Alerts & Warnings ── */}
             <View style={styles.desktopCard}>
-              <Text style={[typography.h2, styles.desktopCardTitle]}>🔔 Alerts &amp; Warnings</Text>
+              <View style={styles.desktopCardTitleRow}>
+                <Ionicons name="notifications-outline" size={18} color={colors.textPrimary} />
+                <Text style={[typography.h2, styles.desktopCardTitle]}>Alerts &amp; Warnings</Text>
+              </View>
               <SettingsRow
                 label="Relay shed alerts"
                 value={
@@ -182,7 +187,10 @@ export default function ProfileScreen() {
 
             {/* ── Localization ── */}
             <View style={styles.desktopCard}>
-              <Text style={[typography.h2, styles.desktopCardTitle]}>🌐 Localization</Text>
+              <View style={styles.desktopCardTitleRow}>
+                <Ionicons name="globe-outline" size={18} color={colors.textPrimary} />
+                <Text style={[typography.h2, styles.desktopCardTitle]}>Localization</Text>
+              </View>
               <Text style={[typography.label, styles.fieldLabel]}>DISPLAY LANGUAGE</Text>
               <View style={styles.languageBox}>
                 <Text style={[typography.body, styles.rowLabel]}>English (US)</Text>
@@ -196,7 +204,8 @@ export default function ProfileScreen() {
                 disabled={exportTransactions.length === 0 || !walletAddress}
                 onPress={() => walletAddress && exportTransactionsCsv(exportTransactions, walletAddress)}
               >
-                <Text style={[typography.bodyStrong, styles.csvExportButtonText]}>↓ Request CSV Export</Text>
+                <Ionicons name="download-outline" size={16} color={colors.indigo[500]} />
+                <Text style={[typography.bodyStrong, styles.csvExportButtonText]}>Request CSV Export</Text>
               </Pressable>
             </View>
           </View>
@@ -486,18 +495,22 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   desktopCardTitle: { color: colors.textPrimary, marginBottom: spacing.sm },
+  desktopCardTitleRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.sm },
   meterBox: { backgroundColor: colors.background, borderRadius: radius.md, padding: spacing.md },
   meterBoxLabel: { color: colors.textSecondary },
   meterBoxValue: { color: colors.indigo[900], marginTop: 2 },
   meterStatusRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs, marginTop: spacing.sm },
   liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.success },
   meterStatusText: { color: colors.success },
-  unbindButton: {
+  unbindButtonRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xs,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.md,
     paddingVertical: spacing.md,
-    alignItems: "center",
     marginTop: spacing.md,
   },
   unbindButtonText: { color: colors.danger },
@@ -511,11 +524,14 @@ const styles = StyleSheet.create({
   },
   exportHint: { color: colors.textSecondary, marginBottom: spacing.sm },
   csvExportButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xs,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.md,
     paddingVertical: spacing.md,
-    alignItems: "center",
   },
   csvExportButtonText: { color: colors.indigo[500] },
   desktopFooter: { flexDirection: "row", alignItems: "center", gap: spacing.lg, justifyContent: "center", marginTop: spacing.md },

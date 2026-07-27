@@ -3,6 +3,8 @@ import { Modal, View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator,
 import * as WebBrowser from "expo-web-browser";
 import { colors } from "../theme/colors";
 import { typography, spacing, radius } from "../theme/typography";
+import { useIsDesktopWeb } from "../hooks/useIsDesktopWeb";
+import { Ionicons } from "@expo/vector-icons";
 
 const BACKEND_URL = Platform.OS === "web" ? "" : process.env.EXPO_PUBLIC_BACKEND_URL ?? "https://energitoken.vercel.app";
 const NGN_PER_UNIT = 1000; // 1 unit = 1 kWh = 1000 Wh, WH_PER_NGN=1 on server → 1000 NGN per unit
@@ -38,6 +40,7 @@ async function pollOrderStatus(
 }
 
 export function TopUpModal({ visible, onClose, walletAddress, onMinted }: Props) {
+  const isDesktop = useIsDesktopWeb();
   const [amountNgn, setAmountNgn] = useState("");
   const [loading, setLoading] = useState(false);
   const [polling, setPolling] = useState(false);
@@ -117,7 +120,7 @@ export function TopUpModal({ visible, onClose, walletAddress, onMinted }: Props)
           <View style={styles.backButton} />
         </View>
 
-        <View style={styles.body}>
+        <View style={[styles.body, isDesktop && styles.bodyDesktop]}>
           {success ? (
             <View style={styles.centerBlock}>
               <Text style={[typography.h1, styles.resultTitle]}>Top-up confirmed!</Text>
@@ -154,8 +157,9 @@ export function TopUpModal({ visible, onClose, walletAddress, onMinted }: Props)
                 </View>
                 {amountNgn.length > 0 && (
                   <View style={styles.conversionPill}>
+                    <Ionicons name="swap-horizontal" size={14} color={colors.terracotta[300]} />
                     <Text style={[typography.dataSm, styles.conversionText]}>
-                      ⇄ ≈ {unitsPreview} unit{Number(unitsPreview) !== 1 ? "s" : ""} ENGY
+                      ≈ {unitsPreview} unit{Number(unitsPreview) !== 1 ? "s" : ""} ENGY
                     </Text>
                   </View>
                 )}
@@ -170,7 +174,10 @@ export function TopUpModal({ visible, onClose, walletAddress, onMinted }: Props)
                 {loading ? (
                   <ActivityIndicator color={colors.neutral.white} />
                 ) : (
-                  <Text style={[typography.bodyStrong, styles.payButtonText]}>🏦  Pay with bank</Text>
+                  <View style={styles.payButtonRow}>
+                    <Ionicons name="business-outline" size={16} color={colors.neutral.white} />
+                    <Text style={[typography.bodyStrong, styles.payButtonText]}>Pay with bank</Text>
+                  </View>
                 )}
               </Pressable>
 
@@ -178,7 +185,10 @@ export function TopUpModal({ visible, onClose, walletAddress, onMinted }: Props)
                 <Text style={[typography.caption, styles.cancelLinkText]}>Cancel</Text>
               </Pressable>
 
-              <Text style={[typography.dataXs, styles.poweredBy]}>🛡 POWERED BY FLUTTERWAVE</Text>
+              <View style={styles.poweredByRow}>
+                <Ionicons name="shield-checkmark-outline" size={12} color={colors.indigo[300]} />
+                <Text style={[typography.dataXs, styles.poweredBy]}>POWERED BY FLUTTERWAVE</Text>
+              </View>
             </>
           )}
         </View>
@@ -201,6 +211,7 @@ const styles = StyleSheet.create({
   backArrow: { color: colors.neutral.white, fontSize: 20 },
   headerTitle: { color: colors.neutral.white },
   body: { flex: 1, justifyContent: "center", paddingHorizontal: spacing.xl, gap: spacing.md },
+  bodyDesktop: { width: "100%", maxWidth: 440, alignSelf: "center" },
   centerBlock: { alignItems: "center", gap: spacing.md },
   resultTitle: { color: colors.neutral.white, textAlign: "center" },
   resultSubtitle: { color: colors.indigo[100], textAlign: "center", opacity: 0.85 },
@@ -229,6 +240,9 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
   },
   conversionPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
     backgroundColor: "rgba(194,100,58,0.2)",
     borderWidth: 1,
     borderColor: colors.terracotta[400],
@@ -236,6 +250,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
   },
+  payButtonRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  poweredByRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4 },
   conversionText: { color: colors.terracotta[300] },
   minNote: { color: colors.indigo[100], opacity: 0.7, textAlign: "center" },
   errorText: { color: colors.terracotta[300], textAlign: "center" },

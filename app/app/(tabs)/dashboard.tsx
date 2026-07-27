@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, Platform } from "react-native";
 import { router, useFocusEffect, Link } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { colors, RelayTier, relayTierLabels } from "../../src/theme/colors";
 import { typography, spacing, radius } from "../../src/theme/typography";
 import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
@@ -176,7 +177,7 @@ export default function DashboardScreen() {
         <View style={styles.headerRight}>
           {walletAddress && (
             <Pressable onPress={() => setNotifVisible(true)} style={styles.iconButton} hitSlop={8}>
-              <Text style={styles.bellIcon}>🔔</Text>
+              <Ionicons name="notifications-outline" size={20} color={colors.textPrimary} />
               {unreadCount > 0 && (
                 <View style={styles.badge}>
                   <Text style={styles.badgeText}>{unreadCount > 9 ? "9+" : unreadCount}</Text>
@@ -191,7 +192,7 @@ export default function DashboardScreen() {
               hitSlop={8}
               accessibilityLabel="Settings"
             >
-              <Text style={styles.gearIcon}>⚙</Text>
+              <Ionicons name="settings-outline" size={20} color={colors.textPrimary} />
             </Pressable>
           )}
         </View>
@@ -253,7 +254,7 @@ export default function DashboardScreen() {
             <View style={styles.walletCard}>
               <View style={styles.walletCardHeader}>
                 <Text style={[typography.h2, styles.cardTitle]}>Wallet</Text>
-                <Text style={styles.walletIcon}>💳</Text>
+                <Ionicons name="wallet-outline" size={18} color={colors.textSecondary} />
               </View>
               <Text style={[typography.label, styles.walletLabel]}>Available Balance</Text>
               <Text style={[typography.dataMd, styles.walletValue]}>

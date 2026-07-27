@@ -63,6 +63,14 @@ export default function PaymentCompleteScreen() {
     return () => { cancelled = true; };
   }, [tx_ref, status]);
 
+  // A successful top-up needs no decision from the user -- send them
+  // straight back rather than making them tap through a confirmation.
+  useEffect(() => {
+    if (status !== "minted") return;
+    const timer = setTimeout(() => router.replace("/(tabs)/dashboard"), 1800);
+    return () => clearTimeout(timer);
+  }, [status, router]);
+
   const content: Record<OrderStatus, { title: string; body: string; titleColor: string }> = {
     polling: {
       title: "Confirming payment…",

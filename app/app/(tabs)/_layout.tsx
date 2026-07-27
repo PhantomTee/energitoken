@@ -1,6 +1,7 @@
 import React from "react";
 import { Tabs, Redirect } from "expo-router";
-import { Text, ColorValue } from "react-native";
+import { ColorValue } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../../src/theme/colors";
 import { fonts, spacing } from "../../src/theme/typography";
 import { useWallet } from "../../src/hooks/useWallet";
@@ -9,8 +10,8 @@ import { useIsDesktopWeb } from "../../src/hooks/useIsDesktopWeb";
 
 const SIDEBAR_WIDTH = 224;
 
-function TabIcon({ symbol, color }: { symbol: string; color: ColorValue }) {
-  return <Text style={{ fontSize: 20, color }}>{symbol}</Text>;
+function TabIcon({ name, color }: { name: keyof typeof Ionicons.glyphMap; color: ColorValue }) {
+  return <Ionicons name={name} size={20} color={color} />;
 }
 
 /** On native, and on web below the desktop breakpoint, this renders as an
@@ -62,23 +63,26 @@ export default function TabsLayout() {
     >
       <Tabs.Screen
         name="dashboard"
-        options={{ title: "Overview", tabBarIcon: ({ color }) => <TabIcon symbol="⌂" color={color} /> }}
+        options={{ title: "Overview", tabBarIcon: ({ color }) => <TabIcon name="home-outline" color={color} /> }}
       />
       <Tabs.Screen
         name="budget"
-        options={{ title: "Budget", tabBarIcon: ({ color }) => <TabIcon symbol="◐" color={color} /> }}
+        options={{ title: "Budget", tabBarIcon: ({ color }) => <TabIcon name="pie-chart-outline" color={color} /> }}
       />
       <Tabs.Screen
         name="transfer"
-        options={{ title: "Transfers", tabBarIcon: ({ color }) => <TabIcon symbol="⇄" color={color} /> }}
+        options={{
+          title: "Transfers",
+          tabBarIcon: ({ color }) => <TabIcon name="swap-horizontal-outline" color={color} />,
+        }}
       />
       <Tabs.Screen
         name="history"
-        options={{ title: "Consumption", tabBarIcon: ({ color }) => <TabIcon symbol="≡" color={color} /> }}
+        options={{ title: "Consumption", tabBarIcon: ({ color }) => <TabIcon name="time-outline" color={color} /> }}
       />
       <Tabs.Screen
         name="profile"
-        options={{ title: "Settings", tabBarIcon: ({ color }) => <TabIcon symbol="◎" color={color} /> }}
+        options={{ title: "Settings", tabBarIcon: ({ color }) => <TabIcon name="settings-outline" color={color} /> }}
       />
     </Tabs>
   );

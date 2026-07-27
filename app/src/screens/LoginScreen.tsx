@@ -9,6 +9,7 @@ import { recordFullLogin } from "../services/quickAuth";
 import { markJustLoggedIn } from "../services/loginFlag";
 import { friendlyAuthError } from "../services/authErrors";
 import { OtpInput } from "../components/OtpInput";
+import { Ionicons } from "@expo/vector-icons";
 
 /**
  * Privy's mobile SDK authenticates by emailing a one-time 6-digit code
@@ -135,7 +136,7 @@ export default function LoginScreen() {
           ) : !awaitingCode ? (
             <>
               <View style={styles.inputRow}>
-                <Text style={styles.inputIcon}>✉</Text>
+                <Ionicons name="mail-outline" size={18} color={colors.textSecondary} style={styles.inputIcon} />
                 <TextInput
                   style={styles.input}
                   placeholder="Enter your email"

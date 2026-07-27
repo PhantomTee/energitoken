@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { isAddress } from "ethers";
+import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../../src/theme/colors";
 import { typography, spacing, radius } from "../../src/theme/typography";
 import { TxStatus, TxState } from "../../src/components/TxStatus";
@@ -20,6 +21,7 @@ import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
 import { useWallet } from "../../src/hooks/useWallet";
 import { getEngyBalance, getWritableContract, runTransferPreflight, checkNetworkAndGas } from "../../src/services/contract";
 import { resolveEmailToAddress } from "../../src/services/directory";
+import { ensureFirebaseSession } from "../../src/services/firebaseSession";
 import { QRScanner } from "../../src/components/QRScanner";
 import { useTransactionHistory } from "../../src/hooks/useTransactionHistory";
 import { TxDirection } from "../../src/services/contractEvents";
@@ -129,11 +131,12 @@ export default function TransferScreen() {
   useEffect(() => {
     setResolvedAddress(null);
     setResolveError(null);
-    if (!isEmailEntry || recipient.trim().length < 5) return;
+    if (!isEmailEntry || recipient.trim().length < 5 || !walletAddress) return;
 
     setResolving(true);
     const timer = setTimeout(() => {
-      resolveEmailToAddress(recipient)
+      ensureFirebaseSession(walletAddress)
+        .then(() => resolveEmailToAddress(recipient))
         .then((address) => {
           if (address) {
             setResolvedAddress(address);
@@ -146,7 +149,7 @@ export default function TransferScreen() {
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [recipient, isEmailEntry]);
+  }, [recipient, isEmailEntry, walletAddress]);
 
   const effectiveAddress =
     recipientMode === "email"
@@ -422,7 +425,8 @@ export default function TransferScreen() {
                   style={styles.exportButton}
                   onPress={() => exportTransactionsCsv(historyTransactions, walletAddress)}
                 >
-                  <Text style={[typography.dataXs, styles.exportButtonText]}>↓ Export CSV</Text>
+                  <Ionicons name="download-outline" size={14} color={colors.indigo[500]} />
+                  <Text style={[typography.dataXs, styles.exportButtonText]}>Export CSV</Text>
                 </Pressable>
               )}
             </View>
@@ -640,6 +644,9 @@ const styles = StyleSheet.create({
   historyCardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: spacing.lg },
   historyCardSubtitle: { color: colors.textSecondary, marginTop: 2 },
   exportButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.pill,

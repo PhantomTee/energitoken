@@ -8,6 +8,7 @@ import { friendlyAuthError } from "../services/authErrors";
 import { colors } from "../theme/colors";
 import { typography, spacing, radius } from "../theme/typography";
 import { AdinkraAccent } from "../theme/motifs/AdinkraAccent";
+import { Ionicons } from "@expo/vector-icons";
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -144,7 +145,7 @@ export default function LoginScreen() {
           {!awaitingCode ? (
             <>
               <View style={styles.inputRow}>
-                <Text style={styles.inputIcon}>✉</Text>
+                <Ionicons name="mail-outline" size={18} color={colors.textSecondary} style={styles.inputIcon} />
                 <TextInput
                   style={styles.input}
                   placeholder="Enter your email"

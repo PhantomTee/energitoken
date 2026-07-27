@@ -5,20 +5,21 @@ import { colors } from "../src/theme/colors";
 import { typography, spacing, radius } from "../src/theme/typography";
 import { AdinkraAccent } from "../src/theme/motifs/AdinkraAccent";
 import { markOnboardingSeen } from "../src/services/firstLaunch";
+import { Ionicons } from "@expo/vector-icons";
 
 const SLIDES = [
   {
-    icon: "⚡",
+    icon: "speedometer-outline" as const,
     title: "Track your energy in real time",
     body: "See voltage, current, power, and usage update live from your household's meter.",
   },
   {
-    icon: "◐",
+    icon: "pie-chart-outline" as const,
     title: "Budget your credit, protect what matters",
     body: "Set a budget and your meter sheds non-critical loads gently — lighting and phone charging stay on to the very end.",
   },
   {
-    icon: "⇄",
+    icon: "swap-horizontal-outline" as const,
     title: "Share credit with your neighbours",
     body: "Send surplus energy credit to another household by email, the same way you'd share mobile airtime.",
   },
@@ -71,7 +72,7 @@ export default function WelcomeScreen() {
           <View style={[styles.slide, { width }]}>
             <View style={styles.iconWrap}>
               <AdinkraAccent size={64} color={colors.terracotta[400]} dotColor={colors.indigo[400]} opacity={1} />
-              <Text style={styles.icon}>{item.icon}</Text>
+              <Ionicons name={item.icon} size={24} color={colors.neutral.white} style={styles.icon} />
             </View>
             <Text style={[typography.display, styles.title]}>{item.title}</Text>
             <Text style={[typography.body, styles.body]}>{item.body}</Text>

@@ -1,15 +1,16 @@
 import React, { useEffect } from "react";
 import { Modal, View, Text, Pressable, StyleSheet, FlatList } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
 import { typography, spacing, radius } from "../theme/typography";
 import { AppNotification } from "../hooks/useNotifications";
 
-const TYPE_ICONS: Record<AppNotification["type"], string> = {
-  topup: "↑",
-  consumption: "⚡",
-  shed_warning: "⚠",
-  transfer: "⇄",
-  device: "◎",
+const TYPE_ICONS: Record<AppNotification["type"], keyof typeof Ionicons.glyphMap> = {
+  topup: "arrow-up-circle-outline",
+  consumption: "speedometer-outline",
+  shed_warning: "warning-outline",
+  transfer: "swap-horizontal-outline",
+  device: "hardware-chip-outline",
 };
 
 function formatWhen(timestamp: number): string {
@@ -58,9 +59,12 @@ export function NotificationsPanel({ visible, onClose, notifications, onOpened }
               style={styles.list}
               renderItem={({ item }) => (
                 <View style={[styles.item, !item.read && styles.itemUnread]}>
-                  <Text style={[styles.itemIcon, item.type === "shed_warning" && styles.warnIcon]}>
-                    {TYPE_ICONS[item.type]}
-                  </Text>
+                  <Ionicons
+                    name={TYPE_ICONS[item.type]}
+                    size={18}
+                    color={item.type === "shed_warning" ? colors.terracotta[500] : colors.indigo[400]}
+                    style={styles.itemIcon}
+                  />
                   <View style={styles.itemBody}>
                     <Text style={[typography.bodyStrong, styles.itemTitle]}>{item.title}</Text>
                     <Text style={[typography.caption, styles.itemText]}>{item.body}</Text>
@@ -115,8 +119,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   itemUnread: { backgroundColor: colors.indigo[100] },
-  itemIcon: { fontSize: 18, color: colors.indigo[400], width: 24, textAlign: "center", marginTop: 2 },
-  warnIcon: { color: colors.terracotta[500] },
+  itemIcon: { width: 24, textAlign: "center", marginTop: 2 },
   itemBody: { flex: 1 },
   itemTitle: { color: colors.textPrimary },
   itemText: { color: colors.textSecondary, marginTop: 2 },

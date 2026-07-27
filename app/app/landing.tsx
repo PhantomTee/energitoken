@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useRef, useState } from "react";
 import { View, Text, StyleSheet, Pressable, ScrollView, Platform, Linking, useWindowDimensions } from "react-native";
 import { useRouter, Redirect } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../src/theme/colors";
 import { typography, spacing, radius } from "../src/theme/typography";
 import { AdinkraAccent } from "../src/theme/motifs/AdinkraAccent";
@@ -11,17 +12,17 @@ const GITHUB_URL = "https://github.com/PhantomTee/energitoken";
 
 const FEATURES = [
   {
-    icon: "📈",
+    icon: "stats-chart-outline" as const,
     title: "Track",
     body: "Real-time meter readings direct to your dashboard. Monitor kWh usage instantly with high-precision data streams.",
   },
   {
-    icon: "◐",
+    icon: "pie-chart-outline" as const,
     title: "Budget",
     body: "Set firm consumption limits. Automated relay shedding protection kicks in before you exceed your allowance, saving costs.",
   },
   {
-    icon: "⇄",
+    icon: "swap-horizontal-outline" as const,
     title: "Share",
     body: "Excess capacity? Transfer surplus energy tokens directly wallet-to-wallet with peers in your micro-grid instantly.",
   },
@@ -41,13 +42,19 @@ export default function LandingScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
   const isNarrow = width < 700;
+  const scrollRef = useRef<ScrollView>(null);
+  const [sectionY, setSectionY] = useState<{ features: number; steps: number }>({ features: 0, steps: 0 });
 
   if (Platform.OS !== "web") {
     return <Redirect href="/login" />;
   }
 
+  const scrollToSection = (key: "features" | "steps") => {
+    scrollRef.current?.scrollTo({ y: sectionY[key], animated: true });
+  };
+
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+    <ScrollView ref={scrollRef} style={styles.screen} contentContainerStyle={styles.content}>
       <View style={styles.nav}>
         <View style={styles.brandRow}>
           <AdinkraAccent size={26} color={colors.terracotta[500]} dotColor={colors.indigo[500]} opacity={1} />
@@ -56,8 +63,12 @@ export default function LandingScreen() {
         <View style={styles.navRight}>
           {!isNarrow && (
             <>
-              <Text style={[typography.body, styles.navLink]}>Features</Text>
-              <Text style={[typography.body, styles.navLink]}>How it Works</Text>
+              <Pressable onPress={() => scrollToSection("features")}>
+                <Text style={[typography.body, styles.navLink]}>Features</Text>
+              </Pressable>
+              <Pressable onPress={() => scrollToSection("steps")}>
+                <Text style={[typography.body, styles.navLink]}>How it Works</Text>
+              </Pressable>
             </>
           )}
           <Pressable style={styles.navCta} onPress={() => router.push("/login")}>
@@ -90,15 +101,17 @@ export default function LandingScreen() {
         {!isNarrow && (
           <View style={styles.heroRight}>
             <View style={styles.heroArt}>
-              <AdinkraAccent size={120} color={colors.indigo[300]} dotColor={colors.terracotta[400]} opacity={0.9} />
-              <Text style={styles.heroArtIcon}>⚡</Text>
+              <AdinkraAccent size={140} color={colors.indigo[300]} dotColor={colors.terracotta[400]} opacity={0.9} />
             </View>
           </View>
         )}
       </View>
 
       {/* ── Features ── */}
-      <View style={styles.featuresSection}>
+      <View
+        style={styles.featuresSection}
+        onLayout={(e) => setSectionY((prev) => ({ ...prev, features: e.nativeEvent.layout.y }))}
+      >
         <Text style={[typography.h1, styles.sectionTitle]}>Intelligent Energy Management</Text>
         <Text style={[typography.body, styles.sectionSubtitle]}>
           Everything you need to monitor, control, and distribute your energy resources efficiently.
@@ -107,7 +120,7 @@ export default function LandingScreen() {
           {FEATURES.map((f) => (
             <View key={f.title} style={styles.featureCard}>
               <View style={styles.featureIconWrap}>
-                <Text style={styles.featureIcon}>{f.icon}</Text>
+                <Ionicons name={f.icon} size={22} color={colors.indigo[700]} />
               </View>
               <Text style={[typography.h2, styles.featureTitle]}>{f.title}</Text>
               <Text style={[typography.body, styles.featureBody]}>{f.body}</Text>
@@ -117,7 +130,10 @@ export default function LandingScreen() {
       </View>
 
       {/* ── How It Works ── */}
-      <View style={styles.stepsSection}>
+      <View
+        style={styles.stepsSection}
+        onLayout={(e) => setSectionY((prev) => ({ ...prev, steps: e.nativeEvent.layout.y }))}
+      >
         <Text style={[typography.h1, styles.sectionTitle]}>How It Works</Text>
         <View style={styles.stepsRow}>
           {STEPS.map((s) => (
@@ -234,7 +250,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  heroArtIcon: { position: "absolute", fontSize: 40 },
 
   featuresSection: {
     width: "100%",
@@ -276,7 +291,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  featureIcon: { fontSize: 22 },
   featureTitle: { color: colors.indigo[900] },
   featureBody: { color: colors.textSecondary },
 
