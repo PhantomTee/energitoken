@@ -100,7 +100,10 @@ export default function ProfileScreen() {
   };
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={[styles.content, isDesktop && styles.contentDesktop]}>
+    <ScrollView
+      style={[styles.screen, !isDesktop && styles.screenMobileTint]}
+      contentContainerStyle={[styles.content, isDesktop && styles.contentDesktop]}
+    >
       <View style={styles.titleRow}>
         <Text style={[typography.h1, styles.title]}>Settings</Text>
         <AdinkraAccent size={28} color={colors.terracotta[400]} dotColor={colors.indigo[400]} opacity={1} />
@@ -401,6 +404,7 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
+  screenMobileTint: { backgroundColor: colors.indigo[100] },
   content: { padding: spacing.lg, paddingBottom: spacing.xxl, width: "100%", alignSelf: "center" },
   contentDesktop: { padding: spacing.xxl, paddingBottom: spacing.xxl, maxWidth: 1000, gap: spacing.lg },
   titleRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.lg },

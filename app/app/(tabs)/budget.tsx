@@ -16,6 +16,7 @@ import { ensureFirebaseSession } from "../../src/services/firebaseSession";
 import { whToUnits, unitsToWh, tokensToUnits } from "../../src/services/units";
 import { setRelayOverride } from "../../src/services/relayOverride";
 import { useIsDesktopWeb } from "../../src/hooks/useIsDesktopWeb";
+import { MobileTopBar } from "../../src/components/MobileTopBar";
 
 const PERIOD_OPTIONS = [7, 14, 30] as const;
 type PeriodDays = (typeof PERIOD_OPTIONS)[number];
@@ -233,6 +234,8 @@ export default function BudgetScreen() {
         />
       }
     >
+      {!isDesktop && <MobileTopBar />}
+
       <View style={styles.titleRow}>
         <Text style={[typography.h1, styles.title]}>{isDesktop ? "Budget Planning" : "Budget"}</Text>
         <View style={styles.titleRight}>
@@ -243,7 +246,9 @@ export default function BudgetScreen() {
                 : <Text style={[typography.dataXs, styles.refreshText]}>↻ Refresh</Text>}
             </Pressable>
           )}
-          <AdinkraAccent size={28} color={colors.terracotta[400]} dotColor={colors.indigo[400]} opacity={1} />
+          {isDesktop && (
+            <AdinkraAccent size={28} color={colors.terracotta[400]} dotColor={colors.indigo[400]} opacity={1} />
+          )}
         </View>
       </View>
       <Text style={[typography.body, styles.subtitle]}>

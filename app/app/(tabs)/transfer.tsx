@@ -17,7 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../../src/theme/colors";
 import { typography, spacing, radius } from "../../src/theme/typography";
 import { TxStatus, TxState } from "../../src/components/TxStatus";
-import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
+import { MobileTopBar } from "../../src/components/MobileTopBar";
 import { useWallet } from "../../src/hooks/useWallet";
 import { getEngyBalance, getWritableContract, runTransferPreflight, checkNetworkAndGas } from "../../src/services/contract";
 import { resolveEmailToAddress } from "../../src/services/directory";
@@ -255,10 +255,12 @@ export default function TransferScreen() {
         />
       }
     >
-      <View style={styles.titleRow}>
-        <Text style={[typography.h1, styles.title]}>Send Energy</Text>
-        <AdinkraAccent size={28} color={colors.terracotta[400]} dotColor={colors.indigo[400]} opacity={1} />
-      </View>
+      {!isDesktop && (
+        <>
+          <MobileTopBar />
+          <Text style={[typography.h1, styles.title, styles.titleCentered]}>Send Energy</Text>
+        </>
+      )}
       <View style={styles.availablePill}>
         <Text style={[typography.caption, styles.availablePillLabel]}>Available to send:</Text>
         <Text style={[typography.dataSm, styles.availablePillValue]}>
@@ -557,8 +559,8 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.lg, paddingBottom: spacing.xxl, width: "100%", alignSelf: "center" },
   contentDesktop: { padding: spacing.xxl, paddingBottom: spacing.xxl, maxWidth: 1100 },
-  titleRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   title: { color: colors.textPrimary, marginBottom: spacing.xs },
+  titleCentered: { textAlign: "center" },
   fieldLabel: { color: colors.textSecondary, marginBottom: spacing.xs, marginTop: spacing.md },
   input: {
     backgroundColor: colors.surface,

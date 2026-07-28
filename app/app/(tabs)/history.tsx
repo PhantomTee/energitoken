@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from "react";
 import { View, Text, StyleSheet, FlatList, Pressable, Linking, ActivityIndicator } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../../src/theme/colors";
-import { typography, fonts, spacing, radius } from "../../src/theme/typography";
+import { typography, spacing, radius } from "../../src/theme/typography";
 import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
 import { useWallet } from "../../src/hooks/useWallet";
 import { useTransactionHistory } from "../../src/hooks/useTransactionHistory";
@@ -9,6 +10,7 @@ import { TxRecord, TxDirection } from "../../src/services/contractEvents";
 import { whToUnits } from "../../src/services/units";
 import { exportTransactionsCsv, exportBillingReportPdf } from "../../src/services/exportReport";
 import { useIsDesktopWeb } from "../../src/hooks/useIsDesktopWeb";
+import { MobileTopBar } from "../../src/components/MobileTopBar";
 
 const CONSUMPTION_DAYS = 14;
 
@@ -87,11 +89,14 @@ function ConsumptionChart({ days }: { days: { key: string; label: string; wh: nu
 
 const AMOY_EXPLORER_TX = "https://amoy.polygonscan.com/tx/";
 
-const DIRECTION_META: Record<TxDirection, { label: string; symbol: string; color: string }> = {
-  mint: { label: "Purchased", symbol: "+", color: colors.success },
-  "transfer-in": { label: "Received", symbol: "+", color: colors.success },
-  "transfer-out": { label: "Sent", symbol: "−", color: colors.terracotta[400] },
-  burn: { label: "Consumed", symbol: "−", color: colors.textSecondary },
+const DIRECTION_META: Record<
+  TxDirection,
+  { label: string; symbol: string; amountColor: string; icon: keyof typeof Ionicons.glyphMap; badgeTint: string; iconColor: string }
+> = {
+  mint: { label: "Purchased", symbol: "+", amountColor: colors.terracotta[500], icon: "add-circle-outline", badgeTint: colors.indigo[100], iconColor: colors.indigo[900] },
+  "transfer-in": { label: "Received", symbol: "+", amountColor: colors.terracotta[500], icon: "arrow-down-outline", badgeTint: colors.indigo[100], iconColor: colors.indigo[900] },
+  "transfer-out": { label: "Sent", symbol: "−", amountColor: colors.textPrimary, icon: "arrow-up-outline", badgeTint: colors.neutral[100], iconColor: colors.textSecondary },
+  burn: { label: "Consumed", symbol: "−", amountColor: colors.textPrimary, icon: "flash-outline", badgeTint: colors.neutral[100], iconColor: colors.textSecondary },
 };
 
 type FilterTab = "transactions" | "consumption";
@@ -119,8 +124,8 @@ function TransactionRow({ tx }: { tx: TxRecord }) {
   const meta = DIRECTION_META[tx.direction];
   return (
     <View style={styles.card}>
-      <View style={[styles.symbolBadge, { backgroundColor: meta.color }]}>
-        <Text style={styles.symbolText}>{meta.symbol}</Text>
+      <View style={[styles.symbolBadge, { backgroundColor: meta.badgeTint }]}>
+        <Ionicons name={meta.icon} size={18} color={meta.iconColor} />
       </View>
       <View style={styles.rowBody}>
         <Text style={[typography.bodyStrong, styles.rowTitle]}>{meta.label}</Text>
@@ -132,7 +137,7 @@ function TransactionRow({ tx }: { tx: TxRecord }) {
         </Pressable>
       </View>
       <View style={styles.rowRight}>
-        <Text style={[typography.dataSm, { color: meta.color }]}>
+        <Text style={[typography.dataSm, { color: meta.amountColor }]}>
           {meta.symbol}{tx.amountWh.toLocaleString()} Wh
         </Text>
         <View style={styles.statusPill}>
@@ -158,28 +163,37 @@ export default function HistoryScreen() {
 
   return (
     <View style={[styles.screen, isDesktop && styles.screenDesktop]}>
-      <View style={styles.header}>
-        <Text style={[typography.h1, styles.headerTitle]}>History</Text>
-        <View style={styles.headerRight}>
-          {isDesktop && walletAddress && transactions.length > 0 && (
-            <>
-              <Pressable
-                style={styles.exportButton}
-                onPress={() => exportTransactionsCsv(transactions, walletAddress)}
-              >
-                <Text style={[typography.dataXs, styles.exportButtonText]}>Export CSV</Text>
-              </Pressable>
-              <Pressable
-                style={styles.exportButton}
-                onPress={() => exportBillingReportPdf(transactions, walletAddress)}
-              >
-                <Text style={[typography.dataXs, styles.exportButtonText]}>Billing PDF</Text>
-              </Pressable>
-            </>
-          )}
-          <AdinkraAccent size={28} color={colors.terracotta[400]} dotColor={colors.indigo[400]} opacity={1} />
+      {isDesktop ? (
+        <View style={styles.header}>
+          <Text style={[typography.h1, styles.headerTitle]}>History</Text>
+          <View style={styles.headerRight}>
+            {walletAddress && transactions.length > 0 && (
+              <>
+                <Pressable
+                  style={styles.exportButton}
+                  onPress={() => exportTransactionsCsv(transactions, walletAddress)}
+                >
+                  <Text style={[typography.dataXs, styles.exportButtonText]}>Export CSV</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.exportButton}
+                  onPress={() => exportBillingReportPdf(transactions, walletAddress)}
+                >
+                  <Text style={[typography.dataXs, styles.exportButtonText]}>Billing PDF</Text>
+                </Pressable>
+              </>
+            )}
+            <AdinkraAccent size={28} color={colors.terracotta[400]} dotColor={colors.indigo[400]} opacity={1} />
+          </View>
         </View>
-      </View>
+      ) : (
+        <View style={styles.mobileHeader}>
+          <MobileTopBar />
+          <View style={styles.heroBand}>
+            <Text style={[typography.display, styles.heroBandTitle]}>History</Text>
+          </View>
+        </View>
+      )}
 
       <View style={styles.filterRow}>
         {FILTER_TABS.map((tab) => (
@@ -255,6 +269,9 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.sm,
   },
   headerTitle: { color: colors.textPrimary },
+  mobileHeader: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, marginBottom: spacing.sm, gap: spacing.md },
+  heroBand: { backgroundColor: colors.indigo[900], borderRadius: radius.lg, paddingHorizontal: spacing.lg, paddingVertical: spacing.xl },
+  heroBandTitle: { color: colors.indigo[700], fontSize: 28 },
   headerRight: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   exportButton: {
     borderWidth: 1,
@@ -331,7 +348,6 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   symbolBadge: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
-  symbolText: { color: colors.neutral.white, fontFamily: fonts.monoBold, fontSize: 16 },
   rowBody: { flex: 1, marginLeft: spacing.md },
   rowTitle: { color: colors.textPrimary },
   rowCounterparty: { color: colors.textSecondary, marginTop: 2 },
