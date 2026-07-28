@@ -169,7 +169,6 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: spacing.md,
   },
-  scanRowIcon: { fontSize: 22, color: colors.textPrimary },
   scanRowBody: { flex: 1 },
   scanRowTitle: { color: colors.textPrimary },
   scanRowSubtitle: { color: colors.textSecondary },

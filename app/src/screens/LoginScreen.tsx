@@ -22,7 +22,6 @@ export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [rawError, setRawError] = useState<string | null>(null);
   const [completing, setCompleting] = useState(false);
 
   const { create: createEthereumWallet } = useEmbeddedEthereumWallet();
@@ -67,7 +66,6 @@ export default function LoginScreen() {
     if (state.status !== "error") return;
     const msg = state.error?.message ?? "Something went wrong. Please try again.";
     setError(friendlyAuthError(msg));
-    setRawError(msg);
   }, [state.status, state]);
 
   const awaitingCode = state.status === "awaiting-code-input" || state.status === "submitting-code";
@@ -75,27 +73,23 @@ export default function LoginScreen() {
 
   const handleSendCode = async () => {
     setError(null);
-    setRawError(null);
     if (!email.includes("@")) return;
     try {
       await sendCode({ email });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(friendlyAuthError(msg) || "Couldn't send the code. Please try again.");
-      setRawError(msg);
     }
   };
 
   const handleSubmitCode = async (submittedCode: string) => {
     setError(null);
-    setRawError(null);
     if (submittedCode.length < 4) return;
     try {
       await loginWithCode({ code: submittedCode, email });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(friendlyAuthError(msg) || "Couldn't verify the code. Please try again.");
-      setRawError(msg);
     }
   };
 
@@ -183,7 +177,6 @@ export default function LoginScreen() {
           )}
 
           {error && <Text style={[typography.caption, styles.errorText]}>{error}</Text>}
-          {rawError && <Text style={[typography.caption, styles.rawErrorText]}>Debug: {rawError}</Text>}
         </View>
 
         <Text style={[typography.caption, styles.footnote]}>
@@ -254,7 +247,6 @@ const styles = StyleSheet.create({
   buttonDisabled: { opacity: 0.5 },
   buttonText: { color: colors.neutral.white },
   errorText: { color: colors.danger, marginTop: spacing.md, textAlign: "center" },
-  rawErrorText: { color: colors.textSecondary, marginTop: spacing.xs, opacity: 0.7, textAlign: "center" },
   completingSpinner: { marginTop: spacing.xl },
   footnote: { color: colors.indigo[100], marginTop: spacing.xl, textAlign: "center", opacity: 0.85 },
 });

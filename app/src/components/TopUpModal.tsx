@@ -117,7 +117,7 @@ export function TopUpModal({ visible, onClose, walletAddress, onMinted }: Props)
             <Text style={styles.backArrow}>←</Text>
           </Pressable>
           <Text style={[typography.h2, styles.headerTitle]}>Top Up</Text>
-          <View style={styles.backButton} />
+          <View style={styles.headerSpacer} />
         </View>
 
         <View style={[styles.body, isDesktop && styles.bodyDesktop]}>
@@ -172,11 +172,11 @@ export function TopUpModal({ visible, onClose, walletAddress, onMinted }: Props)
 
               <Pressable style={[styles.payButton, loading && styles.payButtonDisabled]} onPress={handlePay} disabled={loading}>
                 {loading ? (
-                  <ActivityIndicator color={colors.neutral.white} />
+                  <ActivityIndicator color={colors.indigo[900]} />
                 ) : (
                   <View style={styles.payButtonRow}>
-                    <Ionicons name="business-outline" size={16} color={colors.neutral.white} />
-                    <Text style={[typography.bodyStrong, styles.payButtonText]}>Pay with bank</Text>
+                    <Ionicons name="business-outline" size={16} color={colors.indigo[900]} />
+                    <Text style={[typography.bodyStrong, styles.payButtonText]}>PAY WITH BANK</Text>
                   </View>
                 )}
               </Pressable>
@@ -207,7 +207,15 @@ const styles = StyleSheet.create({
     paddingTop: spacing.xl,
     paddingBottom: spacing.md,
   },
-  backButton: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
+  backButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerSpacer: { width: 36, height: 36 },
   backArrow: { color: colors.neutral.white, fontSize: 20 },
   headerTitle: { color: colors.neutral.white },
   body: { flex: 1, justifyContent: "center", paddingHorizontal: spacing.xl, gap: spacing.md },
@@ -256,13 +264,13 @@ const styles = StyleSheet.create({
   minNote: { color: colors.indigo[100], opacity: 0.7, textAlign: "center" },
   errorText: { color: colors.terracotta[300], textAlign: "center" },
   payButton: {
-    backgroundColor: colors.terracotta[400],
+    backgroundColor: colors.terracotta[300],
     borderRadius: radius.pill,
     paddingVertical: spacing.md,
     alignItems: "center",
   },
   payButtonDisabled: { opacity: 0.6 },
-  payButtonText: { color: colors.neutral.white },
+  payButtonText: { color: colors.indigo[900], letterSpacing: 0.5 },
   cancelLink: { alignItems: "center", padding: spacing.sm },
   cancelLinkText: { color: colors.indigo[100] },
   poweredBy: { color: colors.indigo[300], textAlign: "center", opacity: 0.7, letterSpacing: 0.5 },
