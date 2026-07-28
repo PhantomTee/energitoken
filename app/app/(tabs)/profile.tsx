@@ -63,7 +63,6 @@ export default function ProfileScreen() {
   const [qrVisible, setQrVisible] = useState(false);
   const [relayAlerts, setRelayAlerts] = useState(true);
   const [budgetWarnings, setBudgetWarnings] = useState(true);
-  const [language, setLanguage] = useState<(typeof LANGUAGES)[number]["code"]>("en");
   const displayName = displayNameFromEmail(email);
   const { transactions: exportTransactions } = useTransactionHistory(isDesktop ? walletAddress : null);
 
@@ -309,25 +308,20 @@ export default function ProfileScreen() {
             />
           </View>
 
-          {/* ── Language ── */}
-          <SectionHeader>LANGUAGE</SectionHeader>
+          {/* ── Preferences ── */}
+          <SectionHeader>PREFERENCES</SectionHeader>
           <View style={styles.card}>
-            {LANGUAGES.map((lang) => (
-              <Pressable key={lang.code} style={styles.row} onPress={() => setLanguage(lang.code)}>
-                <Text style={[typography.body, styles.rowLabel]}>{lang.label}</Text>
-                <Text style={[typography.bodyStrong, language === lang.code ? styles.radioOn : styles.radioOff]}>
-                  {language === lang.code ? "●" : "○"}
-                </Text>
-              </Pressable>
-            ))}
+            <View style={styles.row}>
+              <View style={styles.langRowLabel}>
+                <Ionicons name="globe-outline" size={16} color={colors.textPrimary} />
+                <Text style={[typography.body, styles.rowLabel]}>Language</Text>
+              </View>
+              <View style={styles.langRowValue}>
+                <Text style={[typography.body, styles.rowValue]}>{LANGUAGES[0].label}</Text>
+                <Text style={styles.chevron}>⌵</Text>
+              </View>
+            </View>
           </View>
-
-          {/* ── Share QR ── */}
-          {walletAddress && (
-            <Pressable style={styles.qrButton} onPress={() => setQrVisible(true)}>
-              <Text style={[typography.bodyStrong, styles.qrButtonText]}>Share my QR code</Text>
-            </Pressable>
-          )}
 
           {/* ── About ── */}
           <SectionHeader>ABOUT</SectionHeader>
@@ -346,6 +340,13 @@ export default function ProfileScreen() {
               value={<Text style={styles.chevron}>↗</Text>}
             />
           </View>
+
+          {/* ── Share QR ── */}
+          {walletAddress && (
+            <Pressable style={styles.qrButton} onPress={() => setQrVisible(true)}>
+              <Text style={[typography.bodyStrong, styles.qrButtonText]}>Share my QR code</Text>
+            </Pressable>
+          )}
         </>
       )}
 
@@ -445,8 +446,8 @@ const styles = StyleSheet.create({
   rowValue: { color: colors.textSecondary },
   divider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.xs },
   chevron: { color: colors.textSecondary, fontSize: 16 },
-  radioOn: { color: colors.terracotta[400] },
-  radioOff: { color: colors.textSecondary },
+  langRowLabel: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  langRowValue: { flexDirection: "row", alignItems: "center", gap: 4 },
   logoutChip: {
     borderRadius: radius.pill,
     paddingVertical: spacing.xs,

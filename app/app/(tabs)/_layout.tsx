@@ -1,14 +1,36 @@
 import React from "react";
 import { Tabs, Redirect } from "expo-router";
-import { ColorValue } from "react-native";
+import { View, Text, ColorValue, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../../src/theme/colors";
-import { fonts, spacing } from "../../src/theme/typography";
+import { typography, fonts, spacing } from "../../src/theme/typography";
 import { useWallet } from "../../src/hooks/useWallet";
 import { BrandSplash } from "../../src/components/BrandSplash";
 import { useIsDesktopWeb } from "../../src/hooks/useIsDesktopWeb";
+import { displayNameFromEmail } from "../../src/services/displayName";
 
 const SIDEBAR_WIDTH = 224;
+
+/** Every desktop mockup pins a small identity block to the bottom of the
+ * sidebar. expo-router's Tabs doesn't expose a way to inject content into
+ * the tab bar itself, so this renders as a fixed-position sibling instead of
+ * fighting the navigator internals -- web-only positioning, matching the
+ * sidebar's own width exactly. */
+function SidebarFooter() {
+  const { email } = useWallet();
+  const name = displayNameFromEmail(email);
+  return (
+    <View style={styles.sidebarFooter}>
+      <View style={styles.sidebarFooterAvatar}>
+        <Text style={styles.sidebarFooterAvatarText}>{name.charAt(0)}</Text>
+      </View>
+      <View>
+        <Text style={[typography.bodyStrong, styles.sidebarFooterName]}>{name}</Text>
+        <Text style={[typography.caption, styles.sidebarFooterRole]}>User Account</Text>
+      </View>
+    </View>
+  );
+}
 
 function TabIcon({ name, color }: { name: keyof typeof Ionicons.glyphMap; color: ColorValue }) {
   return <Ionicons name={name} size={20} color={color} />;
@@ -33,6 +55,7 @@ export default function TabsLayout() {
   }
 
   return (
+    <View style={{ flex: 1 }}>
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -85,5 +108,36 @@ export default function TabsLayout() {
         options={{ title: "Settings", tabBarIcon: ({ color }) => <TabIcon name="settings-outline" color={color} /> }}
       />
     </Tabs>
+    {isDesktop && <SidebarFooter />}
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  sidebarFooter: {
+    position: "fixed" as "absolute",
+    left: 0,
+    bottom: 0,
+    width: SIDEBAR_WIDTH,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    padding: spacing.lg,
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    borderRightWidth: 1,
+    borderRightColor: colors.border,
+  },
+  sidebarFooterAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.terracotta[500],
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sidebarFooterAvatarText: { color: colors.neutral.white, fontWeight: "700", fontSize: 13 },
+  sidebarFooterName: { color: colors.textPrimary, fontSize: 13 },
+  sidebarFooterRole: { color: colors.textSecondary },
+});
