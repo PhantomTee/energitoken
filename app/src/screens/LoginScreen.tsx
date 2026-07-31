@@ -23,6 +23,11 @@ export default function LoginScreen() {
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [completing, setCompleting] = useState(false);
+  // Privy's state.status has no "go back" transition, so whether we show
+  // the code step is tracked locally instead of derived purely from it --
+  // that's what makes a back button possible at all: it can drop back to
+  // the email step without needing Privy's SDK to support the idea.
+  const [codeSent, setCodeSent] = useState(false);
 
   const { create: createEthereumWallet } = useEmbeddedEthereumWallet();
 
@@ -68,7 +73,7 @@ export default function LoginScreen() {
     setError(friendlyAuthError(msg));
   }, [state.status, state]);
 
-  const awaitingCode = state.status === "awaiting-code-input" || state.status === "submitting-code";
+  const awaitingCode = codeSent;
   const sendingCode = state.status === "sending-code";
 
   const handleSendCode = async () => {
@@ -76,10 +81,19 @@ export default function LoginScreen() {
     if (!email.includes("@")) return;
     try {
       await sendCode({ email });
+      setCodeSent(true);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(friendlyAuthError(msg) || "Couldn't send the code. Please try again.");
     }
+  };
+
+  // Drops back to the email step -- doesn't call any Privy API, just resets
+  // what we show; sending a new code from here starts a fresh OTP attempt.
+  const handleBack = () => {
+    setCodeSent(false);
+    setCode("");
+    setError(null);
   };
 
   const handleSubmitCode = async (submittedCode: string) => {
@@ -114,6 +128,11 @@ export default function LoginScreen() {
         </View>
 
         <View style={styles.card}>
+          {awaitingCode && !completing && (
+            <Pressable onPress={handleBack} hitSlop={12} style={styles.cardBackButton}>
+              <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
+            </Pressable>
+          )}
           <Text style={[typography.label, styles.cardLabel]}>
             {completing ? "SETTING UP" : awaitingCode ? "VERIFY CODE" : "SECURE ACCESS"}
           </Text>
@@ -218,6 +237,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     padding: spacing.xl,
   },
+  cardBackButton: { position: "absolute", top: spacing.lg, left: spacing.lg, zIndex: 1 },
   cardLabel: { color: colors.textSecondary, textAlign: "center", marginBottom: spacing.md },
   subtitle: { color: colors.textSecondary, marginBottom: spacing.lg, textAlign: "center" },
   inputRow: {
