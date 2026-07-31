@@ -103,7 +103,7 @@ export default function LoginScreen() {
   }, [code]);
 
   return (
-    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : "height"}>
       {/* On web this View centres itself; on native it fills the screen */}
       <View style={styles.outer}>
         <View style={styles.header}>

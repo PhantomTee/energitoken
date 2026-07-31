@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Modal, View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, Platform, Linking } from "react-native";
+import { Modal, View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, Platform, Linking, KeyboardAvoidingView } from "react-native";
 import * as WebBrowser from "expo-web-browser";
 import { colors } from "../theme/colors";
 import { typography, spacing, radius } from "../theme/typography";
@@ -111,7 +111,7 @@ export function TopUpModal({ visible, onClose, walletAddress, onMinted }: Props)
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={handleClose}>
-      <View style={styles.screen}>
+      <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <View style={styles.header}>
           <Pressable onPress={handleClose} hitSlop={12} style={styles.backButton}>
             <Text style={styles.backArrow}>←</Text>
@@ -192,7 +192,7 @@ export function TopUpModal({ visible, onClose, walletAddress, onMinted }: Props)
             </>
           )}
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

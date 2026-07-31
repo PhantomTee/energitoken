@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, Switch } from "react-native";
+import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, Switch, Platform, KeyboardAvoidingView } from "react-native";
 import { useFocusEffect, Link } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, RelayTier, relayTierLabels } from "../../src/theme/colors";
@@ -222,6 +222,7 @@ export default function BudgetScreen() {
   };
 
   return (
+    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : "height"}>
     <ScrollView
       style={styles.screen}
       contentContainerStyle={[styles.content, isDesktop && styles.contentDesktop]}
@@ -608,6 +609,7 @@ export default function BudgetScreen() {
         </>
       )}
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

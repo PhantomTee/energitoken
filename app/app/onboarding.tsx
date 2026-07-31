@@ -5,7 +5,7 @@ import { colors } from "../src/theme/colors";
 import { typography, spacing, radius } from "../src/theme/typography";
 import { AdinkraAccent } from "../src/theme/motifs/AdinkraAccent";
 import { useWallet } from "../src/hooks/useWallet";
-import { ensureFirebaseSession } from "../src/services/firebaseSession";
+import { ensureFirebaseSession, clearFirebaseSession } from "../src/services/firebaseSession";
 import { claimDevice, DEVICE_CODE_PATTERN } from "../src/services/deviceBinding";
 import { QRScanner } from "../src/components/QRScanner";
 import { Ionicons } from "@expo/vector-icons";
@@ -19,7 +19,7 @@ import { Ionicons } from "@expo/vector-icons";
  */
 export default function OnboardingScreen() {
   const router = useRouter();
-  const { walletAddress, isReady, isAuthenticated } = useWallet();
+  const { walletAddress, isReady, isAuthenticated, logout } = useWallet();
   const [code, setCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,6 +34,20 @@ export default function OnboardingScreen() {
   }, [isReady, isAuthenticated, walletAddress, router]);
 
   const isValidFormat = DEVICE_CODE_PATTERN.test(code.trim());
+
+  // Reached from index.tsx's routing brain via <Redirect>, which replaces
+  // rather than pushes -- for a fresh login with no device yet, there's
+  // genuinely no prior screen in history, so router.back() would silently
+  // no-op. When that's the case, "back" undoes step 1 (login) instead.
+  const handleBack = async () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    await clearFirebaseSession();
+    await logout();
+    router.replace("/login");
+  };
 
   const handleSubmit = async () => {
     if (!walletAddress || !isValidFormat) return;
@@ -51,10 +65,10 @@ export default function OnboardingScreen() {
   };
 
   return (
-    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : "height"}>
       <View style={styles.card}>
         <View style={styles.stepRow}>
-          <Pressable hitSlop={12} onPress={() => router.back()}>
+          <Pressable hitSlop={12} onPress={handleBack}>
             <Text style={styles.backArrow}>←</Text>
           </Pressable>
           <Text style={[typography.label, styles.stepLabel]}>STEP 2 OF 3</Text>

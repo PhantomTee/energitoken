@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   Platform,
+  KeyboardAvoidingView,
 } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { isAddress } from "ethers";
@@ -243,6 +244,7 @@ export default function TransferScreen() {
   };
 
   return (
+    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : "height"}>
     <ScrollView
       style={styles.screen}
       contentContainerStyle={[styles.content, isDesktop && styles.contentDesktop]}
@@ -552,6 +554,7 @@ export default function TransferScreen() {
         }}
       />
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
