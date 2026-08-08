@@ -3,6 +3,25 @@ import { ref, get, set } from "firebase/database";
 import { auth, db } from "./firebase";
 
 /**
+ * Every /meters, /directory, and /walletToDevice read in the app goes
+ * through an anonymous Firebase Auth session (see ensureFirebaseSession
+ * below). If Anonymous sign-in isn't enabled for this Firebase project,
+ * signInAnonymously() throws "Firebase: Error (auth/admin-restricted-
+ * operation)." or "... (auth/operation-not-allowed)." -- a real SDK error,
+ * not something this code can work around. Translate it into something
+ * that says exactly what to do instead of surfacing the raw SDK string.
+ */
+function translateAnonymousAuthError(err: unknown): Error {
+  const code = (err as { code?: string })?.code ?? "";
+  if (code === "auth/admin-restricted-operation" || code === "auth/operation-not-allowed") {
+    return new Error(
+      "Anonymous sign-in isn't enabled for this Firebase project. In the Firebase Console: Authentication → Sign-in method → Anonymous → Enable."
+    );
+  }
+  return err instanceof Error ? err : new Error(String(err));
+}
+
+/**
  * Binds this device's Firebase Anonymous Auth session to the given wallet
  * address, via a write-once /uidToWallet/{uid} entry. The security rules
  * for /meters and /directory key off this binding.
@@ -20,7 +39,11 @@ export async function ensureFirebaseSession(walletAddress: string): Promise<void
 
 async function getOrCreateUid(): Promise<string> {
   if (auth.currentUser) return auth.currentUser.uid;
-  return (await signInAnonymously(auth)).user.uid;
+  try {
+    return (await signInAnonymously(auth)).user.uid;
+  } catch (err) {
+    throw translateAnonymousAuthError(err);
+  }
 }
 
 async function bindUidToWallet(uid: string, walletAddress: string): Promise<void> {
@@ -39,7 +62,12 @@ async function bindUidToWallet(uid: string, walletAddress: string): Promise<void
   // Stale anonymous session bound to a different wallet (e.g. previous user on
   // this browser). Sign out, get a fresh anonymous UID, and bind the new one.
   await signOut(auth);
-  const freshUid = (await signInAnonymously(auth)).user.uid;
+  let freshUid: string;
+  try {
+    freshUid = (await signInAnonymously(auth)).user.uid;
+  } catch (err) {
+    throw translateAnonymousAuthError(err);
+  }
   await set(ref(db, `uidToWallet/${freshUid}`), walletAddress);
 }
 
