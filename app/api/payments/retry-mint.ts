@@ -14,10 +14,11 @@ type Res = ServerResponse & { status: (code: number) => Res; json: (body: unknow
  * successful Flutterwave re-verification -- this never mints for an
  * unverified or fabricated order.
  *
- * Gated behind ORACLE_SECRET (same shared secret as /api/oracle/burn) --
- * without this, anyone who learns an order reference (a log line, a client
- * network trace, a support ticket) could trigger a mint with no credential
- * at all.
+ * Gated behind ORACLE_SECRET (same shared secret as /api/oracle/burn),
+ * fail-closed -- an unset env var rejects every request rather than
+ * silently skipping the check. Without this, anyone who learns an order
+ * reference (a log line, a client network trace, a support ticket) could
+ * trigger a mint with no credential at all.
  */
 export default async function handler(req: Req, res: Res) {
   if (req.method !== "POST") {
@@ -27,7 +28,7 @@ export default async function handler(req: Req, res: Res) {
 
   const secret = process.env.ORACLE_SECRET;
   const provided = req.headers["x-oracle-secret"];
-  if (secret && provided !== secret) {
+  if (!secret || provided !== secret) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }

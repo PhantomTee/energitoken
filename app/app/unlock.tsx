@@ -18,7 +18,7 @@ import { resolvePostAuthDestination } from "../src/services/postAuthRouting";
  */
 export default function UnlockScreen() {
   const router = useRouter();
-  const { walletAddress, logout } = useWallet();
+  const { walletAddress, logout, getSigner } = useWallet();
   const [unlocking, setUnlocking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,7 +32,7 @@ export default function UnlockScreen() {
         setError("Couldn't verify it's you. Try again, or use your email code.");
         return;
       }
-      const destination = await resolvePostAuthDestination(walletAddress);
+      const destination = await resolvePostAuthDestination(walletAddress, getSigner);
       router.replace(destination);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ethers } from "ethers";
 import { ref, onValue, off } from "firebase/database";
 import { db } from "../services/firebase";
 import { ensureFirebaseSession } from "../services/firebaseSession";
@@ -15,7 +16,11 @@ export type MeterMode = "mock" | "live";
  * paired yet, `hasDevice` is false and the caller should prompt onboarding
  * rather than show a spinner forever.
  */
-export function useMeterData(walletAddress: string | null, mode: MeterMode) {
+export function useMeterData(
+  walletAddress: string | null,
+  mode: MeterMode,
+  getSigner: () => Promise<ethers.Signer>
+) {
   const [reading, setReading] = useState<MeterReading | null>(mode === "mock" ? mockMeterReadingA : null);
   const [loading, setLoading] = useState(mode === "live");
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +43,7 @@ export function useMeterData(walletAddress: string | null, mode: MeterMode) {
     setLoading(true);
     setError(null);
 
-    ensureFirebaseSession(walletAddress)
+    ensureFirebaseSession(walletAddress, getSigner)
       .then(() => getDeviceForWallet(walletAddress))
       .then((boundDeviceId) => {
         if (cancelled) return;

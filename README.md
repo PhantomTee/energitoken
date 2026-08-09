@@ -66,7 +66,7 @@ Meters are keyed by `/meters/{deviceId}` (a 6-hex-character code derived from th
 
 ## Live deployment
 
-- **Contract:** `EnergiToken` (ENGY) at [`0x8493324De9578BF390092ed6c4a5b1033fBF8048`](https://amoy.polygonscan.com/address/0x8493324De9578BF390092ed6c4a5b1033fBF8048) on Polygon Amoy (chain ID `80002`)
+- **Contract:** `EnergiToken` (ENGY) at [`0xC1583007087F596f37396E38D949C3EacfaC58c5`](https://amoy.polygonscan.com/address/0xC1583007087F596f37396E38D949C3EacfaC58c5) on Polygon Amoy (chain ID `80002`) — redeployed to add the on-chain `pendingBurn`/spendable-balance guard (double-spend fix, see Security notes below)
 - **Oracle/deployer wallet (testnet only):** `0xDC86E1E8A5C72cce432E99483A20B19802A47ccD`
 - **Web app + API:** [energitoken.vercel.app](https://energitoken.vercel.app) (auto-deploys from `main` via the Vercel GitHub integration)
 - **Network:** Polygon Amoy testnet exclusively. **Never Mumbai** — it was shut down in 2024.
@@ -215,3 +215,5 @@ See [`app/src/theme`](app/src/theme) for the full palette, typography scale, and
 - All secrets (private keys, API keys, service account credentials) live in `.env` files or `serviceAccountKey.json`, all gitignored. `.env.example` files document every variable that needs to be supplied.
 - The deployer/oracle wallet committed to this README is a **freshly generated, testnet-only key** with no real-world funds ever associated with it — safe to disclose for an academic demo, but not reused for anything beyond Amoy testing.
 - Firebase Realtime Database denies all public access; reads/writes are scoped per-household via the anonymous-auth + `uidToWallet` binding, and per-meter via the device-pairing binding, both described above.
+- `uidToWallet` is bound only via a signed message the wallet itself produces (`app/api/session/bind.ts` verifies it before writing) — Anonymous Auth alone can't prove which wallet a session should be trusted for, so a plain client write would let anyone self-bind to a victim's wallet. `app/api/devices/claim.ts` and `unbind.ts` derive the caller's wallet from a verified Firebase ID token the same way, rather than trusting a wallet address in the request body.
+- `transfer()` on `EnergiToken.sol` enforces a spendable balance (`balanceOf - pendingBurn`) on-chain, not just in the app — a household can't transfer away ENGY that represents electricity already consumed but not yet burned/settled. The oracle keeps `pendingBurn` current via a GitHub Actions cron (`.github/workflows/burn-oracle.yml`).

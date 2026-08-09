@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "http";
-import { adminDb } from "../_lib/firebaseAdmin";
+import { adminDb, walletFromAuthHeader } from "../_lib/firebaseAdmin";
 
-type Req = IncomingMessage & { method?: string; body?: unknown };
+type Req = IncomingMessage & { method?: string; body?: unknown; headers: Record<string, string | string[] | undefined> };
 type Res = ServerResponse & { status: (code: number) => Res; json: (body: unknown) => void };
 
 /**
@@ -10,10 +10,11 @@ type Res = ServerResponse & { status: (code: number) => Res; json: (body: unknow
  * the earlier security audit -- see database.rules.json), so unbinding has
  * to go through here, same pattern as claim.ts.
  *
- * Only removes the pairing the caller's OWN wallet is currently in -- looks
- * up walletToDevice/{walletAddress} first and only touches that specific
- * deviceId, so this can't be used to unbind an arbitrary device someone
- * else is using.
+ * The wallet to unbind is derived from a verified Firebase ID token (see
+ * walletFromAuthHeader), never trusted from the request body -- otherwise
+ * anyone who knows a victim's wallet address (not secret: deviceToWallet is
+ * readable by any authenticated session) could unbind their meter as pure
+ * griefing, with no credential at all.
  */
 export default async function handler(req: Req, res: Res) {
   if (req.method !== "POST") {
@@ -21,15 +22,15 @@ export default async function handler(req: Req, res: Res) {
     return;
   }
 
+  let walletAddress: string;
   try {
-    const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
-    const { walletAddress } = (body ?? {}) as { walletAddress?: string };
+    walletAddress = await walletFromAuthHeader(req.headers.authorization as string | undefined);
+  } catch (err) {
+    res.status(401).json({ error: err instanceof Error ? err.message : "Unauthorized" });
+    return;
+  }
 
-    if (!walletAddress || !/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
-      res.status(400).json({ error: "walletAddress must be a valid 0x address" });
-      return;
-    }
-
+  try {
     const db = adminDb();
     const deviceSnap = await db.ref(`walletToDevice/${walletAddress}`).get();
     if (!deviceSnap.exists()) {

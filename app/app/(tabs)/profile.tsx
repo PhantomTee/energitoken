@@ -88,7 +88,7 @@ export default function ProfileScreen() {
     setUnbinding(true);
     setUnbindError(null);
     try {
-      await unbindDevice(walletAddress);
+      await unbindDevice();
       setUnbindVisible(false);
       setDeviceId(null);
     } catch (err) {

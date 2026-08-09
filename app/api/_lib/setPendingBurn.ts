@@ -7,15 +7,15 @@ import { ethers } from "ethers";
 const contractInfo: { address: string; abi: unknown } = require("../../src/config/contract.json");
 
 /**
- * Signs and sends burnConsumed() as the oracle. Called by the consumption
- * oracle (/api/oracle/burn) after it computes an energy delta from meter data.
- * Private key never leaves the server.
+ * Signs and sends setPendingBurn() as the oracle. Called every few minutes
+ * by /api/oracle/set-pending with the household's total consumption since
+ * the last burnConsumed, so transfer() can enforce a spendable balance in
+ * between burn batches. Overwrites rather than accumulates -- safe to call
+ * repeatedly with a freshly-computed total.
  */
-export async function burnEngy(fromAddress: string, whAmount: number): Promise<string> {
-  if (whAmount <= 0) throw new Error("whAmount must be positive");
+export async function setPendingBurnEngy(walletAddress: string, whAmount: number): Promise<string> {
+  if (whAmount < 0) throw new Error("whAmount must not be negative");
 
-  // rpc-amoy.polygon.technology (old default) is confirmed dead -- doesn't
-  // even resolve via DNS anymore, not just flaky.
   const rpcUrl = process.env.AMOY_RPC_URL ?? "https://polygon-amoy-bor-rpc.publicnode.com";
   const oraclePrivateKey = process.env.ORACLE_PRIVATE_KEY;
   if (!oraclePrivateKey) throw new Error("Missing ORACLE_PRIVATE_KEY env var");
@@ -24,7 +24,7 @@ export async function burnEngy(fromAddress: string, whAmount: number): Promise<s
   const oracleWallet = new ethers.Wallet(oraclePrivateKey, provider);
   const contract = new ethers.Contract(contractInfo.address, contractInfo.abi as ethers.InterfaceAbi, oracleWallet);
 
-  const tx = await contract.burnConsumed(fromAddress, whAmount);
+  const tx = await contract.setPendingBurn(walletAddress, whAmount);
   const receipt = await tx.wait();
   return receipt.hash;
 }

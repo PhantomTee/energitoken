@@ -1,0 +1,37 @@
+name: EnergiToken consumption oracle
+
+# Keeps on-chain token balances honest against real electricity usage.
+# Two schedules, matching the two on-chain operations:
+#   - set-pending (every 5 min): keeps each wallet's pendingBurn current so
+#     transfer() can enforce a spendable balance between burns.
+#   - burn (hourly): actually burns settled consumption and resets pendingBurn.
+# A GitHub Actions cron, not Vercel cron, per the design brief -- keeps
+# ORACLE_SECRET out of Vercel's own cron config and in one place (repo secrets).
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+    - cron: "0 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  set-pending:
+    if: github.event.schedule == '*/5 * * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call /api/oracle/set-pending
+        run: |
+          curl -sf -X POST "https://energitoken.vercel.app/api/oracle/set-pending" \
+            -H "x-oracle-secret: ${{ secrets.ORACLE_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -d '{}'
+
+  burn:
+    if: github.event.schedule == '0 * * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call /api/oracle/burn
+        run: |
+          curl -sf -X POST "https://energitoken.vercel.app/api/oracle/burn" \
+            -H "x-oracle-secret: ${{ secrets.ORACLE_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -d '{}'

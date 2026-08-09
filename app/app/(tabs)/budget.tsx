@@ -118,7 +118,7 @@ function ShedLadder({ percentUsed }: { percentUsed: number }) {
 
 export default function BudgetScreen() {
   const isDesktop = useIsDesktopWeb();
-  const { walletAddress } = useWallet();
+  const { walletAddress, getSigner } = useWallet();
   const [refreshing, setRefreshing] = useState(false);
   const [balanceWh, setBalanceWh] = useState<bigint | null>(null);
   const [saving, setSaving] = useState(false);
@@ -128,7 +128,7 @@ export default function BudgetScreen() {
   const [relayError, setRelayError] = useState<string | null>(null);
   const [periodDays, setPeriodDays] = useState<PeriodDays>(7);
 
-  const { reading, loading, error, deviceId, hasDevice } = useMeterData(walletAddress, "live");
+  const { reading, loading, error, deviceId, hasDevice } = useMeterData(walletAddress, "live", getSigner);
   const { days: dailyUsage } = useDailyUsage(walletAddress, periodDays);
   const [durationInput, setDurationInput] = useState("");
 
@@ -210,7 +210,7 @@ export default function BudgetScreen() {
     setSaveSuccess(false);
     setSaving(true);
     try {
-      await ensureFirebaseSession(walletAddress);
+      await ensureFirebaseSession(walletAddress, getSigner);
       await setBudgetWh(deviceId, unitsToWh(computedDailyUnits!));
       setDurationInput("");
       setSaveSuccess(true);

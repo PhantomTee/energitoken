@@ -11,25 +11,36 @@ const SHED_THRESHOLDS = [
   { pct: 95, label: "Essential loads switched off — critical loads only" },
 ];
 
-type Req = IncomingMessage & { method?: string; body?: unknown };
+type Req = IncomingMessage & { method?: string; body?: unknown; headers: Record<string, string | string[] | undefined> };
 type Res = ServerResponse & { status: (code: number) => Res; json: (body: unknown) => void };
 
+type DeviceBurnResult =
+  | { deviceId: string; ok: true; burned: boolean; deltaWh?: number; txHash?: string; reason?: string }
+  | { deviceId: string; ok: false; error: string };
+
 /**
- * Consumption oracle — the missing bridge between meter readings and token burns.
+ * Consumption oracle — the bridge between meter readings and token burns.
+ * Called on a schedule (see .github/workflows/burn-oracle.yml) with no
+ * deviceId in the body, which processes every paired device in one pass;
+ * a specific deviceId can still be passed for manual/one-off use.
  *
- * Flow:
- *  1. Accept a deviceId (posted by the ESP32 firmware or a Vercel cron job).
- *  2. Read current cumulative energyWh from Firebase /meters/{deviceId}.
- *  3. Compare to /burnCheckpoints/{deviceId}/lastBurnedEnergyWh.
- *  4. If delta > 0, call burnConsumed(walletAddress, deltaWh) on-chain.
- *  5. Write back the new checkpoint and tx hash.
+ * Per device:
+ *  1. Read current cumulative energyWh from Firebase /meters/{deviceId}.
+ *  2. Compare to /burnCheckpoints/{deviceId}/lastBurnedWh.
+ *  3. If delta > 0, call burnConsumed(walletAddress, deltaWh) on-chain --
+ *     this also resets the contract's own pendingBurn[wallet] to zero.
+ *  4. Write back the new checkpoint.
  *
- * Idempotency: if the burn tx hash is already recorded for a given energyWh
- * reading, skip — handles firmware retries and cron double-fires.
+ * A negative delta means the meter's cumulative counter was reset (new
+ * budget cycle, PZEM replaced, etc.) -- there's no way to know how much of
+ * the pre-reset remainder was already reflected in earlier burns, so rather
+ * than getting stuck forever (the old bug: a stale high checkpoint blocks
+ * every future burn until currentEnergyWh climbs back past it), we log it
+ * and rebaseline the checkpoint to the new lower value.
  *
- * Authorization: requires ORACLE_SECRET header matching ORACLE_SECRET env var.
- * The ESP32 sends this in every telemetry POST; the Vercel cron job sends it
- * via a secure env var. Never exposed client-side.
+ * Authorization: requires ORACLE_SECRET header matching ORACLE_SECRET env
+ * var. Fail-closed: if the env var isn't set, every request is rejected --
+ * there is no "secret unset means open" fallback.
  */
 export default async function handler(req: Req, res: Res) {
   if (req.method !== "POST") {
@@ -37,11 +48,8 @@ export default async function handler(req: Req, res: Res) {
     return;
   }
 
-  // Lightweight shared secret — keeps this endpoint from being called by
-  // anyone who discovers the URL. Not a replacement for proper auth but
-  // sufficient for a demo/academic deployment.
   const secret = process.env.ORACLE_SECRET;
-  if (secret && req.headers["x-oracle-secret"] !== secret) {
+  if (!secret || req.headers["x-oracle-secret"] !== secret) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
@@ -50,48 +58,88 @@ export default async function handler(req: Req, res: Res) {
     const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
     const { deviceId } = (body ?? {}) as { deviceId?: string };
 
-    if (!deviceId || typeof deviceId !== "string") {
-      res.status(400).json({ error: "deviceId is required" });
+    const db = adminDb();
+
+    if (deviceId) {
+      const result = await processDevice(db, deviceId);
+      if (!result.ok) {
+        res.status(result.error === "Device not paired to any wallet" || result.error === "No meter reading found for device" ? 404 : 500).json(result);
+        return;
+      }
+      res.status(200).json(result);
       return;
     }
 
-    const db = adminDb();
+    // Bulk mode: every currently-paired device.
+    const deviceMapSnap = await db.ref("deviceToWallet").get();
+    const deviceIds = deviceMapSnap.exists() ? Object.keys(deviceMapSnap.val() as Record<string, string>) : [];
 
+    const results: DeviceBurnResult[] = [];
+    for (const id of deviceIds) {
+      results.push(await processDevice(db, id));
+    }
+
+    res.status(200).json({ ok: true, processed: results.length, results });
+  } catch (error) {
+    console.error("oracle/burn failed", error);
+    res.status(500).json({ error: error instanceof Error ? error.message : "Unknown error" });
+  }
+}
+
+async function processDevice(db: ReturnType<typeof adminDb>, deviceId: string): Promise<DeviceBurnResult> {
+  try {
     // ── 1. Resolve wallet ────────────────────────────────────────────────
     const walletSnap = await db.ref(`deviceToWallet/${deviceId}`).get();
     if (!walletSnap.exists()) {
-      res.status(404).json({ error: "Device not paired to any wallet" });
-      return;
+      return { deviceId, ok: false, error: "Device not paired to any wallet" };
     }
     const walletAddress: string = walletSnap.val();
 
     // ── 2. Read current meter energyWh ───────────────────────────────────
     const meterSnap = await db.ref(`meters/${deviceId}/energyWh`).get();
     if (!meterSnap.exists()) {
-      res.status(404).json({ error: "No meter reading found for device" });
-      return;
+      return { deviceId, ok: false, error: "No meter reading found for device" };
     }
     const currentEnergyWh: number = meterSnap.val();
 
     // ── 3. Load last burn checkpoint ─────────────────────────────────────
     const checkpointRef = db.ref(`burnCheckpoints/${deviceId}`);
     const checkpointSnap = await checkpointRef.get();
-    const checkpoint = checkpointSnap.val() ?? { lastBurnedEnergyWh: 0 };
-    const lastBurnedEnergyWh: number = checkpoint.lastBurnedEnergyWh ?? 0;
+    const checkpoint = checkpointSnap.val() ?? { lastBurnedWh: 0 };
+    const lastBurnedWh: number = checkpoint.lastBurnedWh ?? 0;
 
-    const deltaWh = Math.floor(currentEnergyWh - lastBurnedEnergyWh);
+    const rawDelta = currentEnergyWh - lastBurnedWh;
 
-    if (deltaWh <= 0) {
-      res.status(200).json({ ok: true, burned: false, reason: "No new consumption since last burn" });
-      return;
+    if (rawDelta < 0) {
+      // Meter counter went backwards -- a reset, not real negative
+      // consumption. Rebaseline so future deltas are computed correctly
+      // instead of this checkpoint staying stuck above the new reality forever.
+      console.warn("oracle/burn: negative delta, meter counter reset -- rebaselining checkpoint", {
+        deviceId,
+        lastBurnedWh,
+        currentEnergyWh,
+      });
+      await checkpointRef.set({
+        lastBurnedWh: currentEnergyWh,
+        lastBurnAt: Date.now(),
+        walletAddress,
+        deviceId,
+        rebaselinedAt: Date.now(),
+      });
+      return { deviceId, ok: true, burned: false, reason: "Meter counter reset — checkpoint rebaselined" };
     }
 
-    // ── 4. Burn on-chain ─────────────────────────────────────────────────
+    const deltaWh = Math.floor(rawDelta);
+    if (deltaWh <= 0) {
+      return { deviceId, ok: true, burned: false, reason: "No new consumption since last burn" };
+    }
+
+    // ── 4. Burn on-chain (also resets the contract's pendingBurn[wallet]) ─
     const txHash = await burnEngy(walletAddress, deltaWh);
 
     // ── 5. Write checkpoint ──────────────────────────────────────────────
     await checkpointRef.set({
-      lastBurnedEnergyWh: currentEnergyWh,
+      lastBurnedWh: currentEnergyWh,
       lastBurnTxHash: txHash,
       lastBurnAt: Date.now(),
       walletAddress,
@@ -109,7 +157,7 @@ export default async function handler(req: Req, res: Res) {
     const budgetSnap = await db.ref(`meters/${deviceId}/budgetWh`).get();
     const budgetWh: number | null = budgetSnap.exists() ? budgetSnap.val() : null;
     if (budgetWh && budgetWh > 0) {
-      const prevPct = (lastBurnedEnergyWh / budgetWh) * 100;
+      const prevPct = (lastBurnedWh / budgetWh) * 100;
       const newPct = (currentEnergyWh / budgetWh) * 100;
       for (const threshold of SHED_THRESHOLDS) {
         if (prevPct < threshold.pct && newPct >= threshold.pct) {
@@ -122,9 +170,10 @@ export default async function handler(req: Req, res: Res) {
       }
     }
 
-    res.status(200).json({ ok: true, burned: true, deltaWh, txHash });
+    return { deviceId, ok: true, burned: true, deltaWh, txHash };
   } catch (error) {
-    console.error("oracle/burn failed", error);
-    res.status(500).json({ error: error instanceof Error ? error.message : "Unknown error" });
+    const message = error instanceof Error ? error.message : "Unknown error";
+    console.error("oracle/burn: device processing failed", { deviceId, error: message });
+    return { deviceId, ok: false, error: message };
   }
 }

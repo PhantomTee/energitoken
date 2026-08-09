@@ -45,6 +45,18 @@ export async function getEngyBalance(walletAddress: string): Promise<bigint> {
   return contract.balanceOf(walletAddress);
 }
 
+/**
+ * What this wallet can actually transfer right now: on-chain balance minus
+ * energy already consumed but not yet burned (settled) on-chain. The
+ * contract enforces this itself in transfer() -- see EnergiToken.sol's
+ * _update override -- this is just the read-only mirror of that same figure
+ * for the UI to show and pre-validate against.
+ */
+export async function getSpendableBalance(walletAddress: string): Promise<bigint> {
+  const contract = getReadContract();
+  return contract.spendableBalanceOf(walletAddress);
+}
+
 /** A contract instance bound to a signer, for sending transfer() through the user's wallet. */
 export function getWritableContract(signer: ethers.Signer): ethers.Contract {
   return new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
@@ -85,10 +97,12 @@ export async function checkNetworkAndGas(
 export async function runTransferPreflight(
   signer: ethers.Signer,
   amountWh: number,
-  engyBalanceWh: bigint
+  spendableBalanceWh: bigint
 ): Promise<string | null> {
   if (amountWh <= 0) return "Enter an amount greater than 0.";
-  if (BigInt(Math.floor(amountWh)) > engyBalanceWh) return "Amount exceeds your available ENGY balance.";
+  if (BigInt(Math.floor(amountWh)) > spendableBalanceWh) {
+    return "Amount exceeds your spendable balance (energy already used but not yet settled on-chain can't be sent).";
+  }
 
   const provider = signer.provider;
   if (!provider) return "No network connection available from your wallet.";

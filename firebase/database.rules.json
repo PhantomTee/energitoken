@@ -3,7 +3,7 @@
     "uidToWallet": {
       "$uid": {
         ".read":  "auth != null && auth.uid == $uid",
-        ".write": "auth != null && auth.uid == $uid && (!data.exists() || data.val() == newData.val())"
+        ".write": false
       }
     },
 

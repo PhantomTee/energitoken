@@ -23,7 +23,7 @@ type Destination = "/login" | "/unlock" | "/welcome" | "/landing" | PostAuthDest
  *   - Web (or post-unlock) → paired? dashboard : onboarding.
  */
 export default function Index() {
-  const { isReady, isAuthenticated, walletAddress, logout } = useWallet();
+  const { isReady, isAuthenticated, walletAddress, logout, getSigner } = useWallet();
   const [destination, setDestination] = useState<Destination | null>(null);
   // Some Android OEM skins (observed: ColorOS/Oplus) aggressively freeze a
   // just-launched app's background work to save battery, including native
@@ -91,7 +91,7 @@ export default function Index() {
         }
 
         // Web, or a login that literally just completed: resolve final home.
-        const dest = await resolvePostAuthDestination(walletAddress);
+        const dest = await resolvePostAuthDestination(walletAddress, getSigner);
         if (!cancelled) setDestination(dest);
       } catch {
         if (cancelled) return;

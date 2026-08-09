@@ -75,4 +75,69 @@ describe("EnergiToken", () => {
       "OwnableUnauthorizedAccount"
     );
   });
+
+  describe("spendable balance (double-spend guard)", () => {
+    it("spendableBalanceOf is the full balance when nothing is pending", async () => {
+      await token.connect(oracle).mint(alice.address, 1000);
+      expect(await token.spendableBalanceOf(alice.address)).to.equal(1000);
+    });
+
+    it("lets a transfer through when it stays within the spendable balance", async () => {
+      await token.connect(oracle).mint(alice.address, 1000);
+      await token.connect(oracle).setPendingBurn(alice.address, 400);
+      // spendable = 1000 - 400 = 600, sending 600 should be exactly allowed
+      await expect(token.connect(alice).transfer(bob.address, 600)).to.not.be.reverted;
+      expect(await token.balanceOf(bob.address)).to.equal(600);
+    });
+
+    it("reverts a transfer that would eat into pending (unburned) consumption", async () => {
+      await token.connect(oracle).mint(alice.address, 1000);
+      await token.connect(oracle).setPendingBurn(alice.address, 400);
+      // spendable = 600, sending 601 must revert even though the raw balance (1000) covers it
+      await expect(token.connect(alice).transfer(bob.address, 601))
+        .to.be.revertedWithCustomError(token, "SpendableBalanceExceeded")
+        .withArgs(alice.address, 601, 600);
+    });
+
+    it("cannot be bypassed by calling transfer() directly on the contract", async () => {
+      // There is no app layer in this test -- this *is* the direct call a
+      // user could make from Polygonscan's Write tab or a raw ethers script,
+      // proving the guard lives on-chain and not just in app-side UI logic.
+      await token.connect(oracle).mint(alice.address, 500);
+      await token.connect(oracle).setPendingBurn(alice.address, 500);
+      await expect(
+        token.connect(alice).transfer(bob.address, 1)
+      ).to.be.revertedWithCustomError(token, "SpendableBalanceExceeded");
+    });
+
+    it("burnConsumed resets pendingBurn to zero", async () => {
+      await token.connect(oracle).mint(alice.address, 1000);
+      await token.connect(oracle).setPendingBurn(alice.address, 400);
+      await token.connect(oracle).burnConsumed(alice.address, 400);
+      expect(await token.pendingBurn(alice.address)).to.equal(0);
+      expect(await token.spendableBalanceOf(alice.address)).to.equal(600);
+    });
+
+    it("setPendingBurn overwrites rather than accumulates", async () => {
+      await token.connect(oracle).mint(alice.address, 1000);
+      await token.connect(oracle).setPendingBurn(alice.address, 400);
+      await token.connect(oracle).setPendingBurn(alice.address, 250);
+      expect(await token.pendingBurn(alice.address)).to.equal(250);
+    });
+
+    it("reverts when a non-oracle tries to call setPendingBurn", async () => {
+      await expect(token.connect(alice).setPendingBurn(alice.address, 100)).to.be.revertedWith(
+        "EnergiToken: caller is not the oracle"
+      );
+    });
+
+    it("mint and burnConsumed are unaffected by a pending balance", async () => {
+      // from == address(0) (mint) and to == address(0) (burn) must skip the
+      // spendable-balance guard entirely, or the oracle's own calls would revert.
+      await token.connect(oracle).mint(alice.address, 1000);
+      await token.connect(oracle).setPendingBurn(alice.address, 999);
+      await expect(token.connect(oracle).mint(alice.address, 100)).to.not.be.reverted;
+      await expect(token.connect(oracle).burnConsumed(alice.address, 999)).to.not.be.reverted;
+    });
+  });
 });

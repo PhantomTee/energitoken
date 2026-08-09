@@ -82,12 +82,21 @@ as a raw key.
 ## `/uidToWallet/{uid}`
 
 Binds a Firebase Anonymous Auth session (`uid`) to the wallet address that
-session is allowed to act as. Written exactly once per device session, right
-after the app signs in anonymously following a successful Privy login. This is
-the mechanism every other rule uses to scope access back to "the caller's own
-wallet" — see [`database.rules.json`](database.rules.json) for the enforcement
-logic, and the build plan's notes for why this indirection exists (Privy, not
-Firebase Auth, owns wallet identity).
+session is allowed to act as. This is the mechanism every other rule uses to
+scope access back to "the caller's own wallet" — see
+[`database.rules.json`](database.rules.json) for the enforcement logic, and
+the build plan's notes for why this indirection exists (Privy, not Firebase
+Auth, owns wallet identity).
+
+`.write` is `false` for every client — Anonymous Auth alone proves nothing
+about which wallet a session should be trusted for (anyone can sign in
+anonymously for free), so a plain client write here would let anyone bind
+their own session to any victim's wallet address and inherit every rule that
+trusts this mapping (meter reads, `budgetWh`, `relayOverrides` writes). The
+binding is instead created by `app/api/session/bind.ts`, which requires the
+wallet to sign `EnergiToken session bind\nuid:{uid}\nwallet:{walletAddress}`
+(see `src/services/bindMessage.ts`) and verifies that signature server-side
+before writing via the Admin SDK — write-once per `uid`, same as before.
 
 ```
 /uidToWallet/{uid}: walletAddress

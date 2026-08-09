@@ -1,8 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "http";
-import { adminDb } from "../_lib/firebaseAdmin";
+import { adminDb, walletFromAuthHeader } from "../_lib/firebaseAdmin";
 import { sendNotification } from "../_lib/notify";
 
-type Req = IncomingMessage & { method?: string; body?: unknown };
+type Req = IncomingMessage & { method?: string; body?: unknown; headers: Record<string, string | string[] | undefined> };
 type Res = ServerResponse & { status: (code: number) => Res; json: (body: unknown) => void };
 
 const DEVICE_CODE_RE = /^[0-9A-Fa-f]{6}$/;
@@ -12,6 +12,10 @@ const PAIRING_WINDOW_MS = 60 * 60 * 1000; // 1 hour
  * Server-side device pairing — replaces the insecure direct Firebase write.
  *
  * Security improvements over the old client-side flow:
+ *  - The caller's wallet is derived from a verified Firebase ID token (see
+ *    walletFromAuthHeader), not trusted from the request body -- otherwise
+ *    anyone racing a device's pairing window could bind it to a wallet of
+ *    their choosing with a single unauthenticated HTTP request.
  *  - Only claims devices that are in "pairing mode" (pendingDevices entry
  *    written by the ESP32 firmware during setup, expires after 1 hour).
  *  - Pairing codes are enforced to be unclaimed and within the window.
@@ -25,17 +29,18 @@ export default async function handler(req: Req, res: Res) {
     return;
   }
 
+  let walletAddress: string;
+  try {
+    walletAddress = await walletFromAuthHeader(req.headers.authorization as string | undefined);
+  } catch (err) {
+    res.status(401).json({ error: err instanceof Error ? err.message : "Unauthorized" });
+    return;
+  }
+
   try {
     const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
-    const { deviceCode, walletAddress } = (body ?? {}) as {
-      deviceCode?: string;
-      walletAddress?: string;
-    };
+    const { deviceCode } = (body ?? {}) as { deviceCode?: string };
 
-    if (!walletAddress || !/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
-      res.status(400).json({ error: "walletAddress must be a valid 0x address" });
-      return;
-    }
     if (!deviceCode || !DEVICE_CODE_RE.test(deviceCode)) {
       res.status(400).json({ error: "deviceCode must be 6 hex characters" });
       return;

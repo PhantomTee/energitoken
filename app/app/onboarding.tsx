@@ -19,7 +19,7 @@ import { Ionicons } from "@expo/vector-icons";
  */
 export default function OnboardingScreen() {
   const router = useRouter();
-  const { walletAddress, isReady, isAuthenticated, logout } = useWallet();
+  const { walletAddress, isReady, isAuthenticated, logout, getSigner } = useWallet();
   const [code, setCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,8 +54,8 @@ export default function OnboardingScreen() {
     setSubmitting(true);
     setError(null);
     try {
-      await ensureFirebaseSession(walletAddress);
-      await claimDevice(code, walletAddress);
+      await ensureFirebaseSession(walletAddress, getSigner);
+      await claimDevice(code);
       router.replace("/(tabs)/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong linking that device.");

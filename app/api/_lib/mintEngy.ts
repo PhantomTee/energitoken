@@ -1,5 +1,10 @@
 import { ethers } from "ethers";
-import contractInfo from "../../src/config/contract.json";
+// require, not a static `import ... from`: a static import lets TS infer the
+// full ABI JSON's literal type at compile time, and feeding that huge literal
+// into ethers.Contract's overload resolution overflows the type checker's
+// call stack (same fix as app/src/services/contract.ts).
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const contractInfo: { address: string; abi: unknown } = require("../../src/config/contract.json");
 
 /** Public RPC endpoints are occasionally unreachable (DNS hiccups, rate
  * limits) from Vercel's serverless network -- retry a few times with a short
@@ -35,7 +40,7 @@ export async function mintEngy(toAddress: string, whAmount: number): Promise<str
 
   const provider = new ethers.JsonRpcProvider(rpcUrl);
   const oracleWallet = new ethers.Wallet(oraclePrivateKey, provider);
-  const contract = new ethers.Contract(contractInfo.address, contractInfo.abi, oracleWallet);
+  const contract = new ethers.Contract(contractInfo.address, contractInfo.abi as ethers.InterfaceAbi, oracleWallet);
 
   let lastSendError: unknown;
   for (let attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt++) {

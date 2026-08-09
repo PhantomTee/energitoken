@@ -20,7 +20,13 @@ import { typography, spacing, radius } from "../../src/theme/typography";
 import { TxStatus, TxState } from "../../src/components/TxStatus";
 import { MobileTopBar } from "../../src/components/MobileTopBar";
 import { useWallet } from "../../src/hooks/useWallet";
-import { getEngyBalance, getWritableContract, runTransferPreflight, checkNetworkAndGas } from "../../src/services/contract";
+import {
+  getEngyBalance,
+  getSpendableBalance,
+  getWritableContract,
+  runTransferPreflight,
+  checkNetworkAndGas,
+} from "../../src/services/contract";
 import { resolveEmailToAddress } from "../../src/services/directory";
 import { ensureFirebaseSession } from "../../src/services/firebaseSession";
 import { QRScanner } from "../../src/components/QRScanner";
@@ -66,6 +72,25 @@ function PreflightRow({
   );
 }
 
+/**
+ * The client-side spendable-balance check (isValidAmount / runTransferPreflight)
+ * covers the common case, but the on-chain figure can move between the quote
+ * and the send (e.g. a burn/pendingBurn update lands in between) -- the
+ * contract's own SpendableBalanceExceeded revert is the real backstop, so
+ * surface it with the same friendly wording rather than a raw ethers error.
+ */
+function describeTransferError(err: unknown): string {
+  const anyErr = err as { revert?: { name?: string }; shortMessage?: string; reason?: string } | undefined;
+  const looksLikeSpendableRevert =
+    anyErr?.revert?.name === "SpendableBalanceExceeded" ||
+    (anyErr?.shortMessage ?? anyErr?.reason ?? "").includes("SpendableBalanceExceeded");
+
+  if (looksLikeSpendableRevert) {
+    return "That amount exceeds your spendable balance — some of your on-chain balance is energy you've already used that hasn't settled yet. Try a smaller amount.";
+  }
+  return err instanceof Error ? err.message : "Something went wrong.";
+}
+
 type RecipientMode = "email" | "address" | "qr";
 
 const RECIPIENT_TABS: { key: RecipientMode; label: string; icon: keyof typeof Ionicons.glyphMap }[] = Platform.OS === "web"
@@ -93,6 +118,7 @@ export default function TransferScreen() {
   const [txHash, setTxHash] = useState<string | undefined>();
   const [txError, setTxError] = useState<string | undefined>();
   const [balanceWh, setBalanceWh] = useState<bigint | null>(null);
+  const [spendableWh, setSpendableWh] = useState<bigint | null>(null);
   const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
   const [resolving, setResolving] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
@@ -108,10 +134,14 @@ export default function TransferScreen() {
   const refreshBalance = useCallback(async () => {
     if (!walletAddress) return;
     try {
-      const balance = await getEngyBalance(walletAddress);
+      const [balance, spendable] = await Promise.all([
+        getEngyBalance(walletAddress),
+        getSpendableBalance(walletAddress),
+      ]);
       setBalanceWh(balance);
+      setSpendableWh(spendable);
     } catch {
-      // leave balance as-is; the UI shows a loading state until a read succeeds
+      // leave balances as-is; the UI shows a loading state until a read succeeds
     }
   }, [walletAddress]);
 
@@ -137,7 +167,7 @@ export default function TransferScreen() {
 
     setResolving(true);
     const timer = setTimeout(() => {
-      ensureFirebaseSession(walletAddress)
+      ensureFirebaseSession(walletAddress, getSigner)
         .then(() => resolveEmailToAddress(recipient))
         .then((address) => {
           if (address) {
@@ -163,7 +193,7 @@ export default function TransferScreen() {
           : null;
   const amountWh = Number(amount);
   const isValidRecipient = effectiveAddress !== null;
-  const isValidAmount = balanceWh !== null && amountWh > 0 && BigInt(Math.floor(amountWh)) <= balanceWh;
+  const isValidAmount = spendableWh !== null && amountWh > 0 && BigInt(Math.floor(amountWh)) <= spendableWh;
   const canSubmit = isValidAmount && isValidRecipient && !resolving && networkOk === true && gasOk === true;
 
   // Live network + gas check, once recipient and amount are otherwise valid --
@@ -209,7 +239,7 @@ export default function TransferScreen() {
     try {
       const signer = await getSigner();
 
-      const preflightError = await runTransferPreflight(signer, amountWh, balanceWh ?? 0n);
+      const preflightError = await runTransferPreflight(signer, amountWh, spendableWh ?? 0n);
       if (preflightError) {
         setTxState("failed");
         setTxError(preflightError);
@@ -226,7 +256,7 @@ export default function TransferScreen() {
       if (isDesktop) refreshHistory();
     } catch (err) {
       setTxState("failed");
-      setTxError(err instanceof Error ? err.message : "Something went wrong.");
+      setTxError(describeTransferError(err));
     }
   };
 
@@ -266,9 +296,15 @@ export default function TransferScreen() {
       <View style={styles.availablePill}>
         <Text style={[typography.caption, styles.availablePillLabel]}>Available to send:</Text>
         <Text style={[typography.dataSm, styles.availablePillValue]}>
-          {balanceWh === null ? "···" : `${balanceWh.toLocaleString()} ENGY`}
+          {spendableWh === null ? "···" : `${spendableWh.toLocaleString()} ENGY`}
         </Text>
       </View>
+      {balanceWh !== null && spendableWh !== null && balanceWh !== spendableWh && (
+        <Text style={[typography.caption, styles.spendableHint]}>
+          On-chain balance is {balanceWh.toLocaleString()} ENGY — the difference is energy you've
+          already used that hasn't settled on-chain yet, so it can't be sent.
+        </Text>
+      )}
 
       <View style={isDesktop ? styles.desktopRow : undefined}>
       <View style={isDesktop ? styles.desktopFormCol : undefined}>
@@ -376,8 +412,8 @@ export default function TransferScreen() {
 
       <View style={styles.amountLabelRow}>
         <Text style={[typography.label, styles.fieldLabel, { marginTop: 0 }]}>AMOUNT (ENGY)</Text>
-        {balanceWh !== null && (
-          <Pressable onPress={() => setAmount(String(balanceWh))} disabled={txState !== "idle"}>
+        {spendableWh !== null && (
+          <Pressable onPress={() => setAmount(String(spendableWh))} disabled={txState !== "idle"}>
             <Text style={[typography.dataXs, styles.sendMaxLink]}>Send Max</Text>
           </Pressable>
         )}
@@ -391,9 +427,9 @@ export default function TransferScreen() {
         keyboardType="numeric"
         editable={txState === "idle"}
       />
-      {amount.length > 0 && balanceWh !== null && !isValidAmount && (
+      {amount.length > 0 && spendableWh !== null && !isValidAmount && (
         <Text style={[typography.caption, styles.errorHint]}>
-          {amountWh <= 0 ? "Enter an amount greater than 0." : "Amount exceeds your available balance."}
+          {amountWh <= 0 ? "Enter an amount greater than 0." : "Amount exceeds your spendable balance."}
         </Text>
       )}
 
@@ -658,6 +694,7 @@ const styles = StyleSheet.create({
   },
   availablePillLabel: { color: colors.textSecondary },
   availablePillValue: { color: colors.indigo[900] },
+  spendableHint: { color: colors.textSecondary, textAlign: "center", marginBottom: spacing.md, marginTop: -spacing.xs },
   amountLabelRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   sendMaxLink: { color: colors.terracotta[500], fontWeight: "700" },
   errorHint: { color: colors.danger, marginTop: spacing.xs },

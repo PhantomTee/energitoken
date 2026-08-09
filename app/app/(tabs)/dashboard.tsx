@@ -11,7 +11,7 @@ import { RelayIndicator } from "../../src/components/RelayIndicator";
 import { LiveMockBanner } from "../../src/components/LiveMockBanner";
 import { useWallet } from "../../src/hooks/useWallet";
 import { TopUpModal } from "../../src/components/TopUpModal";
-import { getEngyBalance } from "../../src/services/contract";
+import { getEngyBalance, getSpendableBalance } from "../../src/services/contract";
 import { useMeterData, MeterMode } from "../../src/hooks/useMeterData";
 import { writeDirectoryEntry } from "../../src/services/directory";
 import { tokensToUnits, whToUnits } from "../../src/services/units";
@@ -41,13 +41,14 @@ function formatSecondsAgo(updatedAt: number, nowMs: number): string {
 export default function DashboardScreen() {
   const isDesktop = useIsDesktopWeb();
   const [mode, setMode] = useState<MeterMode>("mock");
-  const { walletAddress, email, logout } = useWallet();
+  const { walletAddress, email, logout, getSigner } = useWallet();
   const [topUpVisible, setTopUpVisible] = useState(false);
   const [notifVisible, setNotifVisible] = useState(false);
   const [showMoreReadings, setShowMoreReadings] = useState(false);
   const { notifications, unreadCount, markAllRead } = useNotifications(walletAddress);
   usePushNotifications(walletAddress);
   const [balanceWh, setBalanceWh] = useState<bigint | null>(null);
+  const [spendableWh, setSpendableWh] = useState<bigint | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [relayBusyTier, setRelayBusyTier] = useState<RelayTier | null>(null);
   const [relayError, setRelayError] = useState<string | null>(null);
@@ -60,15 +61,19 @@ export default function DashboardScreen() {
     error: meterError,
     deviceId,
     hasDevice,
-  } = useMeterData(walletAddress, mode);
+  } = useMeterData(walletAddress, mode, getSigner);
 
   const refreshBalance = useCallback(async () => {
     if (!walletAddress) return;
     try {
-      const balance = await getEngyBalance(walletAddress);
+      const [balance, spendable] = await Promise.all([
+        getEngyBalance(walletAddress),
+        getSpendableBalance(walletAddress),
+      ]);
       setBalanceWh(balance);
+      setSpendableWh(spendable);
     } catch {
-      // leave the previous balance on screen rather than clearing it on a transient RPC error
+      // leave the previous balances on screen rather than clearing them on a transient RPC error
     }
   }, [walletAddress]);
 
@@ -269,9 +274,15 @@ export default function DashboardScreen() {
               </View>
               <Text style={[typography.label, styles.walletLabel]}>Available Balance</Text>
               <Text style={[typography.dataMd, styles.walletValue]}>
-                {balanceWh === null ? "···" : tokensToUnits(balanceWh).toLocaleString()}
+                {spendableWh === null ? "···" : tokensToUnits(spendableWh).toLocaleString()}
                 <Text style={[typography.dataXs, styles.walletUnit]}> ENGY</Text>
               </Text>
+              {balanceWh !== null && spendableWh !== null && balanceWh !== spendableWh && (
+                <Text style={[typography.caption, styles.walletSpendableHint]}>
+                  {tokensToUnits(balanceWh).toLocaleString()} ENGY on-chain — the rest is energy
+                  already used but not yet settled.
+                </Text>
+              )}
               {walletAddress && (
                 <Pressable style={styles.walletTopUpButton} onPress={() => setTopUpVisible(true)}>
                   <Text style={[typography.bodyStrong, styles.quickActionText]}>+ Top Up Balance</Text>
@@ -393,6 +404,12 @@ export default function DashboardScreen() {
             <Text style={[typography.dataSm, styles.balanceUnit]}>
               ≈ {balanceWh === null ? "···" : balanceWh.toLocaleString()} Wh credit
             </Text>
+            {balanceWh !== null && spendableWh !== null && balanceWh !== spendableWh && (
+              <Text style={[typography.caption, styles.balanceSpendableHint]}>
+                {tokensToUnits(spendableWh).toLocaleString()} ENGY spendable — the rest is energy
+                already used but not yet settled on-chain.
+              </Text>
+            )}
             {walletAddress && (
               <Pressable style={styles.topUpButton} onPress={() => setTopUpVisible(true)}>
                 <Text style={[typography.bodyStrong, styles.quickActionText]}>Top Up</Text>
@@ -471,6 +488,7 @@ const styles = StyleSheet.create({
   balanceValue: { color: colors.panelInsetText, marginTop: spacing.xs },
   balanceValueUnit: { color: colors.indigo[100] },
   balanceUnit: { color: colors.indigo[100], opacity: 0.85, marginBottom: spacing.md },
+  balanceSpendableHint: { color: colors.indigo[100], opacity: 0.7, marginTop: -spacing.sm, marginBottom: spacing.md },
   topUpButton: {
     backgroundColor: colors.terracotta[500],
     borderRadius: radius.pill,
@@ -535,6 +553,7 @@ const styles = StyleSheet.create({
   walletLabel: { color: colors.textSecondary, marginTop: spacing.md },
   walletValue: { color: colors.indigo[900], marginTop: spacing.xs },
   walletUnit: { color: colors.textSecondary },
+  walletSpendableHint: { color: colors.textSecondary, marginTop: spacing.xs },
   walletTopUpButton: {
     backgroundColor: colors.terracotta[500],
     borderRadius: radius.md,
