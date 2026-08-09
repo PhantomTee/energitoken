@@ -12,6 +12,7 @@ import { LiveMockBanner } from "../../src/components/LiveMockBanner";
 import { useWallet } from "../../src/hooks/useWallet";
 import { TopUpModal } from "../../src/components/TopUpModal";
 import { getEngyBalance, getSpendableBalance } from "../../src/services/contract";
+import { setMeterTokenBalance } from "../../src/services/budget";
 import { useMeterData, MeterMode } from "../../src/hooks/useMeterData";
 import { writeDirectoryEntry } from "../../src/services/directory";
 import { tokensToUnits, whToUnits } from "../../src/services/units";
@@ -72,10 +73,16 @@ export default function DashboardScreen() {
       ]);
       setBalanceWh(balance);
       setSpendableWh(spendable);
+      if (deviceId) {
+        setMeterTokenBalance(deviceId, Number(spendable)).catch(() => {
+          // best-effort mirror for the meter's local display; a failed write
+          // here shouldn't disrupt the balance the app itself just showed
+        });
+      }
     } catch {
       // leave the previous balances on screen rather than clearing them on a transient RPC error
     }
-  }, [walletAddress]);
+  }, [walletAddress, deviceId]);
 
   useFocusEffect(
     useCallback(() => {

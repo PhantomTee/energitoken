@@ -15,6 +15,7 @@ to whichever device the current wallet is bound to (see `/deviceToWallet` below)
     powerFactor:    number   (0-1, PZEM-004T reports this directly)
     energyWh:       number   (cumulative Wh this cycle)
     budgetWh:       number   (user-set budget, in Wh -- see unit note below)
+    tokenBalance:   number   (household's spendable ENGY, in Wh -- see note below)
     percentUsed:    number   (0-100)
     relays:         { r1: bool, r2: bool, r3: bool, r4: bool }
     relayOverrides: { r1?: bool, r2?: bool, r3?: bool, r4?: bool }
@@ -41,6 +42,16 @@ field both stay in Wh (1 ENGY token = 1 Wh); the app is the only place that
 ever shows the user "units" (1 unit = 1 kWh = 1,000 Wh = 1,000 ENGY), via
 `src/services/units.ts`. Don't add a raw-Wh display anywhere in the UI --
 always convert at the boundary.
+
+`tokenBalance` exists purely so a physical meter, which has no way to read
+the blockchain itself, can show a household's balance on its own local
+screen. The real balance lives on-chain (`spendableBalanceOf()` on
+`EnergiToken.sol`); this is a best-effort mirror of that figure, written by
+the app's Dashboard (`src/services/budget.ts`'s `setMeterTokenBalance`)
+every time it refreshes the on-chain balance. It's spendable balance being
+mirrored here, not raw on-chain balance, for the same reason the app shows
+spendable everywhere else: it's what the household actually still has to
+use. Same write scoping as `budgetWh`.
 
 ## `/deviceToWallet/{deviceId}` and `/walletToDevice/{wallet}`
 

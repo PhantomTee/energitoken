@@ -16,3 +16,16 @@ export async function getBudgetWh(deviceId: string): Promise<number | null> {
 export async function setBudgetWh(deviceId: string, budgetWh: number): Promise<void> {
   await set(ref(db, `meters/${deviceId}/budgetWh`), budgetWh);
 }
+
+/**
+ * Mirrors the household's spendable ENGY balance into Firebase so the
+ * physical meter (which has no way to read the chain itself) can show it on
+ * its local balance screen. Spendable, not raw on-chain balance -- that's
+ * the figure that's actually still theirs to use, same distinction the app
+ * shows on Dashboard/Transfer. Best-effort: called after every balance
+ * refresh, so a missed write just means the meter's screen is stale until
+ * the next one, not a broken state.
+ */
+export async function setMeterTokenBalance(deviceId: string, spendableWh: number): Promise<void> {
+  await set(ref(db, `meters/${deviceId}/tokenBalance`), spendableWh);
+}
