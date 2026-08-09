@@ -14,7 +14,8 @@ to whichever device the current wallet is bound to (see `/deviceToWallet` below)
     frequency:      number   (Hz, mains frequency -- PZEM-004T reports this directly)
     powerFactor:    number   (0-1, PZEM-004T reports this directly)
     energyWh:       number   (cumulative Wh this cycle)
-    budgetWh:       number   (user-set budget, in Wh -- see unit note below)
+    budgetWh:       number   (user-set DAILY budget, in Wh -- see unit note below)
+    cycleStartedAt: number   (unix ms -- see cycle-signal note below)
     tokenBalance:   number   (household's spendable ENGY, in Wh -- see note below)
     percentUsed:    number   (0-100)
     relays:         { r1: bool, r2: bool, r3: bool, r4: bool }
@@ -42,6 +43,23 @@ field both stay in Wh (1 ENGY token = 1 Wh); the app is the only place that
 ever shows the user "units" (1 unit = 1 kWh = 1,000 Wh = 1,000 ENGY), via
 `src/services/units.ts`. Don't add a raw-Wh display anywhere in the UI --
 always convert at the boundary.
+
+`budgetWh` is a **daily** figure (`balance / durationDays`, computed once
+when the household picks a duration), not a whole-period total. Its value
+only ever changes when the household explicitly changes their plan, so a
+firmware that resets its consumption cycle purely by detecting "did budgetWh
+change" only gets one real day of allowance before shedding down for the
+rest of the household's chosen period. `cycleStartedAt` is the dedicated
+fix: firmware resets its local cycle whenever the value it reads back
+differs from the last one it stored in NVS, independent of whether budgetWh
+itself moved. Two things write it, atomically alongside `budgetWh` from
+`setBudgetWh()` whenever a household sets or changes their plan (an
+immediate reset), and a daily cron (`api/oracle/cycle-tick.ts`, see
+`.github/workflows/burn-oracle.yml`) that rewrites it every 24 hours
+regardless (the routine roll-over). Firmware should also keep a local
+24-hour fallback that rolls the cycle on-device if no new signal has arrived
+in time, so a missed cron run doesn't strand every meter shed to
+critical-only until someone notices.
 
 `tokenBalance` exists purely so a physical meter, which has no way to read
 the blockchain itself, can show a household's balance on its own local

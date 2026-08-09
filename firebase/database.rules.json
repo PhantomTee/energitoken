@@ -30,6 +30,11 @@
           ".validate": "newData.isNumber() && newData.val() >= 0"
         },
 
+        "cycleStartedAt": {
+          ".write": "auth != null && root.child('deviceToWallet').child($deviceId).val() == root.child('uidToWallet').child(auth.uid).val()",
+          ".validate": "newData.isNumber()"
+        },
+
         "relayOverrides": {
           "$tier": {
             ".write": "auth != null && root.child('deviceToWallet').child($deviceId).val() == root.child('uidToWallet').child(auth.uid).val()",

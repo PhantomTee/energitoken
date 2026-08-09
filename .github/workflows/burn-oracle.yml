@@ -1,16 +1,21 @@
 name: EnergiToken consumption oracle
 
-# Keeps on-chain token balances honest against real electricity usage.
-# Two schedules, matching the two on-chain operations:
+# Keeps on-chain token balances honest against real electricity usage, and
+# keeps each meter's daily budget cycle rolling over.
+# Three schedules:
 #   - set-pending (every 5 min): keeps each wallet's pendingBurn current so
 #     transfer() can enforce a spendable balance between burns.
 #   - burn (hourly): actually burns settled consumption and resets pendingBurn.
+#   - cycle-tick (daily): rewrites cycleStartedAt for every budgeted device,
+#     since budgetWh is a daily figure that's only ever written once -- see
+#     firebase/schema.md's cycleStartedAt note for why this exists.
 # A GitHub Actions cron, not Vercel cron, per the design brief -- keeps
 # ORACLE_SECRET out of Vercel's own cron config and in one place (repo secrets).
 on:
   schedule:
     - cron: "*/5 * * * *"
     - cron: "0 * * * *"
+    - cron: "0 0 * * *"
   workflow_dispatch: {}
 
 jobs:
@@ -32,6 +37,17 @@ jobs:
       - name: Call /api/oracle/burn
         run: |
           curl -sf -X POST "https://energitoken.vercel.app/api/oracle/burn" \
+            -H "x-oracle-secret: ${{ secrets.ORACLE_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -d '{}'
+
+  cycle-tick:
+    if: github.event.schedule == '0 0 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call /api/oracle/cycle-tick
+        run: |
+          curl -sf -X POST "https://energitoken.vercel.app/api/oracle/cycle-tick" \
             -H "x-oracle-secret: ${{ secrets.ORACLE_SECRET }}" \
             -H "Content-Type: application/json" \
             -d '{}'
