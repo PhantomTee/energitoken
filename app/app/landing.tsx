@@ -5,8 +5,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../src/theme/colors";
 import { typography, spacing, radius } from "../src/theme/typography";
 import { AdinkraAccent } from "../src/theme/motifs/AdinkraAccent";
+import { CONTRACT_ADDRESS } from "../src/services/contract";
 
-const CONTRACT_ADDRESS = "0x8493324De9578BF390092ed6c4a5b1033fBF8048";
 const EXPLORER_URL = `https://amoy.polygonscan.com/address/${CONTRACT_ADDRESS}`;
 const GITHUB_URL = "https://github.com/PhantomTee/energitoken";
 
