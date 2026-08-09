@@ -210,14 +210,10 @@ export default function DashboardScreen() {
         </View>
       </View>
 
-      {isDesktop ? (
+      {isDesktop && (
         <View style={styles.pageHeading}>
           <Text style={[typography.h1, styles.pageTitle]}>Overview</Text>
           <Text style={[typography.body, styles.pageSubtitle]}>Live metrics and energy management status.</Text>
-        </View>
-      ) : (
-        <View style={styles.heroBand}>
-          <Text style={[typography.display, styles.heroBandTitle]}>System Dashboard</Text>
         </View>
       )}
 
@@ -313,6 +309,29 @@ export default function DashboardScreen() {
         </>
       ) : (
         <>
+          {/* ── ENGY Balance -- first thing on the screen ── */}
+          <View style={styles.balanceCard}>
+            <Text style={[typography.bodyStrong, styles.balanceCardTitle]}>ENGY Balance</Text>
+            <Text style={[typography.data, styles.balanceValue]}>
+              {balanceWh === null ? "···" : tokensToUnits(balanceWh).toLocaleString()}
+              <Text style={[typography.dataSm, styles.balanceValueUnit]}> ENGY</Text>
+            </Text>
+            <Text style={[typography.dataSm, styles.balanceUnit]}>
+              ≈ {balanceWh === null ? "···" : balanceWh.toLocaleString()} Wh credit
+            </Text>
+            {balanceWh !== null && spendableWh !== null && balanceWh !== spendableWh && (
+              <Text style={[typography.caption, styles.balanceSpendableHint]}>
+                {tokensToUnits(spendableWh).toLocaleString()} ENGY spendable — the rest is energy
+                already used but not yet settled on-chain.
+              </Text>
+            )}
+            {walletAddress && (
+              <Pressable style={styles.topUpButton} onPress={() => setTopUpVisible(true)}>
+                <Text style={[typography.bodyStrong, styles.quickActionText]}>Top Up</Text>
+              </Pressable>
+            )}
+          </View>
+
           {mode === "live" && !hasDevice && !meterLoading && (
             <View style={styles.meterStatusRow}>
               <Text style={[typography.caption, styles.meterStatusText]}>No device paired yet</Text>
@@ -400,29 +419,6 @@ export default function DashboardScreen() {
               {reading?.budgetWh != null ? reading.budgetWh.toLocaleString() : "—"} Wh
             </Text>
           </View>
-
-          {/* ── ENGY Balance ── */}
-          <View style={styles.balanceCard}>
-            <Text style={[typography.bodyStrong, styles.balanceCardTitle]}>ENGY Balance</Text>
-            <Text style={[typography.data, styles.balanceValue]}>
-              {balanceWh === null ? "···" : tokensToUnits(balanceWh).toLocaleString()}
-              <Text style={[typography.dataSm, styles.balanceValueUnit]}> ENGY</Text>
-            </Text>
-            <Text style={[typography.dataSm, styles.balanceUnit]}>
-              ≈ {balanceWh === null ? "···" : balanceWh.toLocaleString()} Wh credit
-            </Text>
-            {balanceWh !== null && spendableWh !== null && balanceWh !== spendableWh && (
-              <Text style={[typography.caption, styles.balanceSpendableHint]}>
-                {tokensToUnits(spendableWh).toLocaleString()} ENGY spendable — the rest is energy
-                already used but not yet settled on-chain.
-              </Text>
-            )}
-            {walletAddress && (
-              <Pressable style={styles.topUpButton} onPress={() => setTopUpVisible(true)}>
-                <Text style={[typography.bodyStrong, styles.quickActionText]}>Top Up</Text>
-              </Pressable>
-            )}
-          </View>
         </>
       )}
 
@@ -447,13 +443,6 @@ const styles = StyleSheet.create({
   pageHeading: { marginBottom: spacing.xs },
   pageTitle: { color: colors.indigo[900] },
   pageSubtitle: { color: colors.textSecondary, marginTop: spacing.xs },
-  heroBand: {
-    backgroundColor: colors.indigo[900],
-    borderRadius: radius.lg,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.xl,
-  },
-  heroBandTitle: { color: colors.indigo[700], fontSize: 28 },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   brandRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   brandWordmark: { color: colors.textPrimary, letterSpacing: 0.5 },
