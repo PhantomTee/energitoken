@@ -47,7 +47,7 @@ export default async function handler(req: Req, res: Res) {
 
     if (deviceId) {
       const result = await tickDevice(db, deviceId);
-      if (!result.ok) {
+      if ("error" in result) {
         res.status(result.error === "Device not paired to any wallet" ? 404 : 500).json(result);
         return;
       }

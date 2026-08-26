@@ -13,7 +13,7 @@ export async function getDeviceForWallet(
   getSigner: () => Promise<ethers.Signer>
 ): Promise<string | null> {
   const result = await apiRequest<{ hasDevice: boolean; deviceId?: string }>(
-    "/api/meters/mine",
+    "/api/data?resource=meters",
     walletAddress,
     getSigner
   );
@@ -21,7 +21,7 @@ export async function getDeviceForWallet(
 }
 
 /**
- * Claims a device via the server-side API (/api/devices/claim).
+ * Claims a device via the server-side API (/api/devices).
  * The API enforces:
  *   - Device must be in pairing mode (ESP32 setup button held, 1h window)
  *   - Device must not already be claimed by another wallet
@@ -37,10 +37,13 @@ export async function claimDevice(
     throw new Error("Device code must be 6 hex characters (0-9, A-F).");
   }
 
-  await apiRequest("/api/devices/claim", walletAddress, getSigner, { method: "POST", body: { deviceCode } });
+  await apiRequest("/api/devices", walletAddress, getSigner, {
+    method: "POST",
+    body: { action: "claim", deviceCode },
+  });
 }
 
-/** Removes the caller's device pairing via /api/devices/unbind. */
+/** Removes the caller's device pairing via /api/devices. */
 export async function unbindDevice(walletAddress: string, getSigner: () => Promise<ethers.Signer>): Promise<void> {
-  await apiRequest("/api/devices/unbind", walletAddress, getSigner, { method: "POST" });
+  await apiRequest("/api/devices", walletAddress, getSigner, { method: "POST", body: { action: "unbind" } });
 }

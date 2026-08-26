@@ -8,11 +8,12 @@ const POLL_INTERVAL_MS = 4000;
 type MineResponse = { hasDevice: false } | { hasDevice: true; deviceId: string; reading: MeterReading | null };
 
 /**
- * Polls /api/meters/mine (server-side, via Admin SDK) for this wallet's
- * paired device and its live reading. Replaces the old direct Firebase
- * onValue() realtime listener -- the client no longer talks to Firebase at
- * all, so this trades true push-based realtime for a short poll interval,
- * which is unaffected by any client-side Firebase Auth network issues.
+ * Polls /api/data?resource=meters (server-side, via Admin SDK) for this
+ * wallet's paired device and its live reading. Replaces the old direct
+ * Firebase onValue() realtime listener -- the client no longer talks to
+ * Firebase at all, so this trades true push-based realtime for a short
+ * poll interval, which is unaffected by any client-side Firebase Auth
+ * network issues.
  */
 export function useMeterData(walletAddress: string | null, getSigner: () => Promise<ethers.Signer>) {
   const [reading, setReading] = useState<MeterReading | null>(null);
@@ -31,7 +32,7 @@ export function useMeterData(walletAddress: string | null, getSigner: () => Prom
       if (inFlightRef.current) return;
       inFlightRef.current = true;
       try {
-        const result = await apiRequest<MineResponse>("/api/meters/mine", walletAddress, getSigner);
+        const result = await apiRequest<MineResponse>("/api/data?resource=meters", walletAddress, getSigner);
         if (cancelled) return;
 
         if (!result.hasDevice) {

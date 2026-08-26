@@ -63,7 +63,7 @@ export default async function handler(req: Req, res: Res) {
 
     if (deviceId) {
       const result = await processDevice(db, deviceId);
-      if (!result.ok) {
+      if ("error" in result) {
         res.status(result.error === "Device not paired to any wallet" || result.error === "No meter reading found for device" ? 404 : 500).json(result);
         return;
       }

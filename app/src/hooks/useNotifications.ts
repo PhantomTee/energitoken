@@ -16,8 +16,8 @@ const POLL_INTERVAL_MS = 8000;
 /**
  * In-app notifications for the signed-in wallet. Server functions write to
  * /notifications/{wallet} (see app/api/_lib/notify.ts); this hook polls
- * /api/notifications/list (server-side, Admin SDK) for the latest 50,
- * newest first, instead of a direct Firebase realtime listener.
+ * /api/data?resource=notifications (server-side, Admin SDK) for the
+ * latest 50, newest first, instead of a direct Firebase realtime listener.
  */
 export function useNotifications(walletAddress: string | null, getSigner: () => Promise<ethers.Signer>) {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -36,7 +36,7 @@ export function useNotifications(walletAddress: string | null, getSigner: () => 
       inFlightRef.current = true;
       try {
         const result = await apiRequest<{ notifications: AppNotification[] }>(
-          "/api/notifications/list",
+          "/api/data?resource=notifications",
           walletAddress,
           getSigner
         );
@@ -67,9 +67,9 @@ export function useNotifications(walletAddress: string | null, getSigner: () => 
     const ids = notifications.filter((n) => !n.read).map((n) => n.id);
     if (ids.length === 0) return;
     setNotifications((prev) => prev.map((n) => (ids.includes(n.id) ? { ...n, read: true } : n)));
-    await apiRequest("/api/notifications/mark-read", walletAddress, getSigner, {
+    await apiRequest("/api/data", walletAddress, getSigner, {
       method: "POST",
-      body: { ids },
+      body: { resource: "notifications", action: "mark-read", ids },
     }).catch(() => {/* non-critical */});
   };
 

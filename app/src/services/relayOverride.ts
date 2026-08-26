@@ -16,8 +16,8 @@ export async function setRelayOverride(
   walletAddress: string,
   getSigner: () => Promise<ethers.Signer>
 ): Promise<void> {
-  await apiRequest("/api/meters/relay-override", walletAddress, getSigner, {
+  await apiRequest("/api/data", walletAddress, getSigner, {
     method: "POST",
-    body: { tier, value },
+    body: { resource: "meters", action: "relay-override", tier, value },
   });
 }

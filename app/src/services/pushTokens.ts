@@ -9,8 +9,8 @@ export async function savePushToken(
   expoPushToken: string,
   getSigner: () => Promise<ethers.Signer>
 ): Promise<void> {
-  await apiRequest("/api/notifications/push-token", walletAddress, getSigner, {
+  await apiRequest("/api/data", walletAddress, getSigner, {
     method: "POST",
-    body: { expoPushToken },
+    body: { resource: "notifications", action: "push-token", expoPushToken },
   });
 }

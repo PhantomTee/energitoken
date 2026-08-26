@@ -18,7 +18,10 @@ export async function setBudgetWh(
   walletAddress: string,
   getSigner: () => Promise<ethers.Signer>
 ): Promise<void> {
-  await apiRequest("/api/meters/budget", walletAddress, getSigner, { method: "POST", body: { budgetWh } });
+  await apiRequest("/api/data", walletAddress, getSigner, {
+    method: "POST",
+    body: { resource: "meters", action: "budget", budgetWh },
+  });
 }
 
 /**
@@ -34,8 +37,8 @@ export async function setMeterTokenBalance(
   walletAddress: string,
   getSigner: () => Promise<ethers.Signer>
 ): Promise<void> {
-  await apiRequest("/api/meters/token-balance", walletAddress, getSigner, {
+  await apiRequest("/api/data", walletAddress, getSigner, {
     method: "POST",
-    body: { spendableWh },
+    body: { resource: "meters", action: "token-balance", spendableWh },
   });
 }
