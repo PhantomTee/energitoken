@@ -53,6 +53,8 @@
         "frequency":   { ".write": false },
         "powerFactor": { ".write": false },
         "energyWh":    { ".write": false },
+        "energyWhInt": { ".write": false },
+        "sig":         { ".write": false },
         "relays":      { ".write": false },
         "updatedAt":   { ".write": false },
         "percentUsed": { ".write": false }

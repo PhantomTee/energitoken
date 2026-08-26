@@ -40,10 +40,14 @@ type Props = {
   variant?: "guide" | "compact";
 };
 
-function nextOverrideValue(current: boolean | undefined): boolean | null {
-  if (current === undefined) return true; // auto -> force ON
-  if (current === true) return false; // force ON -> force OFF
-  return null; // force OFF -> auto
+function nextOverrideValue(current: boolean | undefined, displayedOn: boolean): boolean | null {
+  // From auto, one tap should do the thing that looks obvious on screen --
+  // flip whatever's currently displayed -- rather than always forcing ON
+  // first regardless of state. Forcing ON when the load is already on (its
+  // auto value) produced no visible change, so turning something off that
+  // was already on used to take two taps instead of one.
+  if (current === undefined) return !displayedOn;
+  return null; // already forced (either direction) -> back to auto
 }
 
 export function RelayIndicator({ relays, overrides, onToggle, disabledTier, variant = "guide" }: Props) {
@@ -77,7 +81,7 @@ export function RelayIndicator({ relays, overrides, onToggle, disabledTier, vari
           return (
             <Pressable
               key={tier}
-              onPress={() => onToggle(tier, nextOverrideValue(override))}
+              onPress={() => onToggle(tier, nextOverrideValue(override, on))}
               disabled={busy}
               style={({ pressed }) => [styles.compactItem, pressed && styles.pressed]}
             >
@@ -137,7 +141,7 @@ export function RelayIndicator({ relays, overrides, onToggle, disabledTier, vari
           return (
             <Pressable
               key={tier}
-              onPress={() => onToggle(tier, nextOverrideValue(override))}
+              onPress={() => onToggle(tier, nextOverrideValue(override, on))}
               disabled={busy}
               style={({ pressed, hovered }: any) => [pressed && styles.pressed, hovered && styles.hovered]}
             >

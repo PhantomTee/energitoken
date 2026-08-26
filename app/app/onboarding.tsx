@@ -5,7 +5,7 @@ import { colors } from "../src/theme/colors";
 import { typography, spacing, radius } from "../src/theme/typography";
 import { AdinkraAccent } from "../src/theme/motifs/AdinkraAccent";
 import { useWallet } from "../src/hooks/useWallet";
-import { ensureFirebaseSession, clearFirebaseSession } from "../src/services/firebaseSession";
+import { clearFirebaseSession } from "../src/services/firebaseSession";
 import { claimDevice, DEVICE_CODE_PATTERN } from "../src/services/deviceBinding";
 import { QRScanner } from "../src/components/QRScanner";
 import { Ionicons } from "@expo/vector-icons";
@@ -54,8 +54,7 @@ export default function OnboardingScreen() {
     setSubmitting(true);
     setError(null);
     try {
-      await ensureFirebaseSession(walletAddress, getSigner);
-      await claimDevice(code);
+      await claimDevice(code, walletAddress, getSigner);
       router.replace("/(tabs)/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong linking that device.");

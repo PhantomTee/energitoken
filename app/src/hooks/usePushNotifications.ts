@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Platform } from "react-native";
+import { ethers } from "ethers";
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import Constants from "expo-constants";
@@ -23,7 +24,7 @@ Notifications.setNotificationHandler({
  *
  * Safe to call on every dashboard mount; re-registers if the token rotates.
  */
-export function usePushNotifications(walletAddress: string | null) {
+export function usePushNotifications(walletAddress: string | null, getSigner: () => Promise<ethers.Signer>) {
   const registeredFor = useRef<string | null>(null);
 
   useEffect(() => {
@@ -56,7 +57,7 @@ export function usePushNotifications(walletAddress: string | null) {
         );
 
         if (cancelled) return;
-        await savePushToken(walletAddress, expoPushToken);
+        await savePushToken(walletAddress, expoPushToken, getSigner);
         registeredFor.current = walletAddress;
       } catch {
         // Non-critical: in-app notifications still work without push.

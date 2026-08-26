@@ -1,88 +1,66 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ethers } from "ethers";
-import { ref, onValue, off } from "firebase/database";
-import { db } from "../services/firebase";
-import { ensureFirebaseSession } from "../services/firebaseSession";
-import { getDeviceForWallet } from "../services/deviceBinding";
-import { MeterReading, mockMeterReadingA } from "../mock/mockMeterData";
+import { apiRequest } from "../services/apiClient";
+import { MeterReading } from "../mock/mockMeterData";
 
-export type MeterMode = "mock" | "live";
+const POLL_INTERVAL_MS = 4000;
+
+type MineResponse = { hasDevice: false } | { hasDevice: true; deviceId: string; reading: MeterReading | null };
 
 /**
- * In mock mode, returns a static reading instantly. In live mode, binds this
- * device's Firebase session to the wallet, resolves which physical meter
- * that wallet is paired with (/walletToDevice/{wallet}), and attaches a
- * realtime listener to /meters/{deviceId}. If the wallet has no device
- * paired yet, `hasDevice` is false and the caller should prompt onboarding
- * rather than show a spinner forever.
+ * Polls /api/meters/mine (server-side, via Admin SDK) for this wallet's
+ * paired device and its live reading. Replaces the old direct Firebase
+ * onValue() realtime listener -- the client no longer talks to Firebase at
+ * all, so this trades true push-based realtime for a short poll interval,
+ * which is unaffected by any client-side Firebase Auth network issues.
  */
-export function useMeterData(
-  walletAddress: string | null,
-  mode: MeterMode,
-  getSigner: () => Promise<ethers.Signer>
-) {
-  const [reading, setReading] = useState<MeterReading | null>(mode === "mock" ? mockMeterReadingA : null);
-  const [loading, setLoading] = useState(mode === "live");
+export function useMeterData(walletAddress: string | null, getSigner: () => Promise<ethers.Signer>) {
+  const [reading, setReading] = useState<MeterReading | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [hasDevice, setHasDevice] = useState(true);
+  const inFlightRef = useRef(false);
 
   useEffect(() => {
-    if (mode === "mock") {
-      setReading(mockMeterReadingA);
-      setLoading(false);
-      setError(null);
-      setHasDevice(true);
-      return;
-    }
-
     if (!walletAddress) return;
 
     let cancelled = false;
-    let meterRef: ReturnType<typeof ref> | null = null;
-    setLoading(true);
-    setError(null);
 
-    ensureFirebaseSession(walletAddress, getSigner)
-      .then(() => getDeviceForWallet(walletAddress))
-      .then((boundDeviceId) => {
+    const poll = async () => {
+      if (inFlightRef.current) return;
+      inFlightRef.current = true;
+      try {
+        const result = await apiRequest<MineResponse>("/api/meters/mine", walletAddress, getSigner);
         if (cancelled) return;
 
-        if (!boundDeviceId) {
+        if (!result.hasDevice) {
           setHasDevice(false);
           setDeviceId(null);
-          setLoading(false);
-          return;
+          setReading(null);
+        } else {
+          setHasDevice(true);
+          setDeviceId(result.deviceId);
+          setReading(result.reading);
         }
-
-        setHasDevice(true);
-        setDeviceId(boundDeviceId);
-        meterRef = ref(db, `meters/${boundDeviceId}`);
-        onValue(
-          meterRef,
-          (snapshot) => {
-            if (cancelled) return;
-            setReading(snapshot.exists() ? (snapshot.val() as MeterReading) : null);
-            setLoading(false);
-          },
-          (err) => {
-            if (cancelled) return;
-            setError(err.message);
-            setLoading(false);
-          }
-        );
-      })
-      .catch((err) => {
+        setError(null);
+      } catch (err) {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Failed to start live session.");
-        setLoading(false);
-      });
+        setError(err instanceof Error ? err.message : "Failed to load live data.");
+      } finally {
+        inFlightRef.current = false;
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    poll();
+    const interval = setInterval(poll, POLL_INTERVAL_MS);
 
     return () => {
       cancelled = true;
-      if (meterRef) off(meterRef);
+      clearInterval(interval);
     };
-  }, [walletAddress, mode]);
+  }, [walletAddress]);
 
   return { reading, loading, error, deviceId, hasDevice };
 }

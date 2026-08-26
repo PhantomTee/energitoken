@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "http";
 import { adminDb } from "../_lib/firebaseAdmin";
 import { burnEngy } from "../_lib/burnEngy";
 import { sendNotification } from "../_lib/notify";
+import { verifyMeterSignature } from "../_lib/meterHmac";
 
 // Budget thresholds mirrored from the ESP32 load-shedding priorities:
 // luxury cut at 70%, optional at 85%, essential at 95%.
@@ -95,12 +96,22 @@ async function processDevice(db: ReturnType<typeof adminDb>, deviceId: string): 
     }
     const walletAddress: string = walletSnap.val();
 
-    // ── 2. Read current meter energyWh ───────────────────────────────────
-    const meterSnap = await db.ref(`meters/${deviceId}/energyWh`).get();
+    // ── 2. Read current meter energy, signed by that device's own key ─────
+    // energyWhInt (not the display-only float energyWh) is what's signed --
+    // see meterHmac.ts for why an integer field avoids float-formatting
+    // mismatches between the firmware's C++ and this verification.
+    const meterSnap = await db.ref(`meters/${deviceId}`).get();
     if (!meterSnap.exists()) {
       return { deviceId, ok: false, error: "No meter reading found for device" };
     }
-    const currentEnergyWh: number = meterSnap.val();
+    const meter = meterSnap.val() as { energyWhInt?: number; sig?: string };
+    if (meter.energyWhInt === undefined) {
+      return { deviceId, ok: false, error: "Meter reading missing signed energyWhInt (firmware needs updating)" };
+    }
+    if (!verifyMeterSignature(deviceId, meter.energyWhInt, meter.sig)) {
+      return { deviceId, ok: false, error: "Invalid meter signature -- refusing to burn against an unverified reading" };
+    }
+    const currentEnergyWh: number = meter.energyWhInt;
 
     // ── 3. Load last burn checkpoint ─────────────────────────────────────
     const checkpointRef = db.ref(`burnCheckpoints/${deviceId}`);

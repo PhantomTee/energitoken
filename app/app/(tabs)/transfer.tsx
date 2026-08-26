@@ -28,7 +28,6 @@ import {
   checkNetworkAndGas,
 } from "../../src/services/contract";
 import { resolveEmailToAddress } from "../../src/services/directory";
-import { ensureFirebaseSession } from "../../src/services/firebaseSession";
 import { QRScanner } from "../../src/components/QRScanner";
 import { useTransactionHistory } from "../../src/hooks/useTransactionHistory";
 import { TxDirection } from "../../src/services/contractEvents";
@@ -167,8 +166,7 @@ export default function TransferScreen() {
 
     setResolving(true);
     const timer = setTimeout(() => {
-      ensureFirebaseSession(walletAddress, getSigner)
-        .then(() => resolveEmailToAddress(recipient))
+      resolveEmailToAddress(recipient, walletAddress, getSigner)
         .then((address) => {
           if (address) {
             setResolvedAddress(address);

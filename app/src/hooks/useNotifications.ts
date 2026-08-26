@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
-import { ref, onValue, query, orderByChild, limitToLast, update } from "firebase/database";
-import { db } from "../services/firebase";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ethers } from "ethers";
+import { apiRequest } from "../services/apiClient";
 
 export type AppNotification = {
   id: string;
@@ -11,14 +11,17 @@ export type AppNotification = {
   createdAt: number;
 };
 
+const POLL_INTERVAL_MS = 8000;
+
 /**
- * Live in-app notifications for the signed-in wallet. Server functions write
- * to /notifications/{wallet} (see app/api/_lib/notify.ts); this hook keeps the
- * latest 50 in state, newest first. Requires ensureFirebaseSession to have
- * bound this session to the wallet, or reads will be denied by rules.
+ * In-app notifications for the signed-in wallet. Server functions write to
+ * /notifications/{wallet} (see app/api/_lib/notify.ts); this hook polls
+ * /api/notifications/list (server-side, Admin SDK) for the latest 50,
+ * newest first, instead of a direct Firebase realtime listener.
  */
-export function useNotifications(walletAddress: string | null) {
+export function useNotifications(walletAddress: string | null, getSigner: () => Promise<ethers.Signer>) {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const inFlightRef = useRef(false);
 
   useEffect(() => {
     if (!walletAddress) {
@@ -26,38 +29,32 @@ export function useNotifications(walletAddress: string | null) {
       return;
     }
 
-    const q = query(
-      ref(db, `notifications/${walletAddress}`),
-      orderByChild("createdAt"),
-      limitToLast(50)
-    );
+    let cancelled = false;
 
-    const unsubscribe = onValue(
-      q,
-      (snapshot) => {
-        const items: AppNotification[] = [];
-        snapshot.forEach((child) => {
-          const value = child.val();
-          items.push({
-            id: child.key as string,
-            type: value.type ?? "topup",
-            title: value.title ?? "",
-            body: value.body ?? "",
-            read: !!value.read,
-            createdAt: value.createdAt ?? 0,
-          });
-        });
-        items.sort((a, b) => b.createdAt - a.createdAt);
-        setNotifications(items);
-      },
-      () => {
-        // Permission denied (session not bound yet) — treat as empty rather
-        // than crashing; the next ensureFirebaseSession call fixes access.
-        setNotifications([]);
+    const poll = async () => {
+      if (inFlightRef.current) return;
+      inFlightRef.current = true;
+      try {
+        const result = await apiRequest<{ notifications: AppNotification[] }>(
+          "/api/notifications/list",
+          walletAddress,
+          getSigner
+        );
+        if (!cancelled) setNotifications(result.notifications);
+      } catch {
+        // Leave the previous list on screen rather than clearing it on a transient error.
+      } finally {
+        inFlightRef.current = false;
       }
-    );
+    };
 
-    return unsubscribe;
+    poll();
+    const interval = setInterval(poll, POLL_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [walletAddress]);
 
   const unreadCount = useMemo(
@@ -67,13 +64,13 @@ export function useNotifications(walletAddress: string | null) {
 
   const markAllRead = async () => {
     if (!walletAddress) return;
-    const updates: Record<string, boolean> = {};
-    for (const n of notifications) {
-      if (!n.read) updates[`notifications/${walletAddress}/${n.id}/read`] = true;
-    }
-    if (Object.keys(updates).length > 0) {
-      await update(ref(db), updates).catch(() => {/* non-critical */});
-    }
+    const ids = notifications.filter((n) => !n.read).map((n) => n.id);
+    if (ids.length === 0) return;
+    setNotifications((prev) => prev.map((n) => (ids.includes(n.id) ? { ...n, read: true } : n)));
+    await apiRequest("/api/notifications/mark-read", walletAddress, getSigner, {
+      method: "POST",
+      body: { ids },
+    }).catch(() => {/* non-critical */});
   };
 
   return { notifications, unreadCount, markAllRead };

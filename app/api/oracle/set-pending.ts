@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { adminDb } from "../_lib/firebaseAdmin";
 import { setPendingBurnEngy } from "../_lib/setPendingBurn";
+import { verifyMeterSignature } from "../_lib/meterHmac";
 
 type Req = IncomingMessage & { method?: string; body?: unknown; headers: Record<string, string | string[] | undefined> };
 type Res = ServerResponse & { status: (code: number) => Res; json: (body: unknown) => void };
@@ -72,11 +73,21 @@ async function processDevice(db: ReturnType<typeof adminDb>, deviceId: string): 
     }
     const walletAddress: string = walletSnap.val();
 
-    const meterSnap = await db.ref(`meters/${deviceId}/energyWh`).get();
+    // energyWhInt (not the display-only float energyWh) is what's signed --
+    // see meterHmac.ts for why an integer field avoids float-formatting
+    // mismatches between the firmware's C++ and this verification.
+    const meterSnap = await db.ref(`meters/${deviceId}`).get();
     if (!meterSnap.exists()) {
       return { deviceId, ok: false, error: "No meter reading found for device" };
     }
-    const currentEnergyWh: number = meterSnap.val();
+    const meter = meterSnap.val() as { energyWhInt?: number; sig?: string };
+    if (meter.energyWhInt === undefined) {
+      return { deviceId, ok: false, error: "Meter reading missing signed energyWhInt (firmware needs updating)" };
+    }
+    if (!verifyMeterSignature(deviceId, meter.energyWhInt, meter.sig)) {
+      return { deviceId, ok: false, error: "Invalid meter signature -- refusing to set pendingBurn against an unverified reading" };
+    }
+    const currentEnergyWh: number = meter.energyWhInt;
 
     const checkpointSnap = await db.ref(`burnCheckpoints/${deviceId}/lastBurnedWh`).get();
     const lastBurnedWh: number = checkpointSnap.exists() ? checkpointSnap.val() : 0;

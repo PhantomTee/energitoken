@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "http";
-import { adminDb, walletFromAuthHeader } from "../_lib/firebaseAdmin";
+import { adminDb } from "../_lib/firebaseAdmin";
+import { walletFromBearer } from "../_lib/appSession";
 
 type Req = IncomingMessage & { method?: string; body?: unknown; headers: Record<string, string | string[] | undefined> };
 type Res = ServerResponse & { status: (code: number) => Res; json: (body: unknown) => void };
@@ -10,8 +11,8 @@ type Res = ServerResponse & { status: (code: number) => Res; json: (body: unknow
  * the earlier security audit -- see database.rules.json), so unbinding has
  * to go through here, same pattern as claim.ts.
  *
- * The wallet to unbind is derived from a verified Firebase ID token (see
- * walletFromAuthHeader), never trusted from the request body -- otherwise
+ * The wallet to unbind is derived from a verified session token (see
+ * walletFromBearer), never trusted from the request body -- otherwise
  * anyone who knows a victim's wallet address (not secret: deviceToWallet is
  * readable by any authenticated session) could unbind their meter as pure
  * griefing, with no credential at all.
@@ -24,7 +25,7 @@ export default async function handler(req: Req, res: Res) {
 
   let walletAddress: string;
   try {
-    walletAddress = await walletFromAuthHeader(req.headers.authorization as string | undefined);
+    walletAddress = walletFromBearer(req.headers.authorization as string | undefined);
   } catch (err) {
     res.status(401).json({ error: err instanceof Error ? err.message : "Unauthorized" });
     return;

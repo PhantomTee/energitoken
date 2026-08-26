@@ -8,12 +8,11 @@ import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
 import { MetricTile } from "../../src/components/MetricTile";
 import { BudgetRing } from "../../src/components/BudgetRing";
 import { RelayIndicator } from "../../src/components/RelayIndicator";
-import { LiveMockBanner } from "../../src/components/LiveMockBanner";
 import { useWallet } from "../../src/hooks/useWallet";
 import { TopUpModal } from "../../src/components/TopUpModal";
 import { getEngyBalance, getSpendableBalance } from "../../src/services/contract";
 import { setMeterTokenBalance } from "../../src/services/budget";
-import { useMeterData, MeterMode } from "../../src/hooks/useMeterData";
+import { useMeterData } from "../../src/hooks/useMeterData";
 import { writeDirectoryEntry } from "../../src/services/directory";
 import { tokensToUnits, whToUnits } from "../../src/services/units";
 import { clearFirebaseSession } from "../../src/services/firebaseSession";
@@ -41,13 +40,12 @@ function formatSecondsAgo(updatedAt: number, nowMs: number): string {
 
 export default function DashboardScreen() {
   const isDesktop = useIsDesktopWeb();
-  const [mode, setMode] = useState<MeterMode>("mock");
   const { walletAddress, email, logout, getSigner } = useWallet();
   const [topUpVisible, setTopUpVisible] = useState(false);
   const [notifVisible, setNotifVisible] = useState(false);
   const [showMoreReadings, setShowMoreReadings] = useState(false);
-  const { notifications, unreadCount, markAllRead } = useNotifications(walletAddress);
-  usePushNotifications(walletAddress);
+  const { notifications, unreadCount, markAllRead } = useNotifications(walletAddress, getSigner);
+  usePushNotifications(walletAddress, getSigner);
   const [balanceWh, setBalanceWh] = useState<bigint | null>(null);
   const [spendableWh, setSpendableWh] = useState<bigint | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -62,7 +60,7 @@ export default function DashboardScreen() {
     error: meterError,
     deviceId,
     hasDevice,
-  } = useMeterData(walletAddress, mode, getSigner);
+  } = useMeterData(walletAddress, getSigner);
 
   const refreshBalance = useCallback(async () => {
     if (!walletAddress) return;
@@ -74,7 +72,7 @@ export default function DashboardScreen() {
       setBalanceWh(balance);
       setSpendableWh(spendable);
       if (deviceId) {
-        setMeterTokenBalance(deviceId, Number(spendable)).catch(() => {
+        setMeterTokenBalance(Number(spendable), walletAddress, getSigner).catch(() => {
           // best-effort mirror for the meter's local display; a failed write
           // here shouldn't disrupt the balance the app itself just showed
         });
@@ -82,7 +80,7 @@ export default function DashboardScreen() {
     } catch {
       // leave the previous balances on screen rather than clearing them on a transient RPC error
     }
-  }, [walletAddress, deviceId]);
+  }, [walletAddress, deviceId, getSigner]);
 
   useFocusEffect(
     useCallback(() => {
@@ -99,19 +97,19 @@ export default function DashboardScreen() {
   // Lets the Transfer screen resolve "send to this email" to this wallet.
   useEffect(() => {
     if (walletAddress && email) {
-      writeDirectoryEntry(email, walletAddress).catch(() => {
+      writeDirectoryEntry(email, walletAddress, getSigner).catch(() => {
         // non-critical: the user can still be reached by raw wallet address
       });
     }
-  }, [walletAddress, email]);
+  }, [walletAddress, email, getSigner]);
 
   // Ticks once a second so "Updated Xs ago" stays accurate -- only while
   // there's a live reading to measure freshness against.
   useEffect(() => {
-    if (mode !== "live" || !reading) return;
+    if (!reading) return;
     const interval = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(interval);
-  }, [mode, reading]);
+  }, [reading]);
 
   // Toast the moment a relay tier flips ON -> OFF (a real shed event, not
   // just the initial reading arriving). Skips the very first reading so we
@@ -139,11 +137,11 @@ export default function DashboardScreen() {
   };
 
   const handleRelayToggle = async (tier: RelayTier, next: boolean | null) => {
-    if (!deviceId) return;
+    if (!deviceId || !walletAddress) return;
     setRelayError(null);
     setRelayBusyTier(tier);
     try {
-      await setRelayOverride(deviceId, tier, next);
+      await setRelayOverride(tier, next, walletAddress, getSigner);
     } catch (err) {
       setRelayError(err instanceof Error ? err.message : "Couldn't update that load right now.");
     } finally {
@@ -152,7 +150,7 @@ export default function DashboardScreen() {
   };
 
   const meterStatus: MeterStatus | null =
-    mode !== "live" || !hasDevice
+    !hasDevice
       ? null
       : meterError
         ? "fault"
@@ -210,15 +208,6 @@ export default function DashboardScreen() {
         </View>
       </View>
 
-      {isDesktop && (
-        <View style={styles.pageHeading}>
-          <Text style={[typography.h1, styles.pageTitle]}>Overview</Text>
-          <Text style={[typography.body, styles.pageSubtitle]}>Live metrics and energy management status.</Text>
-        </View>
-      )}
-
-      <LiveMockBanner mode={mode} onToggle={setMode} />
-
       {meterStatus && (
         <View style={[styles.statusPill, { backgroundColor: `${statusMeta[meterStatus].color}22` }]}>
           <View style={[styles.statusDot, { backgroundColor: statusMeta[meterStatus].color }]} />
@@ -247,7 +236,7 @@ export default function DashboardScreen() {
             />
           </View>
 
-          {mode === "live" && !hasDevice && !meterLoading && (
+          {!hasDevice && !meterLoading && (
             <View style={styles.meterStatusRow}>
               <Text style={[typography.caption, styles.meterStatusText]}>No device paired yet</Text>
               <Link href="/onboarding" style={styles.pairLink}>
@@ -255,7 +244,13 @@ export default function DashboardScreen() {
               </Link>
             </View>
           )}
-          {mode === "live" && meterError && (
+          {hasDevice && meterLoading && (
+            <View style={styles.meterStatusRow}>
+              <ActivityIndicator color={colors.indigo[400]} />
+              <Text style={[typography.caption, styles.meterStatusText]}>Loading live meter data…</Text>
+            </View>
+          )}
+          {meterError && (
             <Text style={[typography.caption, styles.errorText]}>Couldn't load live data: {meterError}</Text>
           )}
 
@@ -332,7 +327,7 @@ export default function DashboardScreen() {
             )}
           </View>
 
-          {mode === "live" && !hasDevice && !meterLoading && (
+          {!hasDevice && !meterLoading && (
             <View style={styles.meterStatusRow}>
               <Text style={[typography.caption, styles.meterStatusText]}>No device paired yet</Text>
               <Link href="/onboarding" style={styles.pairLink}>
@@ -340,13 +335,13 @@ export default function DashboardScreen() {
               </Link>
             </View>
           )}
-          {mode === "live" && meterLoading && (
+          {hasDevice && meterLoading && (
             <View style={styles.meterStatusRow}>
               <ActivityIndicator color={colors.indigo[400]} />
               <Text style={[typography.caption, styles.meterStatusText]}>Loading live meter data…</Text>
             </View>
           )}
-          {mode === "live" && meterError && (
+          {meterError && (
             <Text style={[typography.caption, styles.errorText]}>Couldn't load live data: {meterError}</Text>
           )}
 

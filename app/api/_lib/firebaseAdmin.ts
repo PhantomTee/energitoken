@@ -1,6 +1,5 @@
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getDatabase } from "firebase-admin/database";
-import { getAuth } from "firebase-admin/auth";
 
 /**
  * Vercel functions are stateless and can't read a local serviceAccountKey.json
@@ -47,31 +46,15 @@ export function adminDb() {
   return getDatabase(getAdminApp());
 }
 
-/**
- * Verifies a client's Firebase ID token (from its Anonymous Auth session)
- * and returns the caller's *trusted* wallet address by looking up
- * /uidToWallet/{uid} via the Admin SDK -- bypassing the read rule, but that's
- * fine here since we're reading the caller's own binding on their behalf.
- *
- * This is the trust chain server endpoints (devices/claim, devices/unbind)
- * use instead of trusting a walletAddress the client puts in the request
- * body: the ID token proves which uid is calling, and uidToWallet is only
- * ever written by app/api/session/bind.ts after a signature proves that uid
- * really is bound to that wallet. Throws on a missing/invalid/expired token
- * or a uid with no binding yet -- callers should turn that into a 401.
- */
-export async function walletFromAuthHeader(authorizationHeader: string | undefined): Promise<string> {
-  const token = authorizationHeader?.startsWith("Bearer ") ? authorizationHeader.slice("Bearer ".length) : null;
-  if (!token) throw new Error("Missing Authorization: Bearer <idToken> header");
-
-  const decoded = await getAuth(getAdminApp()).verifyIdToken(token);
-  const snap = await adminDb().ref(`uidToWallet/${decoded.uid}`).get();
-  if (!snap.exists()) throw new Error("This session isn't bound to a wallet yet");
-
-  return snap.val() as string;
-}
-
 /** /orders is only ever touched by server functions via Admin SDK. */
 export function ordersRef() {
   return getDatabase(getAdminApp()).ref("orders");
+}
+
+/** Looks up the device paired to a wallet, or null if none. Shared by every
+ * endpoint that needs "the caller's own meter" (meters/mine, budget,
+ * token-balance, relay-override). */
+export async function deviceIdForWallet(walletAddress: string): Promise<string | null> {
+  const snap = await adminDb().ref(`walletToDevice/${walletAddress}`).get();
+  return snap.exists() ? (snap.val() as string) : null;
 }

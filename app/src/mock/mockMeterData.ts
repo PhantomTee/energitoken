@@ -25,37 +25,3 @@ export type MeterReading = {
   relayOverrides?: RelayOverrides;
   updatedAt: number;
 };
-
-/** Two canned readings so the live/mock toggle visibly changes something. */
-export const mockMeterReadingA: MeterReading = {
-  voltage: 231.4,
-  current: 2.8,
-  power: 648,
-  frequency: 50.0,
-  powerFactor: 0.94,
-  energyWh: 4200,
-  budgetWh: 15000,
-  percentUsed: 28,
-  relays: { r1: true, r2: true, r3: true, r4: false },
-  updatedAt: Date.now(),
-};
-
-export const mockMeterReadingB: MeterReading = {
-  voltage: 226.1,
-  current: 5.4,
-  power: 1221,
-  frequency: 49.8,
-  powerFactor: 0.89,
-  energyWh: 12750,
-  budgetWh: 15000,
-  percentUsed: 85,
-  relays: { r1: true, r2: true, r3: false, r4: false },
-  updatedAt: Date.now(),
-};
-
-/**
- * The household's ESP32 meter identifies itself by MAC address — this is
- * what binds a physical device to a wallet during pairing. Mocked for now,
- * same as the readings above, until Step 6 wires the real Firebase record.
- */
-export const mockEspMacAddress = "24:6F:28:AB:3C:91";

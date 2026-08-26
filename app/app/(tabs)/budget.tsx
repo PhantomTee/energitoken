@@ -12,7 +12,6 @@ import { useMeterData } from "../../src/hooks/useMeterData";
 import { useTransactionHistory } from "../../src/hooks/useTransactionHistory";
 import { getEngyBalance } from "../../src/services/contract";
 import { setBudgetWh } from "../../src/services/budget";
-import { ensureFirebaseSession } from "../../src/services/firebaseSession";
 import { whToUnits, unitsToWh, tokensToUnits } from "../../src/services/units";
 import { setRelayOverride } from "../../src/services/relayOverride";
 import { useIsDesktopWeb } from "../../src/hooks/useIsDesktopWeb";
@@ -128,16 +127,16 @@ export default function BudgetScreen() {
   const [relayError, setRelayError] = useState<string | null>(null);
   const [periodDays, setPeriodDays] = useState<PeriodDays>(7);
 
-  const { reading, loading, error, deviceId, hasDevice } = useMeterData(walletAddress, "live", getSigner);
+  const { reading, loading, error, deviceId, hasDevice } = useMeterData(walletAddress, getSigner);
   const { days: dailyUsage } = useDailyUsage(walletAddress, periodDays);
   const [durationInput, setDurationInput] = useState("");
 
   const handleRelayToggle = async (tier: RelayTier, next: boolean | null) => {
-    if (!deviceId) return;
+    if (!deviceId || !walletAddress) return;
     setRelayError(null);
     setRelayBusyTier(tier);
     try {
-      await setRelayOverride(deviceId, tier, next);
+      await setRelayOverride(tier, next, walletAddress, getSigner);
     } catch (err) {
       setRelayError(err instanceof Error ? err.message : "Couldn't update that load right now.");
     } finally {
@@ -210,8 +209,7 @@ export default function BudgetScreen() {
     setSaveSuccess(false);
     setSaving(true);
     try {
-      await ensureFirebaseSession(walletAddress, getSigner);
-      await setBudgetWh(deviceId, unitsToWh(computedDailyUnits!));
+      await setBudgetWh(unitsToWh(computedDailyUnits!), walletAddress, getSigner);
       setDurationInput("");
       setSaveSuccess(true);
     } catch (err) {

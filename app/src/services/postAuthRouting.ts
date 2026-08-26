@@ -1,5 +1,4 @@
 import { ethers } from "ethers";
-import { ensureFirebaseSession } from "./firebaseSession";
 import { getDeviceForWallet } from "./deviceBinding";
 
 export type PostAuthDestination = "/onboarding" | "/(tabs)/dashboard";
@@ -9,7 +8,6 @@ export async function resolvePostAuthDestination(
   walletAddress: string,
   getSigner: () => Promise<ethers.Signer>
 ): Promise<PostAuthDestination> {
-  await ensureFirebaseSession(walletAddress, getSigner);
-  const deviceId = await getDeviceForWallet(walletAddress);
+  const deviceId = await getDeviceForWallet(walletAddress, getSigner);
   return deviceId ? "/(tabs)/dashboard" : "/onboarding";
 }

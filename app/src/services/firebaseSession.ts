@@ -1,100 +1,69 @@
 import { Platform } from "react-native";
 import { ethers } from "ethers";
-import { signInAnonymously, signOut } from "firebase/auth";
-import { ref, get } from "firebase/database";
-import { auth, db } from "./firebase";
-import { buildBindMessage } from "./bindMessage";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { buildSessionMessage } from "./sessionMessage";
 
 const BACKEND_URL = Platform.OS === "web" ? "" : process.env.EXPO_PUBLIC_BACKEND_URL ?? "https://energitoken.vercel.app";
+const TOKEN_STORAGE_KEY = "energitoken_session_token_v1";
 
 /**
- * Every /meters, /directory, and /walletToDevice read in the app goes
- * through an anonymous Firebase Auth session (see ensureFirebaseSession
- * below). If Anonymous sign-in isn't enabled for this Firebase project,
- * signInAnonymously() throws "Firebase: Error (auth/admin-restricted-
- * operation)." or "... (auth/operation-not-allowed)." -- a real SDK error,
- * not something this code can work around. Translate it into something
- * that says exactly what to do instead of surfacing the raw SDK string.
+ * This app used to sign in to Firebase Anonymous Auth on every screen mount
+ * (see git history) and use that ID token as its credential for every
+ * Firebase read/write. That required the client to call Firebase's own
+ * sign-in endpoint (identitytoolkit.googleapis.com), which turned out to be
+ * blocked on some real user networks (school/campus WiFi, some ISPs) --
+ * breaking login, live meter data, notifications, and the meter's
+ * balance-gated relays all at once.
+ *
+ * Now the app never talks to Firebase directly. It signs a message proving
+ * wallet ownership, trades that for OUR OWN session token via
+ * /api/session/create, and presents that token as a Bearer credential to
+ * every other /api endpoint -- which do the actual Firebase reads/writes
+ * server-side via the Admin SDK (see app/api/_lib/appSession.ts). The token
+ * is cached locally so this only has to happen once per ~30 days, not on
+ * every screen mount.
  */
-function translateAnonymousAuthError(err: unknown): Error {
-  const code = (err as { code?: string })?.code ?? "";
-  if (code === "auth/admin-restricted-operation" || code === "auth/operation-not-allowed") {
-    return new Error(
-      "Anonymous sign-in isn't enabled for this Firebase project. In the Firebase Console: Authentication → Sign-in method → Anonymous → Enable."
-    );
-  }
-  return err instanceof Error ? err : new Error(String(err));
-}
+type StoredSession = { walletAddress: string; token: string; expiresAt: number };
 
-/**
- * Binds this device's Firebase Anonymous Auth session to the given wallet
- * address, via a write-once /uidToWallet/{uid} entry. The security rules
- * for /meters and /directory key off this binding.
- *
- * The binding itself is written server-side (app/api/session/bind.ts) after
- * verifying a signature from the wallet -- Anonymous Auth alone proves
- * nothing about which wallet a session should be trusted for (anyone can
- * sign in anonymously for free), so `getSigner` is required to produce that
- * proof. `getSigner` matches the shape of useWallet().getSigner().
- *
- * Handles the edge case where a stale anonymous session (from a previous Privy
- * user) is already bound to a different wallet — signs out and creates a fresh
- * session so the new wallet can bind cleanly.
- *
- * Safe to call on every screen mount: it's a no-op once the binding exists.
- */
-export async function ensureFirebaseSession(
-  walletAddress: string,
-  getSigner: () => Promise<ethers.Signer>
-): Promise<void> {
-  const uid = await getOrCreateUid();
-  await bindUidToWallet(uid, walletAddress, getSigner);
-}
+let cached: StoredSession | null = null;
 
-async function getOrCreateUid(): Promise<string> {
-  if (auth.currentUser) return auth.currentUser.uid;
+async function readStoredSession(): Promise<StoredSession | null> {
+  if (cached) return cached;
   try {
-    return (await signInAnonymously(auth)).user.uid;
-  } catch (err) {
-    throw translateAnonymousAuthError(err);
+    const raw = await AsyncStorage.getItem(TOKEN_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredSession;
+    cached = parsed;
+    return parsed;
+  } catch {
+    return null;
   }
 }
 
-async function bindUidToWallet(
-  uid: string,
-  walletAddress: string,
-  getSigner: () => Promise<ethers.Signer>
-): Promise<void> {
-  const bindingRef = ref(db, `uidToWallet/${uid}`);
-  const snapshot = await get(bindingRef);
+async function writeStoredSession(session: StoredSession): Promise<void> {
+  cached = session;
+  await AsyncStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(session));
+}
 
-  if (snapshot.exists()) {
-    if (snapshot.val() === walletAddress) {
-      return; // Already correctly bound — nothing to do.
-    }
-
-    // Stale anonymous session bound to a different wallet (e.g. previous user on
-    // this browser). Sign out, get a fresh anonymous UID, and bind the new one.
-    await signOut(auth);
-    let freshUid: string;
-    try {
-      freshUid = (await signInAnonymously(auth)).user.uid;
-    } catch (err) {
-      throw translateAnonymousAuthError(err);
-    }
-    await signAndBind(freshUid, walletAddress, getSigner);
-    return;
-  }
-
-  await signAndBind(uid, walletAddress, getSigner);
+/**
+ * Neither ethers' Signer nor Privy's getProvider() takes an AbortSignal, so
+ * a hang (not just a throw) is raced against a timer instead.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); }
+    );
+  });
 }
 
 /**
  * On web, getSigner() reads from Privy's useWallets(), which can lag a beat
- * behind `user` becoming ready right after login/cold-start -- the one place
- * this binding now runs earlier than before (previously it only needed a
- * plain write, no signer). A few short retries covers that startup race
- * without resorting to an arbitrary fixed delay.
+ * behind `user` becoming ready right after login/cold-start. A few short
+ * retries covers that startup race without resorting to an arbitrary fixed
+ * delay.
  */
 async function getSignerWithRetry(getSigner: () => Promise<ethers.Signer>): Promise<ethers.Signer> {
   const attempts = 5;
@@ -102,7 +71,7 @@ async function getSignerWithRetry(getSigner: () => Promise<ethers.Signer>): Prom
   let lastErr: unknown;
   for (let i = 0; i < attempts; i++) {
     try {
-      return await getSigner();
+      return await withTimeout(getSigner(), 8000, "Wallet signer timed out.");
     } catch (err) {
       lastErr = err;
       if (i < attempts - 1) {
@@ -113,30 +82,73 @@ async function getSignerWithRetry(getSigner: () => Promise<ethers.Signer>): Prom
   throw lastErr instanceof Error ? lastErr : new Error("Wallet signer not available");
 }
 
-async function signAndBind(
-  uid: string,
-  walletAddress: string,
-  getSigner: () => Promise<ethers.Signer>
-): Promise<void> {
+const SIGN_TIMEOUT_MS = 20000;
+const CREATE_FETCH_TIMEOUT_MS = 15000;
+
+async function createSession(walletAddress: string, getSigner: () => Promise<ethers.Signer>): Promise<StoredSession> {
   const signer = await getSignerWithRetry(getSigner);
-  const message = buildBindMessage(uid, walletAddress);
-  const signature = await signer.signMessage(message);
+  const message = buildSessionMessage(walletAddress);
+  const signature = await withTimeout(
+    signer.signMessage(message),
+    SIGN_TIMEOUT_MS,
+    "Signing timed out. Please try again."
+  );
 
-  const response = await fetch(`${BACKEND_URL}/api/session/bind`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ uid, walletAddress, signature }),
-  });
-
-  if (!response.ok) {
-    const json = await response.json().catch(() => ({}));
-    throw new Error((json as { error?: string }).error ?? `Failed to bind session (${response.status})`);
+  const controller = new AbortController();
+  const fetchTimer = setTimeout(() => controller.abort(), CREATE_FETCH_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(`${BACKEND_URL}/api/session/create`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ walletAddress, signature }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    throw err instanceof Error && err.name === "AbortError"
+      ? new Error("Couldn't reach the server. Check your connection and try again.")
+      : err;
+  } finally {
+    clearTimeout(fetchTimer);
   }
+
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error((json as { error?: string }).error ?? `Failed to create session (${response.status})`);
+  }
+
+  const { token, expiresAt } = json as { token: string; expiresAt: number };
+  const session: StoredSession = { walletAddress, token, expiresAt };
+  await writeStoredSession(session);
+  return session;
 }
 
-/** Call on Privy logout so the next user gets a clean Firebase anonymous session. */
-export async function clearFirebaseSession(): Promise<void> {
-  if (auth.currentUser) {
-    await signOut(auth);
+const EXPIRY_SAFETY_MARGIN_MS = 60 * 60 * 1000; // renew an hour early, not right at the deadline
+
+/**
+ * Returns a valid Bearer token for this wallet, reusing a cached one if it's
+ * not close to expiring, otherwise minting a fresh one (which requires a
+ * wallet signature). Safe to call on every screen mount.
+ */
+export async function getSessionToken(
+  walletAddress: string,
+  getSigner: () => Promise<ethers.Signer>
+): Promise<string> {
+  const stored = await readStoredSession();
+  if (
+    stored &&
+    stored.walletAddress.toLowerCase() === walletAddress.toLowerCase() &&
+    stored.expiresAt - Date.now() > EXPIRY_SAFETY_MARGIN_MS
+  ) {
+    return stored.token;
   }
+
+  const session = await createSession(walletAddress, getSigner);
+  return session.token;
+}
+
+/** Call on Privy logout so the next user doesn't inherit this wallet's cached session. */
+export async function clearFirebaseSession(): Promise<void> {
+  cached = null;
+  await AsyncStorage.removeItem(TOKEN_STORAGE_KEY).catch(() => {});
 }

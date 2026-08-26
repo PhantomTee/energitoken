@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "http";
-import { adminDb, walletFromAuthHeader } from "../_lib/firebaseAdmin";
+import { adminDb } from "../_lib/firebaseAdmin";
+import { walletFromBearer } from "../_lib/appSession";
 import { sendNotification } from "../_lib/notify";
 
 type Req = IncomingMessage & { method?: string; body?: unknown; headers: Record<string, string | string[] | undefined> };
@@ -12,8 +13,8 @@ const PAIRING_WINDOW_MS = 60 * 60 * 1000; // 1 hour
  * Server-side device pairing — replaces the insecure direct Firebase write.
  *
  * Security improvements over the old client-side flow:
- *  - The caller's wallet is derived from a verified Firebase ID token (see
- *    walletFromAuthHeader), not trusted from the request body -- otherwise
+ *  - The caller's wallet is derived from a verified session token (see
+ *    walletFromBearer), not trusted from the request body -- otherwise
  *    anyone racing a device's pairing window could bind it to a wallet of
  *    their choosing with a single unauthenticated HTTP request.
  *  - Only claims devices that are in "pairing mode" (pendingDevices entry
@@ -31,7 +32,7 @@ export default async function handler(req: Req, res: Res) {
 
   let walletAddress: string;
   try {
-    walletAddress = await walletFromAuthHeader(req.headers.authorization as string | undefined);
+    walletAddress = walletFromBearer(req.headers.authorization as string | undefined);
   } catch (err) {
     res.status(401).json({ error: err instanceof Error ? err.message : "Unauthorized" });
     return;

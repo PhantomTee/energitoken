@@ -1,26 +1,29 @@
-import { ref, get, set } from "firebase/database";
-import { db } from "./firebase";
+import { ethers } from "ethers";
+import { apiRequest } from "./apiClient";
 
-/**
- * Firebase Realtime Database keys can't contain '.', so emails are stored
- * with '.' replaced by ',' -- a simple, reversible encoding (see firebase/schema.md).
- */
-function encodeEmailKey(email: string): string {
-  return email.trim().toLowerCase().replace(/\./g, ",");
+/** Called once after login so others can find this wallet by email, via
+ * /api/directory/register (server-side, Admin SDK). */
+export async function writeDirectoryEntry(
+  email: string,
+  walletAddress: string,
+  getSigner: () => Promise<ethers.Signer>
+): Promise<void> {
+  await apiRequest("/api/directory/register", walletAddress, getSigner, { method: "POST", body: { email } });
 }
 
-/** Called once after login so others can find this wallet by email. */
-export async function writeDirectoryEntry(email: string, walletAddress: string): Promise<void> {
-  const entryRef = ref(db, `directory/${encodeEmailKey(email)}`);
-  const snapshot = await get(entryRef);
-  if (!snapshot.exists()) {
-    await set(entryRef, walletAddress);
-  }
-}
-
-/** Resolves a recipient email to a wallet address, or null if not found. */
-export async function resolveEmailToAddress(email: string): Promise<string | null> {
-  const entryRef = ref(db, `directory/${encodeEmailKey(email)}`);
-  const snapshot = await get(entryRef);
-  return snapshot.exists() ? (snapshot.val() as string) : null;
+/** Resolves a recipient email to a wallet address, or null if not found, via
+ * /api/directory/resolve (server-side, Admin SDK). `callerWalletAddress` is
+ * the signed-in caller (used to authenticate the request), not the
+ * recipient being looked up. */
+export async function resolveEmailToAddress(
+  email: string,
+  callerWalletAddress: string,
+  getSigner: () => Promise<ethers.Signer>
+): Promise<string | null> {
+  const result = await apiRequest<{ walletAddress: string | null }>(
+    `/api/directory/resolve?email=${encodeURIComponent(email)}`,
+    callerWalletAddress,
+    getSigner
+  );
+  return result.walletAddress;
 }

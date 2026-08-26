@@ -55,7 +55,7 @@ function SettingsRow({
  */
 export default function ProfileScreen() {
   const isDesktop = useIsDesktopWeb();
-  const { email, walletAddress, logout } = useWallet();
+  const { email, walletAddress, logout, getSigner } = useWallet();
   const [deviceId, setDeviceId] = useState<string | null | undefined>(undefined);
   const [unbindVisible, setUnbindVisible] = useState(false);
   const [unbinding, setUnbinding] = useState(false);
@@ -68,10 +68,10 @@ export default function ProfileScreen() {
 
   const loadDevice = React.useCallback(() => {
     if (!walletAddress) return;
-    getDeviceForWallet(walletAddress)
+    getDeviceForWallet(walletAddress, getSigner)
       .then((id) => setDeviceId(id))
       .catch(() => setDeviceId(null));
-  }, [walletAddress]);
+  }, [walletAddress, getSigner]);
 
   useEffect(() => {
     loadDevice();
@@ -88,7 +88,7 @@ export default function ProfileScreen() {
     setUnbinding(true);
     setUnbindError(null);
     try {
-      await unbindDevice();
+      await unbindDevice(walletAddress, getSigner);
       setUnbindVisible(false);
       setDeviceId(null);
     } catch (err) {
