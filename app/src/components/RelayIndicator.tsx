@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, StyleSheet, Pressable, Platform } from "react-native";
+import { View, Text, StyleSheet, Pressable, Platform, ActivityIndicator } from "react-native";
 import { colors, relayTierLabels, RelayTier } from "../theme/colors";
 import { typography, spacing, radius } from "../theme/typography";
 import { RelayState, RelayOverrides } from "../mock/mockMeterData";
@@ -64,14 +64,30 @@ export function RelayIndicator({ relays, overrides, onToggle, disabledTier, vari
 
           const pill = (
             <View style={styles.compactCard}>
-              <Text style={[typography.caption, styles.compactLabel]}>
-                {relayTierLabels[tier]} ({tier.toUpperCase()})
-              </Text>
-              <View style={[styles.compactPill, on ? styles.compactPillOn : styles.compactPillOff]}>
-                <View style={[styles.compactDot, { backgroundColor: on ? colors.terracotta[500] : colors.neutral[500] }]} />
-                <Text style={[typography.dataXs, on ? styles.compactPillTextOn : styles.compactPillTextOff]}>
-                  {busy ? "…" : on ? "ON" : "OFF"}
+              <View style={styles.compactLabelRow}>
+                <Text style={[typography.caption, styles.compactLabel]}>
+                  {relayTierLabels[tier]} ({tier.toUpperCase()})
                 </Text>
+                <Text style={[typography.dataXs, styles.compactModeTag, isManual && styles.compactModeTagManual]}>
+                  {isManual ? "MANUAL" : "AUTO"}
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.compactPill,
+                  busy ? styles.compactPillBusy : on ? styles.compactPillOn : styles.compactPillOff,
+                ]}
+              >
+                {busy ? (
+                  <ActivityIndicator size="small" color={colors.indigo[500]} />
+                ) : (
+                  <>
+                    <View style={[styles.compactDot, { backgroundColor: on ? colors.terracotta[500] : colors.neutral[500] }]} />
+                    <Text style={[typography.dataXs, on ? styles.compactPillTextOn : styles.compactPillTextOff]}>
+                      {on ? "ON" : "OFF"}
+                    </Text>
+                  </>
+                )}
               </View>
             </View>
           );
@@ -115,9 +131,14 @@ export function RelayIndicator({ relays, overrides, onToggle, disabledTier, vari
                 <Text style={[typography.caption, styles.cardDevices]}>{meta.devices}</Text>
               </View>
               <View style={styles.cardRight}>
-                {isManual ? (
+                {busy ? (
+                  <View style={styles.busyRow}>
+                    <ActivityIndicator size="small" color={meta.accent} />
+                    <Text style={[typography.dataXs, styles.busyText]}>Updating…</Text>
+                  </View>
+                ) : isManual ? (
                   <View style={styles.manualBadge}>
-                    <Text style={styles.manualBadgeText}>{busy ? "…" : on ? "FORCED ON" : "FORCED OFF"}</Text>
+                    <Text style={styles.manualBadgeText}>{on ? "FORCED ON" : "FORCED OFF"}</Text>
                   </View>
                 ) : (
                   <Text
@@ -188,6 +209,8 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   manualBadgeText: { color: colors.neutral.white, fontSize: 9, fontWeight: "700" },
+  busyRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  busyText: { color: colors.textSecondary },
   hint: { color: colors.textSecondary, opacity: 0.85, marginTop: spacing.sm },
 
   // ── Compact (Dashboard "Relay Status") ──
@@ -204,7 +227,10 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
   },
+  compactLabelRow: { gap: 2, flexShrink: 1 },
   compactLabel: { color: colors.textPrimary },
+  compactModeTag: { color: colors.textSecondary, letterSpacing: 0.5, opacity: 0.75 },
+  compactModeTagManual: { color: colors.terracotta[500], opacity: 1, fontWeight: "700" },
   compactPill: {
     flexDirection: "row",
     alignItems: "center",
@@ -212,9 +238,12 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     paddingHorizontal: spacing.sm,
     paddingVertical: 3,
+    minWidth: 52,
+    justifyContent: "center",
   },
   compactPillOn: { backgroundColor: colors.terracotta[100] },
   compactPillOff: { backgroundColor: colors.neutral[100] },
+  compactPillBusy: { backgroundColor: colors.indigo[100] },
   compactDot: { width: 6, height: 6, borderRadius: 3 },
   compactPillTextOn: { color: colors.terracotta[700] },
   compactPillTextOff: { color: colors.textSecondary },

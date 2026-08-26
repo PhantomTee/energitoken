@@ -3,7 +3,7 @@ name: EnergiToken consumption oracle
 # Keeps on-chain token balances honest against real electricity usage, and
 # keeps each meter's daily budget cycle rolling over.
 # Three schedules:
-#   - set-pending (every 5 min): keeps each wallet's pendingBurn current so
+#   - set-pending (every 30 min): keeps each wallet's pendingBurn current so
 #     transfer() can enforce a spendable balance between burns.
 #   - burn (hourly): actually burns settled consumption and resets pendingBurn.
 #   - cycle-tick (daily): rewrites cycleStartedAt for every budgeted device,
@@ -13,14 +13,14 @@ name: EnergiToken consumption oracle
 # ORACLE_SECRET out of Vercel's own cron config and in one place (repo secrets).
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/30 * * * *"
     - cron: "0 * * * *"
     - cron: "0 0 * * *"
   workflow_dispatch: {}
 
 jobs:
   set-pending:
-    if: github.event.schedule == '*/5 * * * *' || github.event_name == 'workflow_dispatch'
+    if: github.event.schedule == '*/30 * * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Call /api/oracle/set-pending

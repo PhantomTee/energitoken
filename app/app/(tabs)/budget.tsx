@@ -1,19 +1,17 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, Switch, Platform, KeyboardAvoidingView } from "react-native";
+import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, Platform, KeyboardAvoidingView } from "react-native";
 import { useFocusEffect, Link } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, RelayTier, relayTierLabels } from "../../src/theme/colors";
 import { typography, spacing, radius } from "../../src/theme/typography";
 import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
 import { BudgetRing } from "../../src/components/BudgetRing";
-import { RelayIndicator } from "../../src/components/RelayIndicator";
 import { useWallet } from "../../src/hooks/useWallet";
 import { useMeterData } from "../../src/hooks/useMeterData";
 import { useTransactionHistory } from "../../src/hooks/useTransactionHistory";
-import { getEngyBalance } from "../../src/services/contract";
+import { getEngyBalance, getSpendableBalance } from "../../src/services/contract";
 import { setBudgetWh } from "../../src/services/budget";
 import { whToUnits, unitsToWh, tokensToUnits } from "../../src/services/units";
-import { setRelayOverride } from "../../src/services/relayOverride";
 import { useIsDesktopWeb } from "../../src/hooks/useIsDesktopWeb";
 import { MobileTopBar } from "../../src/components/MobileTopBar";
 
@@ -62,16 +60,6 @@ function useDailyUsage(walletAddress: string | null, periodDays: PeriodDays) {
 /** Sanity ceiling: 100 kWh/day is several times a heavy Nigerian household. */
 const MAX_BUDGET_UNITS = 100;
 
-/**
- * The load-shedding ladder — mirrors the ESP32 relay priorities and the
- * oracle's notification thresholds (app/api/oracle/burn.ts).
- */
-const SHED_TIERS = [
-  { pct: 70, label: "Luxury loads cut", detail: "water heater, AC" },
-  { pct: 85, label: "Optional loads cut", detail: "TV, sockets" },
-  { pct: 95, label: "Essential loads cut", detail: "fans, some lights" },
-] as const;
-
 const RELAY_TABLE_ROWS: { tier: RelayTier; devices: string; threshold: string }[] = [
   { tier: "r1", devices: "Lighting, phone charging", threshold: "Always on" },
   { tier: "r2", devices: "Fans, some lights", threshold: "Sheds at 95% used" },
@@ -79,76 +67,30 @@ const RELAY_TABLE_ROWS: { tier: RelayTier; devices: string; threshold: string }[
   { tier: "r4", devices: "Water heater, AC", threshold: "Sheds at 70% used" },
 ];
 
-function ShedLadder({ percentUsed }: { percentUsed: number }) {
-  return (
-    <View style={styles.ladder}>
-      {SHED_TIERS.map((tier) => {
-        const crossed = percentUsed >= tier.pct;
-        return (
-          <View key={tier.pct} style={styles.ladderRow}>
-            <View style={[styles.ladderDot, crossed ? styles.ladderDotCrossed : styles.ladderDotUpcoming]} />
-            <Text style={[typography.dataXs, styles.ladderPct, crossed && styles.ladderTextCrossed]}>
-              {tier.pct}%
-            </Text>
-            <View style={styles.ladderBody}>
-              <Text style={[typography.bodyStrong, styles.ladderLabel, crossed && styles.ladderTextCrossed]}>
-                {tier.label}
-              </Text>
-              <Text style={[typography.caption, styles.ladderDetail]}>{tier.detail}</Text>
-            </View>
-            <Text style={[typography.dataXs, crossed ? styles.ladderStateOff : styles.ladderStateOk]}>
-              {crossed ? "ACTIVE" : "—"}
-            </Text>
-          </View>
-        );
-      })}
-      <View style={styles.ladderRow}>
-        <View style={[styles.ladderDot, styles.ladderDotProtected]} />
-        <Text style={[typography.dataXs, styles.ladderPct]}>∞</Text>
-        <View style={styles.ladderBody}>
-          <Text style={[typography.bodyStrong, styles.ladderLabel]}>Critical loads protected</Text>
-          <Text style={[typography.caption, styles.ladderDetail]}>lighting, phone charging, never shed</Text>
-        </View>
-        <Text style={[typography.dataXs, styles.ladderStateOk]}>SAFE</Text>
-      </View>
-    </View>
-  );
-}
-
 export default function BudgetScreen() {
   const isDesktop = useIsDesktopWeb();
   const { walletAddress, getSigner } = useWallet();
   const [refreshing, setRefreshing] = useState(false);
   const [balanceWh, setBalanceWh] = useState<bigint | null>(null);
+  const [spendableWh, setSpendableWh] = useState<bigint | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [relayBusyTier, setRelayBusyTier] = useState<RelayTier | null>(null);
-  const [relayError, setRelayError] = useState<string | null>(null);
   const [periodDays, setPeriodDays] = useState<PeriodDays>(7);
 
   const { reading, loading, error, deviceId, hasDevice } = useMeterData(walletAddress, getSigner);
   const { days: dailyUsage } = useDailyUsage(walletAddress, periodDays);
   const [durationInput, setDurationInput] = useState("");
 
-  const handleRelayToggle = async (tier: RelayTier, next: boolean | null) => {
-    if (!deviceId || !walletAddress) return;
-    setRelayError(null);
-    setRelayBusyTier(tier);
-    try {
-      await setRelayOverride(tier, next, walletAddress, getSigner);
-    } catch (err) {
-      setRelayError(err instanceof Error ? err.message : "Couldn't update that load right now.");
-    } finally {
-      setRelayBusyTier(null);
-    }
-  };
-
   const refreshBalance = useCallback(async () => {
     if (!walletAddress) return;
     try {
-      const balance = await getEngyBalance(walletAddress);
+      const [balance, spendable] = await Promise.all([
+        getEngyBalance(walletAddress),
+        getSpendableBalance(walletAddress),
+      ]);
       setBalanceWh(balance);
+      setSpendableWh(spendable);
     } catch {
       // leave the previous balance on screen rather than clearing it on a transient RPC error
     }
@@ -166,7 +108,11 @@ export default function BudgetScreen() {
     setRefreshing(false);
   }, [refreshBalance]);
 
-  const availableUnits = balanceWh !== null ? tokensToUnits(balanceWh) : null;
+  // What's actually available to allocate is the spendable balance, not the
+  // raw on-chain one -- otherwise a household could plan a budget against
+  // ENGY that's already spoken for by energy they've used but the oracle
+  // hasn't burned yet, same distinction Dashboard and Transfer already make.
+  const availableUnits = spendableWh !== null ? tokensToUnits(spendableWh) : null;
   const currentBudgetUnits = reading?.budgetWh != null ? whToUnits(reading.budgetWh) : null;
   const usedUnits = reading?.energyWh != null ? whToUnits(reading.energyWh) : null;
 
@@ -316,9 +262,7 @@ export default function BudgetScreen() {
                             ]}
                           />
                         </View>
-                        <Text style={[typography.dataXs, styles.desktopChartLabel]}>
-                          {new Date(Date.now() - (6 - dailyUsage.indexOf(day)) * 86400000).toLocaleDateString(undefined, { weekday: "short" })}
-                        </Text>
+                        <Text style={[typography.dataXs, styles.desktopChartLabel]}>{day.label}</Text>
                       </View>
                     );
                   })}
@@ -332,7 +276,7 @@ export default function BudgetScreen() {
                 <Text style={[typography.caption, styles.currentBalanceLabel]}>Current Balance</Text>
                 <Text style={[typography.dataMd, styles.currentBalanceValue]}>
                   {availableUnits === null ? "···" : availableUnits.toLocaleString()}
-                  <Text style={[typography.dataXs, styles.summaryUnit]}> ENGY</Text>
+                  <Text style={[typography.dataXs, styles.summaryUnit]}> units</Text>
                 </Text>
               </View>
 
@@ -355,7 +299,7 @@ export default function BudgetScreen() {
                 <View style={styles.dailyAllowanceBox}>
                   <Text style={[typography.caption, styles.dailyAllowanceLabel]}>Daily Allowance</Text>
                   <Text style={[typography.dataMd, styles.dailyAllowanceValue]}>
-                    {computedDailyUnits.toFixed(1)} <Text style={typography.dataXs}>ENGY/day</Text>
+                    {computedDailyUnits.toFixed(1)} <Text style={typography.dataXs}>units/day</Text>
                   </Text>
                 </View>
               )}
@@ -388,8 +332,8 @@ export default function BudgetScreen() {
               <Text style={[typography.h2, styles.cardTitle]}>Relay Thresholds (R1{"–"}R4)</Text>
             </View>
             <Text style={[typography.caption, styles.loadGuideIntro]}>
-              Configure how your household circuits prioritize energy when approaching budget limits.
-              Lower priority relays will be disconnected first.
+              How your household circuits prioritize energy when approaching budget limits -- lower
+              priority relays disconnect first. Manage overrides from the Dashboard.
             </Text>
             <View style={styles.thresholdHeaderRow}>
               <Text style={[typography.label, styles.thCol1]}>RELAY</Text>
@@ -401,7 +345,6 @@ export default function BudgetScreen() {
               const override = reading?.relayOverrides?.[row.tier];
               const isManual = override !== undefined;
               const on = isManual ? override : (reading?.relays?.[row.tier] ?? false);
-              const busy = relayBusyTier === row.tier;
               return (
                 <View key={row.tier} style={styles.thresholdRow}>
                   <View style={styles.thCol1}>
@@ -412,14 +355,11 @@ export default function BudgetScreen() {
                   <Text style={[typography.caption, styles.thCol2, styles.thDevices]}>{row.devices}</Text>
                   <Text style={[typography.dataXs, styles.thCol3, styles.thThreshold]}>{row.threshold}</Text>
                   <View style={styles.thCol4}>
-                    <Switch
-                      value={on}
-                      disabled={busy || !deviceId}
-                      onValueChange={(next) => {
-                        if (deviceId) handleRelayToggle(row.tier, next);
-                      }}
-                      trackColor={{ true: colors.indigo[500], false: colors.border }}
-                    />
+                    <View style={[styles.thStatusPill, on ? styles.thStatusPillOn : styles.thStatusPillOff]}>
+                      <Text style={[typography.dataXs, on ? styles.thStatusTextOn : styles.thStatusTextOff]}>
+                        {isManual ? (on ? "FORCED ON" : "FORCED OFF") : on ? "ON" : "OFF"}
+                      </Text>
+                    </View>
                   </View>
                 </View>
               );
@@ -463,21 +403,75 @@ export default function BudgetScreen() {
             meter starts a new cycle.
           </Text>
 
-          {projectionDays !== null && availableUnits !== null && currentBudgetUnits !== null && (
-            <View style={styles.projectionCard}>
-              <Text style={[typography.bodyStrong, styles.projectionText]}>
-                At {currentBudgetUnits.toLocaleString()} units/day, your{" "}
-                {availableUnits.toLocaleString()} units last ≈ {projectionDays.toFixed(1)} days.
-              </Text>
-            </View>
-          )}
+          {/* ── Set budget -- the page's actual job, right up front ── */}
+          <View style={styles.setBudgetCard}>
+            <Text style={[typography.h2, styles.setBudgetTitle]}>Set Budget</Text>
+            <Text style={[typography.label, styles.fieldLabel]}>DURATION (DAYS)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. 30"
+              placeholderTextColor={colors.neutral[500]}
+              value={durationInput}
+              onChangeText={(text) => {
+                setDurationInput(text);
+                setSaveSuccess(false);
+                setSaveError(null);
+              }}
+              keyboardType="number-pad"
+              editable={!saving}
+            />
 
-          {/* ── Load-shedding ladder ── */}
-          <Text style={[typography.h2, styles.sectionTitle]}>What happens as you use it</Text>
-          <Text style={[typography.caption, styles.ladderIntro]}>
-            You're at {Math.round(percentUsed)}% of today's budget.
-          </Text>
-          <ShedLadder percentUsed={percentUsed} />
+            {/* One runway line, not two: shows the hypothetical new duration
+                while you're typing a valid one, otherwise falls back to the
+                currently-set budget's own projection -- these used to be two
+                separate cards saying almost the same sentence. */}
+            {durationValid && availableUnits !== null && availableUnits > 0 ? (
+              <View style={styles.durationInfoBanner}>
+                <Text style={[typography.caption, styles.durationInfoText]}>
+                  Your <Text style={styles.durationInfoStrong}>{availableUnits.toLocaleString()} units</Text> will
+                  last <Text style={styles.durationInfoStrong}>{durationDays} days</Text> at{" "}
+                  {computedDailyUnits!.toFixed(1)} units/day.
+                </Text>
+              </View>
+            ) : (
+              projectionDays !== null &&
+              availableUnits !== null &&
+              currentBudgetUnits !== null && (
+                <View style={styles.durationInfoBanner}>
+                  <Text style={[typography.caption, styles.durationInfoText]}>
+                    At <Text style={styles.durationInfoStrong}>{currentBudgetUnits.toLocaleString()} units/day</Text>,
+                    your <Text style={styles.durationInfoStrong}>{availableUnits.toLocaleString()} units</Text> last
+                    ≈ {projectionDays.toFixed(1)} days.
+                  </Text>
+                </View>
+              )
+            )}
+            {durationValid && computedDailyUnits !== null && !computedDailyValid && (
+              <Text style={[typography.caption, styles.warnText]}>
+                That's {computedDailyUnits.toFixed(1)} units/day -- more than the {MAX_BUDGET_UNITS}/day maximum.
+                Try a longer duration.
+              </Text>
+            )}
+            {saveError && <Text style={[typography.caption, styles.errorText]}>{saveError}</Text>}
+            {saveSuccess && <Text style={[typography.caption, styles.successText]}>Budget updated.</Text>}
+
+            <Pressable
+              style={[styles.button, (!durationValid || !computedDailyValid || saving) && styles.buttonDisabled]}
+              onPress={handleSetBudget}
+              disabled={!durationValid || !computedDailyValid || saving}
+            >
+              {saving ? (
+                <ActivityIndicator color={colors.neutral.white} />
+              ) : (
+                <Text style={[typography.bodyStrong, styles.buttonText]}>Apply Budget</Text>
+              )}
+            </Pressable>
+
+            <Text style={[typography.caption, styles.keypadNote]}>
+              You can also change the budget from the meter's keypad, handy when there's no
+              internet. The app shows whichever value was set most recently.
+            </Text>
+          </View>
 
           {/* ── Period trend: daily allowance vs actual usage ── */}
           <Text style={[typography.h2, styles.sectionTitle]}>Allowance vs. actual</Text>
@@ -529,81 +523,6 @@ export default function BudgetScreen() {
               </Text>
             </>
           )}
-
-          {/* ── Live relay state ── */}
-          {reading?.relays && (
-            <>
-              <View style={styles.sectionTitleRow}>
-                <Ionicons name="shield-checkmark-outline" size={18} color={colors.terracotta[500]} />
-                <Text style={[typography.h2, styles.sectionTitleInline]}>Load Priority Guide</Text>
-              </View>
-              <Text style={[typography.caption, styles.loadGuideIntro]}>
-                When energy reserves run low, non-essential relays automatically disconnect to
-                preserve critical systems based on these thresholds. Tap a load to override it.
-              </Text>
-              <RelayIndicator
-                relays={reading.relays}
-                overrides={reading.relayOverrides}
-                onToggle={deviceId ? handleRelayToggle : undefined}
-                disabledTier={relayBusyTier}
-              />
-              {relayError && <Text style={[typography.caption, styles.errorText]}>{relayError}</Text>}
-            </>
-          )}
-
-          {/* ── Set budget ── */}
-          <View style={styles.setBudgetCard}>
-            <Text style={[typography.h2, styles.setBudgetTitle]}>Set Budget</Text>
-            <Text style={[typography.label, styles.fieldLabel]}>DURATION (DAYS)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. 30"
-              placeholderTextColor={colors.neutral[500]}
-              value={durationInput}
-              onChangeText={(text) => {
-                setDurationInput(text);
-                setSaveSuccess(false);
-                setSaveError(null);
-              }}
-              keyboardType="number-pad"
-              editable={!saving}
-            />
-
-            {durationValid && availableUnits !== null && availableUnits > 0 && (
-              <View style={styles.durationInfoBanner}>
-                <Text style={[typography.caption, styles.durationInfoText]}>
-                  Your <Text style={styles.durationInfoStrong}>{availableUnits.toLocaleString()} units</Text> will
-                  last <Text style={styles.durationInfoStrong}>{durationDays} days</Text> at{" "}
-                  {computedDailyUnits!.toFixed(1)} units/day.
-                </Text>
-              </View>
-            )}
-            {durationValid && computedDailyUnits !== null && !computedDailyValid && (
-              <Text style={[typography.caption, styles.warnText]}>
-                That's {computedDailyUnits.toFixed(1)} units/day -- more than the {MAX_BUDGET_UNITS}/day maximum.
-                Try a longer duration.
-              </Text>
-            )}
-            {saveError && <Text style={[typography.caption, styles.errorText]}>{saveError}</Text>}
-            {saveSuccess && <Text style={[typography.caption, styles.successText]}>Budget updated.</Text>}
-
-            <Pressable
-              style={[styles.button, (!durationValid || !computedDailyValid || saving) && styles.buttonDisabled]}
-              onPress={handleSetBudget}
-              disabled={!durationValid || !computedDailyValid || saving}
-            >
-              {saving ? (
-                <ActivityIndicator color={colors.neutral.white} />
-              ) : (
-                <Text style={[typography.bodyStrong, styles.buttonText]}>Apply Budget</Text>
-              )}
-            </Pressable>
-
-            <Text style={[typography.caption, styles.keypadNote]}>
-              You can also change the budget from the meter's keypad, handy when there's no
-              internet. The app shows whichever value was set most recently.
-            </Text>
-          </View>
         </>
       )}
     </ScrollView>
@@ -708,6 +627,11 @@ const styles = StyleSheet.create({
   thRelayName: { color: colors.textPrimary },
   thDevices: { color: colors.textSecondary },
   thThreshold: { color: colors.textSecondary },
+  thStatusPill: { borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 3 },
+  thStatusPillOn: { backgroundColor: colors.terracotta[100] },
+  thStatusPillOff: { backgroundColor: colors.neutral[100] },
+  thStatusTextOn: { color: colors.terracotta[700] },
+  thStatusTextOff: { color: colors.textSecondary },
   progressCard: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
@@ -724,39 +648,9 @@ const styles = StyleSheet.create({
   summaryValue: { color: colors.textPrimary, marginTop: 2 },
   summaryUnit: { color: colors.textSecondary },
   cycleNote: { color: colors.textSecondary, opacity: 0.8 },
-  projectionCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  projectionText: { color: colors.textPrimary },
   sectionTitle: { color: colors.textPrimary, marginTop: spacing.sm },
   sectionTitleRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.sm },
-  sectionTitleInline: { color: colors.textPrimary },
-  ladderIntro: { color: colors.textSecondary },
   loadGuideIntro: { color: colors.textSecondary, marginTop: -spacing.xs },
-  ladder: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.md,
-    gap: spacing.md,
-  },
-  ladderRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  ladderDot: { width: 10, height: 10, borderRadius: 5 },
-  ladderDotUpcoming: { backgroundColor: colors.neutral[700] },
-  ladderDotCrossed: { backgroundColor: colors.terracotta[500] },
-  ladderDotProtected: { backgroundColor: colors.success },
-  ladderPct: { color: colors.textSecondary, width: 36 },
-  ladderBody: { flex: 1 },
-  ladderLabel: { color: colors.textPrimary },
-  ladderDetail: { color: colors.textSecondary, opacity: 0.7 },
-  ladderTextCrossed: { color: colors.terracotta[400] },
-  ladderStateOff: { color: colors.terracotta[400], width: 48, textAlign: "right" },
-  ladderStateOk: { color: colors.textSecondary, width: 48, textAlign: "right" },
   periodRow: { flexDirection: "row", gap: spacing.sm },
   periodChip: {
     borderWidth: 1,

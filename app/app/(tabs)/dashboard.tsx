@@ -6,8 +6,9 @@ import { colors, RelayTier, relayTierLabels } from "../../src/theme/colors";
 import { typography, spacing, radius } from "../../src/theme/typography";
 import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
 import { MetricTile } from "../../src/components/MetricTile";
-import { BudgetRing } from "../../src/components/BudgetRing";
 import { RelayIndicator } from "../../src/components/RelayIndicator";
+import { LiveConsumptionChart } from "../../src/components/LiveConsumptionChart";
+import { useConsumptionHistory } from "../../src/hooks/useConsumptionHistory";
 import { useWallet } from "../../src/hooks/useWallet";
 import { TopUpModal } from "../../src/components/TopUpModal";
 import { getEngyBalance, getSpendableBalance } from "../../src/services/contract";
@@ -61,6 +62,8 @@ export default function DashboardScreen() {
     deviceId,
     hasDevice,
   } = useMeterData(walletAddress, getSigner);
+  const consumptionHistory = useConsumptionHistory(reading);
+  const [chartWidth, setChartWidth] = useState(0);
 
   const refreshBalance = useCallback(async () => {
     if (!walletAddress) return;
@@ -254,15 +257,15 @@ export default function DashboardScreen() {
             <Text style={[typography.caption, styles.errorText]}>Couldn't load live data: {meterError}</Text>
           )}
 
-          {/* ── Desktop: Daily Budget ring + Wallet ── */}
+          {/* ── Desktop: Live Consumption + Wallet ── */}
           <View style={styles.desktopRow}>
-            <View style={styles.dailyBudgetCard}>
-              <Text style={[typography.h2, styles.cardTitle]}>Daily Budget</Text>
-              <BudgetRing percentUsed={reading?.percentUsed ?? 0} size={140} />
-              <Text style={[typography.dataSm, styles.dailyBudgetSummary]}>
-                {reading?.energyWh != null ? reading.energyWh.toLocaleString() : "—"} Wh consumed of{" "}
-                {reading?.budgetWh != null ? reading.budgetWh.toLocaleString() : "—"} Wh
-              </Text>
+            <View
+              style={styles.dailyBudgetCard}
+              onLayout={(e) => setChartWidth(e.nativeEvent.layout.width)}
+            >
+              <Text style={[typography.h2, styles.cardTitle]}>Live Consumption</Text>
+              <Text style={[typography.caption, styles.chartSubtitle]}>Power draw, as the meter reports it</Text>
+              {chartWidth > 0 && <LiveConsumptionChart points={consumptionHistory} width={chartWidth} />}
             </View>
 
             <View style={styles.walletCard}>
@@ -273,11 +276,11 @@ export default function DashboardScreen() {
               <Text style={[typography.label, styles.walletLabel]}>Available Balance</Text>
               <Text style={[typography.dataMd, styles.walletValue]}>
                 {spendableWh === null ? "···" : tokensToUnits(spendableWh).toLocaleString()}
-                <Text style={[typography.dataXs, styles.walletUnit]}> ENGY</Text>
+                <Text style={[typography.dataXs, styles.walletUnit]}> units</Text>
               </Text>
               {balanceWh !== null && spendableWh !== null && balanceWh !== spendableWh && (
                 <Text style={[typography.caption, styles.walletSpendableHint]}>
-                  {tokensToUnits(balanceWh).toLocaleString()} ENGY on-chain — the rest is energy
+                  {tokensToUnits(balanceWh).toLocaleString()} units on-chain — the rest is energy
                   already used but not yet settled.
                 </Text>
               )}
@@ -304,19 +307,19 @@ export default function DashboardScreen() {
         </>
       ) : (
         <>
-          {/* ── ENGY Balance -- first thing on the screen ── */}
+          {/* ── Balance -- first thing on the screen ── */}
           <View style={styles.balanceCard}>
-            <Text style={[typography.bodyStrong, styles.balanceCardTitle]}>ENGY Balance</Text>
+            <Text style={[typography.bodyStrong, styles.balanceCardTitle]}>Balance</Text>
             <Text style={[typography.data, styles.balanceValue]}>
               {balanceWh === null ? "···" : tokensToUnits(balanceWh).toLocaleString()}
-              <Text style={[typography.dataSm, styles.balanceValueUnit]}> ENGY</Text>
+              <Text style={[typography.dataSm, styles.balanceValueUnit]}> units</Text>
             </Text>
             <Text style={[typography.dataSm, styles.balanceUnit]}>
-              ≈ {balanceWh === null ? "···" : balanceWh.toLocaleString()} Wh credit
+              ≈ {balanceWh === null ? "···" : balanceWh.toLocaleString()} ENGY (Wh)
             </Text>
             {balanceWh !== null && spendableWh !== null && balanceWh !== spendableWh && (
               <Text style={[typography.caption, styles.balanceSpendableHint]}>
-                {tokensToUnits(spendableWh).toLocaleString()} ENGY spendable — the rest is energy
+                {tokensToUnits(spendableWh).toLocaleString()} units spendable — the rest is energy
                 already used but not yet settled on-chain.
               </Text>
             )}
@@ -400,19 +403,19 @@ export default function DashboardScreen() {
             {relayError && <Text style={[typography.caption, styles.errorText]}>{relayError}</Text>}
           </View>
 
-          {/* ── Budget Status ── */}
-          <View style={styles.budgetStatusCard}>
+          {/* ── Live Consumption ── */}
+          <View
+            style={styles.budgetStatusCard}
+            onLayout={(e) => setChartWidth(e.nativeEvent.layout.width)}
+          >
             <View style={styles.budgetStatusHeader}>
-              <Text style={[typography.bodyStrong, styles.readingsCardTitle]}>Budget Status</Text>
+              <Text style={[typography.bodyStrong, styles.readingsCardTitle]}>Live Consumption</Text>
               <Pressable onPress={() => router.push("/(tabs)/budget")}>
-                <Text style={[typography.dataXs, styles.pairLinkText]}>Set Budget →</Text>
+                <Text style={[typography.dataXs, styles.pairLinkText]}>Budget →</Text>
               </Pressable>
             </View>
-            <BudgetRing percentUsed={reading?.percentUsed ?? 0} size={120} />
-            <Text style={[typography.dataSm, styles.dailyBudgetSummary]}>
-              {reading?.energyWh != null ? reading.energyWh.toLocaleString() : "—"} Wh used of{" "}
-              {reading?.budgetWh != null ? reading.budgetWh.toLocaleString() : "—"} Wh
-            </Text>
+            <Text style={[typography.caption, styles.chartSubtitle]}>Power draw, as the meter reports it</Text>
+            {chartWidth > 0 && <LiveConsumptionChart points={consumptionHistory} width={chartWidth} />}
           </View>
         </>
       )}
@@ -527,9 +530,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     padding: spacing.xl,
-    alignItems: "center",
   },
-  dailyBudgetSummary: { color: colors.textPrimary, marginTop: spacing.lg },
+  chartSubtitle: { color: colors.textSecondary, marginBottom: spacing.md },
   walletCard: {
     flex: 1,
     backgroundColor: colors.surface,
