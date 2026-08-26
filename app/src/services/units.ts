@@ -17,3 +17,24 @@ export function unitsToWh(units: number): number {
 export function tokensToUnits(tokens: bigint): number {
   return Number(tokens) / WH_PER_UNIT;
 }
+
+/**
+ * How much of a household's spendable balance is actually free to send
+ * elsewhere, once today's remaining budget allowance is set aside.
+ * "Budgeted" deliberately means only today's remaining daily slice
+ * (budgetWh - cycleWh), not the whole multi-day plan a household picked on
+ * the Budget page -- the meter only ever enforces the daily figure, so
+ * reserving future days would restrict sharing further than anything else
+ * in the system actually commits to. No budget set at all (budgetWh/cycleWh
+ * null, the default until a household opts in) reserves nothing.
+ */
+export function getUnbudgetedWh(
+  spendableWh: bigint,
+  budgetWh: number | null,
+  cycleWh: number | null
+): bigint {
+  if (budgetWh == null || cycleWh == null) return spendableWh;
+  const remainingWh = Math.max(0, Math.round(budgetWh - cycleWh));
+  const reserved = BigInt(remainingWh);
+  return reserved >= spendableWh ? 0n : spendableWh - reserved;
+}

@@ -209,6 +209,10 @@ export default function ProfileScreen() {
                 <Ionicons name="download-outline" size={16} color={colors.indigo[500]} />
                 <Text style={[typography.bodyStrong, styles.csvExportButtonText]}>Request CSV Export</Text>
               </Pressable>
+              <Pressable style={styles.csvExportButton} onPress={() => router.push("/(tabs)/history")}>
+                <Ionicons name="time-outline" size={16} color={colors.indigo[500]} />
+                <Text style={[typography.bodyStrong, styles.csvExportButtonText]}>View Transaction History</Text>
+              </Pressable>
             </View>
           </View>
 
@@ -255,6 +259,16 @@ export default function ProfileScreen() {
                   <Text style={styles.logoutChipText}>Log out</Text>
                 </Pressable>
               }
+            />
+          </View>
+
+          {/* ── Activity ── */}
+          <SectionHeader>ACTIVITY</SectionHeader>
+          <View style={styles.card}>
+            <SettingsRow
+              label="Transaction history"
+              onPress={() => router.push("/(tabs)/history")}
+              value={<Text style={styles.chevron}>›</Text>}
             />
           </View>
 

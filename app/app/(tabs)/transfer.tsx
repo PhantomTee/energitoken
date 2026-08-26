@@ -34,6 +34,8 @@ import { TxDirection } from "../../src/services/contractEvents";
 import { exportTransactionsCsv } from "../../src/services/exportReport";
 import { useIsDesktopWeb } from "../../src/hooks/useIsDesktopWeb";
 import { displayNameFromEmail } from "../../src/services/displayName";
+import { useMeterData } from "../../src/hooks/useMeterData";
+import { getUnbudgetedWh } from "../../src/services/units";
 
 const TX_DIRECTION_META: Record<TxDirection, string> = {
   mint: "Purchased",
@@ -129,6 +131,7 @@ export default function TransferScreen() {
   const { transactions: historyTransactions, refresh: refreshHistory } = useTransactionHistory(
     isDesktop ? walletAddress : null
   );
+  const { reading } = useMeterData(walletAddress, getSigner);
 
   const refreshBalance = useCallback(async () => {
     if (!walletAddress) return;
@@ -143,6 +146,14 @@ export default function TransferScreen() {
       // leave balances as-is; the UI shows a loading state until a read succeeds
     }
   }, [walletAddress]);
+
+  // What's actually free to send: spendable balance minus today's
+  // remaining budget allowance (see getUnbudgetedWh). No budget set at all
+  // reserves nothing, so this equals spendableWh for most households.
+  const unbudgetedWh =
+    spendableWh !== null
+      ? getUnbudgetedWh(spendableWh, reading?.budgetWh ?? null, reading?.energyWh ?? null)
+      : null;
 
   useFocusEffect(
     useCallback(() => {
@@ -191,7 +202,7 @@ export default function TransferScreen() {
           : null;
   const amountWh = Number(amount);
   const isValidRecipient = effectiveAddress !== null;
-  const isValidAmount = spendableWh !== null && amountWh > 0 && BigInt(Math.floor(amountWh)) <= spendableWh;
+  const isValidAmount = unbudgetedWh !== null && amountWh > 0 && BigInt(Math.floor(amountWh)) <= unbudgetedWh;
   const canSubmit = isValidAmount && isValidRecipient && !resolving && networkOk === true && gasOk === true;
 
   // Live network + gas check, once recipient and amount are otherwise valid --
@@ -236,6 +247,16 @@ export default function TransferScreen() {
     setTxState("signing");
     try {
       const signer = await getSigner();
+
+      // Checked separately from runTransferPreflight below: this is our own
+      // app-level policy (today's remaining budget stays reserved), not the
+      // contract's hard on-chain limit, so it gets its own accurate message
+      // instead of borrowing the spendable-balance one.
+      if (unbudgetedWh !== null && BigInt(Math.floor(amountWh)) > unbudgetedWh) {
+        setTxState("failed");
+        setTxError("That amount reaches into today's remaining budget allowance. Lower the amount, or free it up by reducing your budget first.");
+        return;
+      }
 
       const preflightError = await runTransferPreflight(signer, amountWh, spendableWh ?? 0n);
       if (preflightError) {
@@ -294,9 +315,15 @@ export default function TransferScreen() {
       <View style={styles.availablePill}>
         <Text style={[typography.caption, styles.availablePillLabel]}>Available to send:</Text>
         <Text style={[typography.dataSm, styles.availablePillValue]}>
-          {spendableWh === null ? "···" : `${spendableWh.toLocaleString()} ENGY`}
+          {unbudgetedWh === null ? "···" : `${unbudgetedWh.toLocaleString()} ENGY`}
         </Text>
       </View>
+      {spendableWh !== null && unbudgetedWh !== null && spendableWh !== unbudgetedWh && (
+        <Text style={[typography.caption, styles.spendableHint]}>
+          {spendableWh.toLocaleString()} ENGY spendable — the rest is today's remaining budget
+          allowance, set aside so sending it wouldn't leave you short before your next top-up.
+        </Text>
+      )}
       {balanceWh !== null && spendableWh !== null && balanceWh !== spendableWh && (
         <Text style={[typography.caption, styles.spendableHint]}>
           On-chain balance is {balanceWh.toLocaleString()} ENGY — the difference is energy you've
@@ -410,8 +437,8 @@ export default function TransferScreen() {
 
       <View style={styles.amountLabelRow}>
         <Text style={[typography.label, styles.fieldLabel, { marginTop: 0 }]}>AMOUNT (ENGY)</Text>
-        {spendableWh !== null && (
-          <Pressable onPress={() => setAmount(String(spendableWh))} disabled={txState !== "idle"}>
+        {unbudgetedWh !== null && (
+          <Pressable onPress={() => setAmount(String(unbudgetedWh))} disabled={txState !== "idle"}>
             <Text style={[typography.dataXs, styles.sendMaxLink]}>Send Max</Text>
           </Pressable>
         )}
@@ -425,9 +452,13 @@ export default function TransferScreen() {
         keyboardType="numeric"
         editable={txState === "idle"}
       />
-      {amount.length > 0 && spendableWh !== null && !isValidAmount && (
+      {amount.length > 0 && unbudgetedWh !== null && !isValidAmount && (
         <Text style={[typography.caption, styles.errorHint]}>
-          {amountWh <= 0 ? "Enter an amount greater than 0." : "Amount exceeds your spendable balance."}
+          {amountWh <= 0
+            ? "Enter an amount greater than 0."
+            : spendableWh !== null && BigInt(Math.floor(amountWh)) > spendableWh
+              ? "Amount exceeds your spendable balance."
+              : "That reaches into today's remaining budget allowance."}
         </Text>
       )}
 

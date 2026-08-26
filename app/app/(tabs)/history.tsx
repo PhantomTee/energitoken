@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from "react";
+import React from "react";
 import { View, Text, StyleSheet, FlatList, Pressable, Linking, ActivityIndicator } from "react-native";
+import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../../src/theme/colors";
 import { typography, spacing, radius } from "../../src/theme/typography";
@@ -7,85 +8,9 @@ import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
 import { useWallet } from "../../src/hooks/useWallet";
 import { useTransactionHistory } from "../../src/hooks/useTransactionHistory";
 import { TxRecord, TxDirection } from "../../src/services/contractEvents";
-import { whToUnits } from "../../src/services/units";
 import { exportTransactionsCsv, exportBillingReportPdf } from "../../src/services/exportReport";
 import { useIsDesktopWeb } from "../../src/hooks/useIsDesktopWeb";
 import { MobileTopBar } from "../../src/components/MobileTopBar";
-
-const CONSUMPTION_DAYS = 14;
-
-function dayKey(ts: number) {
-  const d = new Date(ts);
-  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-}
-
-/** Buckets burn transactions into the trailing 14 calendar days for the
- * Consumption tab's chart + daily table -- same underlying event data as
- * the transaction list below, just aggregated per day. */
-function useDailyConsumption(transactions: TxRecord[]) {
-  return useMemo(() => {
-    const now = Date.now();
-    const cutoff = now - CONSUMPTION_DAYS * 24 * 60 * 60 * 1000;
-    const byDay = new Map<string, number>();
-    for (const tx of transactions) {
-      if (tx.direction !== "burn" || tx.timestamp < cutoff) continue;
-      const key = dayKey(tx.timestamp);
-      byDay.set(key, (byDay.get(key) ?? 0) + tx.amountWh);
-    }
-    const days: { key: string; label: string; wh: number }[] = [];
-    for (let i = CONSUMPTION_DAYS - 1; i >= 0; i--) {
-      const d = new Date(now - i * 24 * 60 * 60 * 1000);
-      const key = dayKey(d.getTime());
-      days.push({
-        key,
-        label: d.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
-        wh: byDay.get(key) ?? 0,
-      });
-    }
-    return days;
-  }, [transactions]);
-}
-
-function ConsumptionChart({ days }: { days: { key: string; label: string; wh: number }[] }) {
-  const maxWh = Math.max(...days.map((d) => d.wh), 1);
-  const totalWh = days.reduce((s, d) => s + d.wh, 0);
-  return (
-    <View style={styles.consumptionSection}>
-      <View style={styles.consumptionChart}>
-        {days.map((day) => (
-          <View key={day.key} style={styles.consumptionBarWrap}>
-            <View style={styles.consumptionBarTrack}>
-              <View
-                style={[
-                  styles.consumptionBarFill,
-                  { height: `${Math.max(2, (day.wh / maxWh) * 100)}%` },
-                ]}
-              />
-            </View>
-          </View>
-        ))}
-      </View>
-      <Text style={[typography.caption, styles.consumptionSummary]}>
-        Last {CONSUMPTION_DAYS} days: {whToUnits(totalWh).toLocaleString()} units consumed
-      </Text>
-      <View style={styles.dailyTable}>
-        {days
-          .filter((d) => d.wh > 0)
-          .slice()
-          .reverse()
-          .map((day) => (
-            <View key={day.key} style={styles.dailyTableRow}>
-              <Text style={[typography.caption, styles.dailyTableLabel]}>{day.label}</Text>
-              <Text style={[typography.dataXs, styles.dailyTableValue]}>{day.wh.toLocaleString()} Wh</Text>
-            </View>
-          ))}
-        {days.every((d) => d.wh === 0) && (
-          <Text style={[typography.caption, styles.statusText]}>No consumption recorded in this window.</Text>
-        )}
-      </View>
-    </View>
-  );
-}
 
 const AMOY_EXPLORER_TX = "https://amoy.polygonscan.com/tx/";
 
@@ -98,18 +23,6 @@ const DIRECTION_META: Record<
   "transfer-out": { label: "Sent", symbol: "−", amountColor: colors.textPrimary, icon: "arrow-up-outline", badgeTint: colors.neutral[100], iconColor: colors.textSecondary },
   burn: { label: "Consumed", symbol: "−", amountColor: colors.textPrimary, icon: "flash-outline", badgeTint: colors.neutral[100], iconColor: colors.textSecondary },
 };
-
-type FilterTab = "transactions" | "consumption";
-
-const FILTER_TABS: { key: FilterTab; label: string }[] = [
-  { key: "transactions", label: "Transactions" },
-  { key: "consumption", label: "Consumption" },
-];
-
-function matchesFilter(direction: TxDirection, filter: FilterTab): boolean {
-  if (filter === "transactions") return direction !== "burn";
-  return direction === "burn"; // consumption
-}
 
 function formatTimestamp(ts: number) {
   const d = new Date(ts);
@@ -149,23 +62,29 @@ function TransactionRow({ tx }: { tx: TxRecord }) {
 }
 
 /** Reads real Transfer/Minted/Consumed event logs for this wallet from Polygon Amoy. */
+/**
+ * Reached from Profile's "Transaction History" row, not a tab -- this is a
+ * wallet ledger (mint/burn/transfer events with hashes), which fits next to
+ * the wallet address and export tools better than next to the physical
+ * energy side. No consumption chart here anymore either: Budget's allowance-
+ * vs-actual trend and Dashboard's live power graph already covered that
+ * same data two other ways, and this list already shows every burn with its
+ * exact amount and timestamp for anyone who wants the raw detail.
+ */
 export default function HistoryScreen() {
   const isDesktop = useIsDesktopWeb();
+  const router = useRouter();
   const { walletAddress } = useWallet();
   const { transactions, loading, error, refresh } = useTransactionHistory(walletAddress);
-  const [filter, setFilter] = useState<FilterTab>("transactions");
-
-  const filteredTransactions = useMemo(
-    () => transactions.filter((tx) => matchesFilter(tx.direction, filter)),
-    [transactions, filter]
-  );
-  const dailyConsumption = useDailyConsumption(transactions);
 
   return (
     <View style={[styles.screen, isDesktop && styles.screenDesktop]}>
       {isDesktop ? (
         <View style={styles.header}>
-          <Text style={[typography.h1, styles.headerTitle]}>History</Text>
+          <Pressable onPress={() => router.back()} style={styles.backRow} hitSlop={8}>
+            <Ionicons name="arrow-back" size={18} color={colors.textPrimary} />
+            <Text style={[typography.h1, styles.headerTitle]}>History</Text>
+          </Pressable>
           <View style={styles.headerRight}>
             {walletAddress && transactions.length > 0 && (
               <>
@@ -190,26 +109,13 @@ export default function HistoryScreen() {
         <View style={styles.mobileHeader}>
           <MobileTopBar />
           <View style={styles.heroBand}>
-            <Text style={[typography.display, styles.heroBandTitle]}>History</Text>
+            <Pressable onPress={() => router.back()} style={styles.backRow} hitSlop={8}>
+              <Ionicons name="arrow-back" size={20} color={colors.indigo[700]} />
+              <Text style={[typography.display, styles.heroBandTitle]}>History</Text>
+            </Pressable>
           </View>
         </View>
       )}
-
-      <View style={styles.filterRow}>
-        {FILTER_TABS.map((tab) => (
-          <Pressable key={tab.key} onPress={() => setFilter(tab.key)} style={styles.filterTab}>
-            <Text
-              style={[
-                typography.label,
-                filter === tab.key ? styles.filterTabTextActive : styles.filterTabText,
-              ]}
-            >
-              {tab.label.toUpperCase()}
-            </Text>
-            {filter === tab.key && <View style={styles.filterTabUnderline} />}
-          </Pressable>
-        ))}
-      </View>
 
       {loading && (
         <View style={styles.statusRow}>
@@ -227,33 +133,21 @@ export default function HistoryScreen() {
         </View>
       )}
 
-      {!loading && !error && filter === "consumption" && transactions.length > 0 && (
-        <ConsumptionChart days={dailyConsumption} />
-      )}
-
       {!loading && !error && transactions.length === 0 && (
         <Text style={[typography.caption, styles.statusText, styles.emptyText]}>
           No transactions yet for this wallet.
         </Text>
       )}
 
-      {!loading && !error && transactions.length > 0 && filteredTransactions.length === 0 && (
-        <Text style={[typography.caption, styles.statusText, styles.emptyText]}>
-          No {FILTER_TABS.find((t) => t.key === filter)?.label.toLowerCase()} yet.
-        </Text>
-      )}
-
-      {filter === "transactions" && (
-        <FlatList
-          data={filteredTransactions}
-          keyExtractor={(item) => item.hash}
-          renderItem={({ item }) => <TransactionRow tx={item} />}
-          contentContainerStyle={styles.listContent}
-          ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
-          refreshing={loading}
-          onRefresh={refresh}
-        />
-      )}
+      <FlatList
+        data={transactions}
+        keyExtractor={(item) => item.hash}
+        renderItem={({ item }) => <TransactionRow tx={item} />}
+        contentContainerStyle={styles.listContent}
+        ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
+        refreshing={loading}
+        onRefresh={refresh}
+      />
     </View>
   );
 }
@@ -269,6 +163,7 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.sm,
   },
   headerTitle: { color: colors.textPrimary },
+  backRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   mobileHeader: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, marginBottom: spacing.sm, gap: spacing.md },
   heroBand: { backgroundColor: colors.indigo[900], borderRadius: radius.lg, paddingHorizontal: spacing.lg, paddingVertical: spacing.xl },
   heroBandTitle: { color: colors.indigo[700], fontSize: 28 },
@@ -282,24 +177,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   exportButtonText: { color: colors.indigo[400] },
-  filterRow: {
-    flexDirection: "row",
-    gap: spacing.xl,
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  filterTab: { paddingBottom: spacing.sm, alignItems: "center" },
-  filterTabText: { color: colors.textSecondary },
-  filterTabTextActive: { color: colors.indigo[500] },
-  filterTabUnderline: {
-    position: "absolute",
-    bottom: -1,
-    height: 2,
-    width: "100%",
-    backgroundColor: colors.indigo[500],
-  },
   statusRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -311,32 +188,6 @@ const styles = StyleSheet.create({
   errorText: { color: colors.danger },
   retryText: { color: colors.indigo[400], textDecorationLine: "underline" },
   emptyText: { paddingHorizontal: spacing.lg },
-  consumptionSection: { paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
-  consumptionChart: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    height: 90,
-    gap: 3,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.sm,
-  },
-  consumptionBarWrap: { flex: 1, height: "100%", justifyContent: "flex-end" },
-  consumptionBarTrack: { flex: 1, justifyContent: "flex-end" },
-  consumptionBarFill: { width: "100%", borderRadius: 2, minHeight: 2, backgroundColor: colors.indigo[400] },
-  consumptionSummary: { color: colors.textSecondary, marginTop: spacing.sm },
-  dailyTable: { marginTop: spacing.sm, gap: spacing.xs },
-  dailyTableRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingVertical: spacing.xs,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  dailyTableLabel: { color: colors.textSecondary },
-  dailyTableValue: { color: colors.textPrimary },
   listContent: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xxl },
   card: {
     flexDirection: "row",

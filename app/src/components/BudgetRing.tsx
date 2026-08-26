@@ -47,10 +47,11 @@ export function BudgetRing({ percentUsed, size = 160 }: { percentUsed: number; s
           origin={`${size / 2}, ${size / 2}`}
         />
       </Svg>
-      <View style={[styles.center, { width: radiusPx * 1.6 }]}>
+      <View style={[styles.center, { maxWidth: radiusPx * 1.6 }]}>
         <Text
           style={[
             typography.data,
+            styles.percentText,
             { color: ringColor, fontSize: percentFontSize, lineHeight: percentFontSize * 1.05 },
           ]}
           numberOfLines={1}
@@ -66,6 +67,22 @@ export function BudgetRing({ percentUsed, size = 160 }: { percentUsed: number; s
 
 const styles = StyleSheet.create({
   container: { alignItems: "center", justifyContent: "center" },
-  center: { position: "absolute", alignItems: "center" },
-  caption: { color: colors.textSecondary, marginTop: spacing.xs, fontSize: 10 },
+  // Absolute with all four offsets pinned to 0 -- without them React
+  // Native leaves an offset-less absolutely-positioned view's placement
+  // implementation-defined rather than centered, which is exactly why the
+  // percentage text used to sit off-center. Pinning the whole box to the
+  // ring's bounds, then centering its own content within that box, is the
+  // only way to guarantee it lands dead center regardless of platform.
+  center: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "center",
+  },
+  percentText: { textAlign: "center" },
+  caption: { color: colors.textSecondary, marginTop: spacing.xs, fontSize: 10, textAlign: "center" },
 });

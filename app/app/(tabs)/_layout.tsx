@@ -114,10 +114,10 @@ export default function TabsLayout() {
           tabBarIcon: ({ color }) => <TabIcon name="swap-horizontal-outline" color={color} />,
         }}
       />
-      <Tabs.Screen
-        name="history"
-        options={{ title: "Consumption", tabBarIcon: ({ color }) => <TabIcon name="time-outline" color={color} /> }}
-      />
+      {/* href: null keeps this a real, navigable route (linked from Profile's
+          "Transaction History" row) without giving it its own tab-bar icon --
+          the app is meant to stay at 4 visible tabs. */}
+      <Tabs.Screen name="history" options={{ href: null }} />
       <Tabs.Screen
         name="profile"
         options={{ title: "Settings", tabBarIcon: ({ color }) => <TabIcon name="settings-outline" color={color} /> }}
