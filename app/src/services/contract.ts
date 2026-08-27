@@ -90,9 +90,34 @@ export async function getSpendableBalance(walletAddress: string): Promise<bigint
   return withRetry(() => contract.spendableBalanceOf(walletAddress));
 }
 
-/** A contract instance bound to a signer, for sending transfer() through the user's wallet. */
-export function getWritableContract(signer: ethers.Signer): ethers.Contract {
-  return new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+/**
+ * Sends transfer() via the signer's underlying provider directly, instead
+ * of through ethers' normal Contract/Signer path. That normal path
+ * pre-estimates gas and includes a real "gas" value in the eth_sendTransaction
+ * request, but Privy's embedded-wallet provider doesn't honor that field --
+ * it signs the raw transaction with gasLimit 0 regardless, which the network
+ * then rejects with "intrinsic gas too low: gas 0". Privy's own docs say it
+ * auto-populates gas/fee/nonce values for whatever's left unset in the
+ * request, so the fix is to omit gas entirely and let Privy fill it in,
+ * rather than supplying a value it silently drops.
+ */
+export async function sendTransferTx(
+  signer: ethers.Signer,
+  to: string,
+  amountWh: bigint
+): Promise<{ hash: string; wait: () => Promise<ethers.TransactionReceipt | null> }> {
+  const provider = signer.provider;
+  if (!provider) throw new Error("No network connection available from your wallet.");
+
+  const from = await signer.getAddress();
+  const iface = new ethers.Interface(CONTRACT_ABI);
+  const data = iface.encodeFunctionData("transfer", [to, amountWh]);
+
+  const hash: string = await (provider as ethers.BrowserProvider).send("eth_sendTransaction", [
+    { from, to: CONTRACT_ADDRESS, data },
+  ]);
+
+  return { hash, wait: () => provider.waitForTransaction(hash) };
 }
 
 /**

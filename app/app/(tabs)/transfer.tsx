@@ -23,7 +23,7 @@ import { useWallet } from "../../src/hooks/useWallet";
 import {
   getEngyBalance,
   getSpendableBalance,
-  getWritableContract,
+  sendTransferTx,
   runTransferPreflight,
   checkNetworkAndGas,
 } from "../../src/services/contract";
@@ -265,8 +265,7 @@ export default function TransferScreen() {
         return;
       }
 
-      const contract = getWritableContract(signer);
-      const tx = await contract.transfer(effectiveAddress, BigInt(Math.floor(amountWh)));
+      const tx = await sendTransferTx(signer, effectiveAddress, BigInt(Math.floor(amountWh)));
       setTxHash(tx.hash);
       setTxState("submitted");
       await tx.wait();
