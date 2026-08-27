@@ -16,7 +16,7 @@ import { getEngyBalance, getSpendableBalance } from "../../src/services/contract
 import { setMeterTokenBalance } from "../../src/services/budget";
 import { useMeterData } from "../../src/hooks/useMeterData";
 import { writeDirectoryEntry } from "../../src/services/directory";
-import { tokensToUnits, whToUnits } from "../../src/services/units";
+import { tokensToUnits } from "../../src/services/units";
 import { clearFirebaseSession } from "../../src/services/firebaseSession";
 import { useNotifications } from "../../src/hooks/useNotifications";
 import { usePushNotifications } from "../../src/hooks/usePushNotifications";
@@ -31,6 +31,13 @@ const STALE_AFTER_MS = 30_000;
 const SHED_THRESHOLD_PCT: Record<RelayTier, number> = { r1: Infinity, r2: 95, r3: 85, r4: 70 };
 
 type MeterStatus = "live" | "no-signal" | "fault";
+
+/** Full precision, thousands-separated -- no toFixed() rounding. The meter
+ * reports whatever precision the PZEM gives it; showing anything less than
+ * that is an approximation the reading itself never claimed to have. */
+function exact(n: number): string {
+  return n.toLocaleString(undefined, { maximumFractionDigits: 20 });
+}
 
 function formatSecondsAgo(updatedAt: number, nowMs: number): string {
   const seconds = Math.max(0, Math.floor((nowMs - updatedAt) / 1000));
@@ -242,13 +249,13 @@ export default function DashboardScreen() {
         <>
           {/* ── Desktop: 4-metric row ── */}
           <View style={styles.metricRow}>
-            <MetricTile label="Voltage" value={reading ? reading.voltage.toFixed(1) : "—"} unit="V" />
-            <MetricTile label="Current" value={reading ? reading.current.toFixed(1) : "—"} unit="A" />
-            <MetricTile label="Power" value={reading ? reading.power.toFixed(0) : "—"} unit="W" />
+            <MetricTile label="Voltage" value={reading ? exact(reading.voltage) : "—"} unit="V" />
+            <MetricTile label="Current" value={reading ? exact(reading.current) : "—"} unit="A" />
+            <MetricTile label="Power" value={reading ? exact(reading.power) : "—"} unit="W" />
             <MetricTile
               label="Energy"
-              value={reading?.energyWh != null ? whToUnits(reading.energyWh).toFixed(1) : "—"}
-              unit="kWh"
+              value={reading?.energyWh != null ? exact(reading.energyWh) : "—"}
+              unit="Wh"
             />
           </View>
 
@@ -368,14 +375,14 @@ export default function DashboardScreen() {
             </View>
             <View style={styles.tileGrid}>
               <View style={styles.tileRow}>
-                <MetricTile label="Voltage" value={reading ? reading.voltage.toFixed(1) : "—"} unit="V" />
-                <MetricTile label="Current" value={reading ? reading.current.toFixed(1) : "—"} unit="A" />
+                <MetricTile label="Voltage" value={reading ? exact(reading.voltage) : "—"} unit="V" />
+                <MetricTile label="Current" value={reading ? exact(reading.current) : "—"} unit="A" />
               </View>
               <View style={styles.tileRow}>
-                <MetricTile label="Power" value={reading ? reading.power.toFixed(0) : "—"} unit="W" />
+                <MetricTile label="Power" value={reading ? exact(reading.power) : "—"} unit="W" />
                 <MetricTile
                   label="Frequency"
-                  value={reading?.frequency != null ? reading.frequency.toFixed(1) : "—"}
+                  value={reading?.frequency != null ? exact(reading.frequency) : "—"}
                   unit="Hz"
                 />
               </View>
@@ -390,7 +397,7 @@ export default function DashboardScreen() {
               <View style={styles.tileRow}>
                 <MetricTile
                   label="Power factor"
-                  value={reading?.powerFactor != null ? reading.powerFactor.toFixed(2) : "—"}
+                  value={reading?.powerFactor != null ? exact(reading.powerFactor) : "—"}
                   unit=""
                 />
               </View>
