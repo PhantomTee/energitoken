@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, Platform, KeyboardAvoidingView } from "react-native";
 import { useFocusEffect, Link } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -10,7 +10,7 @@ import { useWallet } from "../../src/hooks/useWallet";
 import { useMeterData } from "../../src/hooks/useMeterData";
 import { useTransactionHistory } from "../../src/hooks/useTransactionHistory";
 import { getEngyBalance, getSpendableBalance } from "../../src/services/contract";
-import { setBudgetWh } from "../../src/services/budget";
+import { setBudgetWh, resetBudget } from "../../src/services/budget";
 import { whToUnits, unitsToWh, tokensToUnits } from "../../src/services/units";
 import { useIsDesktopWeb } from "../../src/hooks/useIsDesktopWeb";
 import { MobileTopBar } from "../../src/components/MobileTopBar";
@@ -76,6 +76,9 @@ export default function BudgetScreen() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [resetConfirming, setResetConfirming] = useState(false);
   const [periodDays, setPeriodDays] = useState<PeriodDays>(7);
 
   const { reading, loading, error, deviceId, hasDevice } = useMeterData(walletAddress, getSigner);
@@ -164,6 +167,37 @@ export default function BudgetScreen() {
       setSaving(false);
     }
   };
+
+  // Two-tap confirm rather than a native confirm dialog -- RN Web's
+  // Alert.alert support is inconsistent, and this is destructive enough
+  // (clears the budget, every override, and today's usage) to want a
+  // deliberate second tap rather than a single accidental one.
+  const handleResetBudget = async () => {
+    if (!walletAddress || !deviceId) return;
+    if (!resetConfirming) {
+      setResetConfirming(true);
+      return;
+    }
+    setResetConfirming(false);
+    setResetError(null);
+    setSaveSuccess(false);
+    setResetting(true);
+    try {
+      await resetBudget(walletAddress, getSigner);
+    } catch (err) {
+      setResetError(err instanceof Error ? err.message : "Couldn't reset the budget.");
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  // Auto-revert the confirm state if the second tap never comes, so a
+  // forgotten "Tap again to confirm" doesn't sit armed indefinitely.
+  useEffect(() => {
+    if (!resetConfirming) return;
+    const timer = setTimeout(() => setResetConfirming(false), 4000);
+    return () => clearTimeout(timer);
+  }, [resetConfirming]);
 
   return (
     <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : "height"}>
@@ -471,6 +505,31 @@ export default function BudgetScreen() {
               You can also change the budget from the meter's keypad, handy when there's no
               internet. The app shows whichever value was set most recently.
             </Text>
+
+            {currentBudgetUnits !== null && (
+              <>
+                <Pressable
+                  style={[styles.resetButton, resetting && styles.buttonDisabled]}
+                  onPress={handleResetBudget}
+                  disabled={resetting}
+                >
+                  {resetting ? (
+                    <ActivityIndicator color={colors.danger} />
+                  ) : (
+                    <Text style={[typography.bodyStrong, styles.resetButtonText]}>
+                      {resetConfirming ? "Tap again to confirm" : "Reset Budget"}
+                    </Text>
+                  )}
+                </Pressable>
+                {resetConfirming && (
+                  <Text style={[typography.caption, styles.warnText]}>
+                    Clears your budget entirely, restores every relay to normal, and clears any
+                    manual overrides.
+                  </Text>
+                )}
+                {resetError && <Text style={[typography.caption, styles.errorText]}>{resetError}</Text>}
+              </>
+            )}
           </View>
 
           {/* ── Period trend: daily allowance vs actual usage ── */}
@@ -718,4 +777,13 @@ const styles = StyleSheet.create({
   buttonDisabled: { opacity: 0.5 },
   buttonText: { color: colors.neutral.white },
   keypadNote: { color: colors.textSecondary, opacity: 0.8, marginTop: spacing.xs },
+  resetButton: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.danger,
+    paddingVertical: spacing.md,
+    alignItems: "center",
+    marginTop: spacing.md,
+  },
+  resetButtonText: { color: colors.danger },
 });

@@ -44,6 +44,7 @@ export default async function handler(req: Req, res: Res) {
       const { resource, action } = (body ?? {}) as { resource?: string; action?: string };
 
       if (resource === "meters" && action === "budget") return await setBudget(res, walletAddress, body);
+      if (resource === "meters" && action === "reset-budget") return await resetBudget(res, walletAddress);
       if (resource === "meters" && action === "token-balance") return await setTokenBalance(res, walletAddress, body);
       if (resource === "meters" && action === "relay-override") return await setRelayOverride(res, walletAddress, body);
       if (resource === "notifications" && action === "mark-read") return await markRead(res, walletAddress, body);
@@ -85,6 +86,32 @@ async function setBudget(res: Res, walletAddress: string, body: unknown): Promis
     return;
   }
   await adminDb().ref(`meters/${deviceId}`).update({ budgetWh, cycleStartedAt: ServerValue.TIMESTAMP });
+  res.status(200).json({ ok: true });
+}
+
+/**
+ * Clears a device's budget entirely -- back to unrestricted (no automatic
+ * shedding). budgetWh alone can't communicate that: pullConfig() only ever
+ * accepts a fresh *positive* value and silently ignores the field being
+ * absent or zero, by design (so a stale/failed write can't accidentally
+ * zero out a real budget). budgetClearedAt is a dedicated edge-triggered
+ * signal, same pattern as cycleStartedAt -- firmware compares it against
+ * the last value it saw and reacts on change, not on presence. Also rolls
+ * a fresh cycle and clears any relay overrides, so a reset genuinely
+ * restores every relay to its normal (unshed, unforced) position.
+ */
+async function resetBudget(res: Res, walletAddress: string): Promise<void> {
+  const deviceId = await deviceIdForWallet(walletAddress);
+  if (!deviceId) {
+    res.status(404).json({ error: "No device paired to this wallet" });
+    return;
+  }
+  await adminDb().ref(`meters/${deviceId}`).update({
+    budgetClearedAt: ServerValue.TIMESTAMP,
+    cycleStartedAt: ServerValue.TIMESTAMP,
+  });
+  await adminDb().ref(`meters/${deviceId}/budgetWh`).remove();
+  await adminDb().ref(`meters/${deviceId}/relayOverrides`).remove();
   res.status(200).json({ ok: true });
 }
 

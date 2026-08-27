@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "http";
 import { ordersRef } from "../_lib/firebaseAdmin";
 import { mintEngy } from "../_lib/mintEngy";
 import { sendNotification } from "../_lib/notify";
+import { resetCycleForWallet } from "../_lib/meterReset";
 
 type Req = IncomingMessage & { method?: string; body?: unknown; headers: Record<string, string | string[] | undefined> };
 type Res = ServerResponse & { status: (code: number) => Res; json: (body: unknown) => void };
@@ -75,6 +76,10 @@ export default async function handler(req: Req, res: Res) {
       mintTxHash: txHash,
       updatedAt: Date.now(),
     });
+
+    await resetCycleForWallet(order.walletAddress).catch((err) =>
+      console.error("payments/retry-mint: resetCycleForWallet failed", err)
+    );
 
     const units = (order.whAmount / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 });
     await sendNotification(order.walletAddress, {

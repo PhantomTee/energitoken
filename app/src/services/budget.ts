@@ -25,6 +25,22 @@ export async function setBudgetWh(
 }
 
 /**
+ * Clears the budget entirely -- back to unrestricted, no automatic
+ * shedding -- and restores every relay to its normal position (rolls a
+ * fresh cycle, clears any relay overrides). See api/data.ts's resetBudget
+ * for why this needs its own action rather than just setBudgetWh(0).
+ */
+export async function resetBudget(
+  walletAddress: string,
+  getSigner: () => Promise<ethers.Signer>
+): Promise<void> {
+  await apiRequest("/api/data", walletAddress, getSigner, {
+    method: "POST",
+    body: { resource: "meters", action: "reset-budget" },
+  });
+}
+
+/**
  * Mirrors the household's spendable ENGY balance into Firebase so the
  * physical meter (which has no way to read the chain itself) can show it on
  * its local balance screen, and so the meter's fail-closed relay gate can

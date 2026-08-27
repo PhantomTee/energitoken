@@ -3,6 +3,7 @@ import { ordersRef } from "../_lib/firebaseAdmin";
 import { mintEngy } from "../_lib/mintEngy";
 import { verifyTransactionById, verifyWebhookSignature } from "../_lib/flutterwaveClient";
 import { sendNotification } from "../_lib/notify";
+import { resetCycleForWallet } from "../_lib/meterReset";
 
 type Req = IncomingMessage & { method?: string; body?: unknown; headers: Record<string, string | string[] | undefined> };
 type Res = ServerResponse & { status: (code: number) => Res; json: (body: unknown) => void };
@@ -148,6 +149,13 @@ export default async function handler(req: Req, res: Res) {
       mintTxHash: txHash,
       updatedAt: Date.now(),
     });
+
+    // A top-up should bring back any relay shed by budget exhaustion or a
+    // stale override -- best-effort, a failure here shouldn't turn a
+    // successful mint into an error response.
+    await resetCycleForWallet(order.walletAddress).catch((err) =>
+      console.error("payments callback: resetCycleForWallet failed", err)
+    );
 
     const units = (order.whAmount / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 });
     await sendNotification(order.walletAddress, {
