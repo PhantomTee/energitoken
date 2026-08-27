@@ -39,10 +39,40 @@ export function getReadContract(): ethers.Contract {
   return new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, getReadProvider());
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+const BALANCE_READ_MAX_RETRIES = 3;
+const BALANCE_READ_BASE_DELAY_MS = 500;
+
+/**
+ * The public Amoy RPC rate-limits per IP under real load (see
+ * contractEvents.ts's MAX_LOOKBACK_BLOCKS comment) -- a balance read hitting
+ * that 429 shouldn't just surface as a stuck "···" on Dashboard. Back off
+ * exponentially and retry a few times before giving up, same idea as
+ * contractEvents.ts's withRetry but exponential rather than fixed-step,
+ * since a 429 specifically wants growing gaps between attempts.
+ */
+async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= BALANCE_READ_MAX_RETRIES; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (attempt < BALANCE_READ_MAX_RETRIES) {
+        await sleep(BALANCE_READ_BASE_DELAY_MS * 2 ** attempt);
+      }
+    }
+  }
+  throw lastError;
+}
+
 /** ENGY balance in whole watt-hours (the token has 0 decimals). */
 export async function getEngyBalance(walletAddress: string): Promise<bigint> {
   const contract = getReadContract();
-  return contract.balanceOf(walletAddress);
+  return withRetry(() => contract.balanceOf(walletAddress));
 }
 
 /**
@@ -54,7 +84,7 @@ export async function getEngyBalance(walletAddress: string): Promise<bigint> {
  */
 export async function getSpendableBalance(walletAddress: string): Promise<bigint> {
   const contract = getReadContract();
-  return contract.spendableBalanceOf(walletAddress);
+  return withRetry(() => contract.spendableBalanceOf(walletAddress));
 }
 
 /** A contract instance bound to a signer, for sending transfer() through the user's wallet. */
