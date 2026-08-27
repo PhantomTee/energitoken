@@ -10,10 +10,10 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 /// reports consumption, and freely transferable peer-to-peer for surplus sharing.
 contract EnergiToken is ERC20, Ownable {
     /// @notice The only address allowed to mint or burn tokens.
-    /// In production this is a server-side oracle that watches OPay payment
-    /// confirmations and ESP32 meter consumption reports — that oracle is
-    /// out of scope for this repository. This contract only exposes the
-    /// on-chain interface it calls into:
+    /// In production this is a server-side oracle (see app/api/oracle/*.ts
+    /// and app/api/payments/*.ts in this repo) that watches Flutterwave
+    /// payment confirmations and ESP32 meter consumption reports. This
+    /// contract only exposes the on-chain interface it calls into:
     ///   - on a confirmed payment of N watt-hours: oracle calls mint(buyer, N)
     ///   - on the meter reporting N watt-hours consumed: oracle calls burnConsumed(holder, N)
     address public oracle;

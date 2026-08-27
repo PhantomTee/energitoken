@@ -10,31 +10,37 @@ This repository contains the four software components of the system:
 |---|---|---|
 | [`/contract`](contract) | ERC-20 token contract (`EnergiToken` / `ENGY`) + Hardhat deploy tooling | ✅ Deployed to Polygon Amoy |
 | [`/firebase`](firebase) | Realtime Database schema, security rules, mock-data seed script | ✅ Live |
-| [`/app`](app) | Expo Router app — login, onboarding, dashboard, P2P transfer, history, profile (mobile + web) | ✅ Functional, pending a real on-device click-through |
-| [`/app/api`](app/api) | Vercel serverless functions — OPay top-up flow (create payment / webhook callback / status) | ✅ Deployed |
+| [`/app`](app) | Expo Router app — login, onboarding, dashboard, budget, P2P transfer, history, profile (mobile + web) | ✅ Functional, verified end to end against real hardware |
+| [`/app/api`](app/api) | Vercel serverless functions — Flutterwave top-up flow, consumption oracle, device pairing, meter reset | ✅ Deployed |
+| [`/firmware`](firmware/esp32) | ESP32 + PZEM-004T meter firmware — budgeting, priority load shedding, HMAC-signed consumption reports | ✅ Flashed and running on real hardware |
 
-> **Hardware note:** the physical ESP32 + PZEM-004T meter is a separate, out-of-scope deliverable. Until it's connected, the app reads mock meter data seeded into Firebase, toggleable to "live" mode in the Dashboard. A mock device (`3B9D88`) is seeded so the device-pairing flow is testable without real hardware.
+> **Hardware:** two physical ESP32 + PZEM-004T meters are flashed and running against the live backend. The two boards have opposite relay-module polarity (documented per-board in the firmware's `RELAY_CLOSED`/`RELAY_OPEN` constants) -- confirm on the actual hardware before flashing a third. `firebase/seed.ts` can still seed a mock device if you want to test the app without hardware on hand.
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────┐        writes meter         ┌───────────────────────────┐
-│  ESP32 + PZEM    │ ───────readings (Wh)───────▶│  Firebase Realtime DB     │
-│  (out of scope)  │                              │  /meters/{deviceId}       │
-└─────────────────┘                              │  /deviceToWallet/{id}     │
-                                                   │  /walletToDevice/{wallet}│
-                                                   └──────────┬────────────────┘
-                                                              │ realtime listener,
-                                                              │ resolved via deviceId
-                                                              ▼
+┌─────────────────┐   HMAC-signed        ┌───────────────────────────┐
+│  ESP32 + PZEM    │ ──meter readings────▶│  Firebase Realtime DB     │
+│  (real hardware) │   (legacy DB secret) │  /meters/{deviceId}       │
+└─────────────────┘                       │  /deviceToWallet/{id}     │
+                                            │  /walletToDevice/{wallet}│
+                                            └──────────┬────────────────┘
+                                                        │ read/write only via
+                                                        │ the Admin SDK, server-side
+                                                        ▼
 ┌─────────────────┐   email OTP login,    ┌──────────────────────────────┐
 │   Privy          │◀──embedded wallet────▶│   EnergiToken app             │
 │ (auth + wallet)  │                        │   (Expo Router: mobile + web)│
 └─────────────────┘                        └───────────┬──────────────────┘
-                                                          │ balanceOf / transfer / events
-                                                          ▼
+                                          wallet signs a message,          │
+                                          trades it for a session token ───┤
+                                          (app/api/session/create.ts) ─────┤
+                                                        │ bearer-token calls to
+                                                        │ /app/api, ~4s poll
+                                                        │ (no direct client<->Firebase)
+                                                        ▼         │ balanceOf / transfer / events
                                               ┌──────────────────────────┐
                                               │  EnergiToken (ENGY)       │
                                               │  ERC-20, Polygon Amoy     │
@@ -45,18 +51,19 @@ This repository contains the four software components of the system:
                                                           │ burnConsumed() on meter usage
                                               ┌──────────────────────────┐
                                               │  /app/api (Vercel)        │
-                                              │  OPay create-payment,     │
-                                              │  webhook callback, status│
+                                              │  Flutterwave checkout,    │
+                                              │  webhook, consumption     │
+                                              │  oracle (GitHub Actions)  │
                                               └──────────────────────────┘
 ```
 
 The app ships two parallel client paths to the same screens: `@privy-io/expo` for native (Android/iOS dev client) and `@privy-io/react-auth` for web, selected automatically by Metro's platform-extension resolution (`*.web.tsx` files alongside their native counterparts under `app/src/screens`). This exists because `@privy-io/expo` statically imports `react-native-webview`, which has no web implementation — see [`app/metro.config.js`](app/metro.config.js) for the resolver details that make both paths coexist in one bundle.
 
-The only off-chain service beyond Firebase is the OPay top-up flow, now implemented as Vercel serverless functions under [`app/api`](app/api): `create-payment` starts an OPay Cashier session, `callback` is OPay's webhook that calls `mint()` once a payment is confirmed, and `status` lets the app poll a payment's state. See the doc comments in [`contract/contracts/EnergiToken.sol`](contract/contracts/EnergiToken.sol) for the contract-side `oracle`-gated `mint`/`burnConsumed` functions this calls into.
+The only off-chain service beyond Firebase is the top-up flow, implemented as Vercel serverless functions under [`app/api`](app/api): `payments/create.ts` starts a Flutterwave hosted-checkout session, `payments/callback.ts` is Flutterwave's webhook (independently re-verified against Flutterwave's own API before minting anything, not trusted from the webhook body alone) that calls `mint()` once a payment is confirmed, and `payments/status.ts` lets the app poll a payment's state. A separate consumption oracle (`api/oracle/{set-pending,burn,cycle-tick}.ts`, cron'd via `.github/workflows/burn-oracle.yml`) turns meter readings into token burns and rolls each meter's daily budget cycle. See the doc comments in [`contract/contracts/EnergiToken.sol`](contract/contracts/EnergiToken.sol) for the contract-side `oracle`-gated `mint`/`burnConsumed`/`setPendingBurn` functions these call into.
 
-### Why Firebase Anonymous Auth + a `uidToWallet` mapping?
+### Why does the app never talk to Firebase directly?
 
-Identity in this app is owned by **Privy** (email → embedded wallet), not Firebase Auth. But Firebase Realtime Database security rules need *some* `auth` object to scope access. The app bridges this by signing into Firebase **anonymously** right after a successful Privy login, then writing a write-once binding `/uidToWallet/{firebaseUid} = walletAddress`. Every other rule checks that the caller's `uidToWallet` entry matches the path they're trying to touch — so a session can only ever read/write its own household's data. See [`firebase/database.rules.json`](firebase/database.rules.json) and [`firebase/schema.md`](firebase/schema.md) for the exact rules and reasoning.
+Earlier versions of this app signed into Firebase Anonymous Auth on every screen mount and used that ID token as its credential for reads/writes, gated by a `uidToWallet` binding. That broke real login on networks that block Firebase's own auth endpoint (school/campus WiFi, some ISPs) -- see [`app/src/services/firebaseSession.ts`](app/src/services/firebaseSession.ts) for the full history. The app now never authenticates to Firebase as a client at all: it signs a message proving wallet ownership, trades that for the app's own session token via `/api/session/create`, and presents that token as a bearer credential to every other `/api` endpoint -- which do the actual Firebase reads/writes server-side via the Admin SDK. `firebase/database.rules.json` still encodes a real per-household ACL (kept in sync with what's live in the Firebase console) as defense-in-depth if a client path is ever reintroduced, but for current traffic the Admin SDK bypasses it entirely, same as the ESP32 meters' legacy database secret.
 
 ### Why a device-ID pairing step, instead of keying meters by wallet?
 
@@ -85,22 +92,27 @@ energitoken/
 │
 ├── firebase/          # Realtime Database schema, rules, and seed tooling
 │   ├── schema.md               # full data model documentation
-│   ├── database.rules.json     # security rules (anonymous-auth + uidToWallet + device pairing)
+│   ├── database.rules.json     # per-household ACL, kept in sync with what's live -- see
+│   │                            # "Why does the app never talk to Firebase directly?" above
 │   ├── firebase.json            # lets `firebase deploy --only database` target rules.json directly
-│   └── seed.ts                  # seeds the mock device (3B9D88) and a meter reading via the Admin SDK
+│   └── seed.ts                  # seeds a mock device + meter reading via the Admin SDK, for testing without hardware
+│
+├── firmware/esp32/energitoken_meter/  # ESP32 + PZEM-004T meter firmware (Arduino), real HMAC key
+│                                        # redacted before commit -- see the file's own header comment
 │
 └── app/                # Expo Router app (TypeScript), targets mobile (dev client) + web
-    ├── app/                     # routes: login, onboarding, (tabs)/{dashboard,transfer,history,profile}
-    ├── api/                     # Vercel serverless functions — OPay create-payment/callback/status
-    ├── eas.json                  # EAS Build profile (Android development client)
+    ├── app/                     # routes: login, onboarding, (tabs)/{dashboard,budget,transfer,history,profile}
+    ├── api/                     # Vercel serverless functions -- data.ts (meters/notifications/directory),
+    │                            # devices.ts (pairing), payments/* (Flutterwave), oracle/* (consumption/cycle),
+    │                            # session/create.ts (wallet-signature session tokens), tariff.ts
+    ├── eas.json                  # EAS Build profiles (development/preview/production)
     └── src/
         ├── screens/             # RootLayout + LoginScreen, each with a .web.tsx counterpart
         ├── theme/                # dark adire-indigo/terracotta system, Space Grotesk/Inter/Space Mono
-        ├── hooks/                # useWallet (+.web.tsx), useMeterData, useTransactionHistory
-        ├── services/             # contract reads/writes, chain-event history, Firebase, device binding, directory
+        ├── hooks/                # useWallet (+.web.tsx), useMeterData, useTransactionHistory, useNotifications
+        ├── services/             # contract reads/writes, chain-event history, session/auth, device binding, directory
         ├── components/           # MetricTile, BudgetRing, RelayIndicator, TxStatus, CopyableField, BrandSplash, etc.
-        ├── mock/                 # mock meter readings (used by the Dashboard's mock/live toggle)
-        └── config/               # contract.json (generated), privy.ts, firebase.ts (gitignored)
+        └── config/               # contract.json (generated), privy.ts
 ```
 
 ---
@@ -135,7 +147,7 @@ npm install
 cp .env.example .env    # fill in FIREBASE_DATABASE_URL
 # Place a service-account key (Firebase console → Project settings → Service accounts)
 # at firebase/serviceAccountKey.json (gitignored, never commit it)
-npm run seed             # seeds the mock device (3B9D88) and a meter reading
+npm run seed             # optional -- seeds a mock device and a meter reading, for testing without real hardware
 ```
 
 Publish [`database.rules.json`](firebase/database.rules.json) — either via the Firebase console's Rules tab, or non-interactively:
@@ -146,7 +158,7 @@ GOOGLE_APPLICATION_CREDENTIALS="$(pwd)/serviceAccountKey.json" \
   npx firebase-tools deploy --only database --project <your-project-id>
 ```
 
-Also enable **Anonymous** sign-in under Build → Authentication → Sign-in method.
+The app itself never authenticates to Firebase as a client (see "Why does the app never talk to Firebase directly?" above), so no Firebase Auth sign-in method needs to be enabled -- only the Realtime Database.
 
 ### 3. Mobile app — Privy setup
 
@@ -200,13 +212,14 @@ See [`app/src/theme`](app/src/theme) for the full palette, typography scale, and
 3. ✅ Firebase schema, security rules, and seed script — live and verified
 4. ✅ All app screens built against mock data with the design system
 5. ✅ Real Privy email-OTP login wired, with the embedded wallet auto-created on first login
-6. ✅ Dashboard's mock/live toggle wired to a real Firebase realtime listener
+6. ✅ Dashboard wired to real meter data, polled from `/api/data` (server-side Firebase Admin SDK, no client Firebase Auth)
 7. ✅ On-chain balance reads, real chain-event history, and the real `transfer()` call (with pre-flight checks and full signing → submitted → confirmed/failed lifecycle UI)
 8. ✅ Email → wallet directory for sending credit by email
 9. ✅ Device-ID onboarding: meters keyed by paired device, not wallet, with a dedicated pairing screen
 10. ✅ Web build (parallel Privy client path, see Architecture above) deployed to Vercel alongside the API
 11. ✅ Dark redesign, branded splash, Profile tab, pull-to-refresh
-12. ⬜ A real end-to-end click-through on a physical device — every step above has been verified by script or code review, but no one has yet tapped through email OTP → onboarding → live dashboard → transfer on the actual app
+12. ✅ Budget screen: duration-based daily allowance, live "cycle started X ago, resets in ~Y" indicator, Reset Budget (clears budget, overrides, and restores every relay)
+13. ✅ Real ESP32 + PZEM-004T firmware flashed onto two physical boards and running against the live backend end to end -- login → pairing → live budget enforcement → priority load shedding → a real transfer, all confirmed on real hardware, not just script/code review
 
 ---
 
@@ -214,6 +227,7 @@ See [`app/src/theme`](app/src/theme) for the full palette, typography scale, and
 
 - All secrets (private keys, API keys, service account credentials) live in `.env` files or `serviceAccountKey.json`, all gitignored. `.env.example` files document every variable that needs to be supplied.
 - The deployer/oracle wallet committed to this README is a **freshly generated, testnet-only key** with no real-world funds ever associated with it — safe to disclose for an academic demo, but not reused for anything beyond Amoy testing.
-- Firebase Realtime Database denies all public access; reads/writes are scoped per-household via the anonymous-auth + `uidToWallet` binding, and per-meter via the device-pairing binding, both described above.
-- `uidToWallet` is bound only via a signed message the wallet itself produces (`app/api/session/bind.ts` verifies it before writing) — Anonymous Auth alone can't prove which wallet a session should be trusted for, so a plain client write would let anyone self-bind to a victim's wallet. `app/api/devices/claim.ts` and `unbind.ts` derive the caller's wallet from a verified Firebase ID token the same way, rather than trusting a wallet address in the request body.
-- `transfer()` on `EnergiToken.sol` enforces a spendable balance (`balanceOf - pendingBurn`) on-chain, not just in the app — a household can't transfer away ENGY that represents electricity already consumed but not yet burned/settled. The oracle keeps `pendingBurn` current via a GitHub Actions cron (`.github/workflows/burn-oracle.yml`).
+- Firebase Realtime Database denies all public client access; the app only ever reaches it through this project's own `/api` endpoints, which use the Admin SDK and bypass `database.rules.json` by design (the ESP32 meters bypass it too, via their own legacy database secret). `database.rules.json` still encodes a real per-household ACL as defense-in-depth for if a client path is ever reintroduced.
+- Wallet identity is proven by a signed message, not trusted from a request body: `app/api/session/create.ts` recovers the signer from a signature over `buildSessionMessage()` and checks it matches the claimed wallet address before issuing this app's own session token (see "Why does the app never talk to Firebase directly?" above). `app/api/devices.ts`'s `claim`/`unbind` actions derive the caller's wallet the same way.
+- Each meter's `energyWh` is additionally signed with a per-device HMAC key (`app/api/_lib/meterHmac.ts`), derived server-side from one master secret and baked into that device's firmware at flash time. The shared legacy database secret alone can't forge a reading the oracle will actually burn tokens against -- see the doc comment at the top of that file.
+- `transfer()` on `EnergiToken.sol` enforces a spendable balance (`balanceOf - pendingBurn`) on-chain, not just in the app — a household can't transfer away ENGY that represents electricity already consumed but not yet burned/settled. The oracle keeps `pendingBurn` current via a GitHub Actions cron (`.github/workflows/burn-oracle.yml`), which every job in the workflow now runs unconditionally on any firing (GitHub's own schedule delivery is unreliable enough that gating jobs to one specific cron expression left most firings doing nothing).

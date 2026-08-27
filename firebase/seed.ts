@@ -44,10 +44,10 @@ async function main() {
     updatedAt: Date.now(),
   });
 
-  // The pairing API (app/api/devices/claim.ts) only accepts a device that's
-  // in "pairing mode" -- normally written by the ESP32 firmware when its
-  // setup button is held. Seed it here too, or onboarding can't claim this
-  // mock device at all. Matches the same 1h window claim.ts enforces.
+  // The pairing API (app/api/devices.ts, action "claim") only accepts a
+  // device that's in "pairing mode" -- normally written by the ESP32
+  // firmware when its setup button is held. Seed it here too, or onboarding
+  // can't claim this mock device at all. Matches the same 1h claim window.
   await db.ref(`pendingDevices/${MOCK_DEVICE_ID}`).set({
     createdAt: Date.now(),
   });

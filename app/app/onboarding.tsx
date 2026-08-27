@@ -14,8 +14,8 @@ import { Ionicons } from "@expo/vector-icons";
  * Shown once, right after first login, when the wallet has no device bound
  * yet. The device code is the last 6 hex characters of the ESP32's MAC
  * address, printed on the meter's LCD during setup -- see firebase/schema.md.
- * Until a real meter exists, run firebase/seed.ts to seed the mock device
- * "3B9D88" and enter that here to test the flow end to end.
+ * If you don't have real hardware handy, firebase/seed.ts can seed a mock
+ * device to test the flow end to end.
  */
 export default function OnboardingScreen() {
   const router = useRouter();
