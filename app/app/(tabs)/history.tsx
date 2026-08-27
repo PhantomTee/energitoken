@@ -139,6 +139,12 @@ export default function HistoryScreen() {
         </Text>
       )}
 
+      {!loading && !error && transactions.length > 0 && (
+        <Text style={[typography.caption, styles.statusText, styles.windowNote]}>
+          Showing activity from roughly the last 1.5–2 hours.
+        </Text>
+      )}
+
       <FlatList
         data={transactions}
         keyExtractor={(item) => item.hash}
@@ -188,6 +194,7 @@ const styles = StyleSheet.create({
   errorText: { color: colors.danger },
   retryText: { color: colors.indigo[400], textDecorationLine: "underline" },
   emptyText: { paddingHorizontal: spacing.lg },
+  windowNote: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xs },
   listContent: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xxl },
   card: {
     flexDirection: "row",

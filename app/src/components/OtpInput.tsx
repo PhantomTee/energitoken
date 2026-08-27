@@ -21,9 +21,11 @@ export function OtpInput({ value, onChangeText, editable = true, autoFocus }: Pr
   const inputs = useRef<Array<TextInput | null>>([]);
 
   const setDigit = (index: number, digit: string) => {
-    const chars = value.split("");
-    chars[index] = digit;
-    const next = chars.join("").slice(0, LENGTH);
+    // Truncate-and-append rather than a positional splice: splicing a hole
+    // into the middle of the string (chars[index] = digit; chars.join(""))
+    // collapses gaps, so clearing/editing a middle box silently shifted
+    // every later digit left by one instead of leaving that box blank.
+    const next = (value.slice(0, index) + digit).slice(0, LENGTH);
     onChangeText(next);
 
     if (digit && index < LENGTH - 1) {
@@ -34,9 +36,7 @@ export function OtpInput({ value, onChangeText, editable = true, autoFocus }: Pr
   const handleKeyPress = (index: number, key: string) => {
     if (key === "Backspace" && !value[index] && index > 0) {
       inputs.current[index - 1]?.focus();
-      const chars = value.split("");
-      chars[index - 1] = "";
-      onChangeText(chars.join(""));
+      onChangeText(value.slice(0, index - 1));
     }
   };
 
