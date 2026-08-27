@@ -24,8 +24,25 @@ export function useWallet() {
 
   // For signing transactions we need the live connected wallet from useWallets().
   // By the time a user initiates a transfer/top-up the wallet will be connected.
+  //
+  // Must match on address, not just take the first walletClientType==="privy"
+  // entry -- walletAddress (above) comes from user.linkedAccounts, which
+  // updates as soon as Privy confirms the account/wallet, while useWallets()'s
+  // connected-wallet list is a separately-timed async connection that can lag
+  // behind, especially right after creating a brand-new account. Taking
+  // "whatever's first in the list" during that gap could silently return a
+  // signer for a different wallet than walletAddress claims -- it would sign
+  // successfully, just for the wrong address, and /api/session/create would
+  // correctly reject the mismatch with a 401 that looks like a network
+  // problem but isn't. Requiring the address match converts that into a
+  // clean "not connected yet" throw, which the caller's retry loop
+  // (getSignerWithRetry in firebaseSession.ts) already handles correctly.
   const getSigner = async (): Promise<ethers.Signer> => {
-    const connected = wallets.find((w) => w.walletClientType === "privy");
+    const connected = walletAddress
+      ? wallets.find(
+          (w) => w.walletClientType === "privy" && w.address?.toLowerCase() === walletAddress.toLowerCase()
+        )
+      : wallets.find((w) => w.walletClientType === "privy");
     if (!connected) throw new Error("Embedded wallet not connected yet");
     const eip1193Provider = await connected.getEthereumProvider();
     const browserProvider = new ethers.BrowserProvider(eip1193Provider);
