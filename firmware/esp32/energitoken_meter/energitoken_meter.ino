@@ -209,6 +209,29 @@
  *      old design only beeped for a threshold-crossing shed; a relay cut by
  *      a manual override or the balance gate beeped nothing at all. The
  *      generic transition check catches every cause in one place.
+ *    - NTP is now actually enabled. initClock() no longer blocks (it used to
+ *      spin-wait up to 8s for sync, which would have starved the keypad/PZEM
+ *      loop badly if called from anywhere but setup()) -- configTzTime()
+ *      just fires off ESP-IDF's SNTP client, which keeps itself synced in
+ *      the background from then on, no waiting required. It's called once
+ *      from loop() the first time wifiUp is true, NOT from setup() -- the
+ *      lwIP assertion/reboot mentioned above was specifically about calling
+ *      configTime() that early, before the network stack had settled;
+ *      waiting for the first loop() pass (after setup() has already
+ *      finished LCD/Firebase/keypad init) avoids that entirely. Timezone is
+ *      fixed to WAT-1 (UTC+1, no DST) for where these meters are deployed.
+ *    - New checkLocalMidnight() (Section 10), checked every loop() pass:
+ *      once NTP is synced, the moment the local calendar day changes it
+ *      starts a fresh budget cycle directly, no dependency on the daily
+ *      GitHub Actions cron or the next Firebase poll -- gets a cycle reset
+ *      within a second or two of true local midnight instead of whatever
+ *      time cycleOverdue()'s millis()-based fallback happens to drift to
+ *      (which is what had been resetting cycles at arbitrary times of day).
+ *      That existing fallback is untouched and still covers a meter that
+ *      never gets NTP sync at all. A locally-triggered reset also writes
+ *      cycleStartedAt back to Firebase (publishCycleStartedAt()) so the
+ *      app's Budget page shows the real cycle-start time instead of a stale
+ *      one from the last cron tick.
  * ============================================================================
  */
 
@@ -346,6 +369,13 @@ char WIFI_PASSWORD[65] = "testing123";
 // credential that alone can't be trusted for that. Regenerate + reflash
 // with a new key if this specific board's flash is ever compromised --
 // it can't be used to derive any other device's key.
+// ESP-A (device 4BF6F0): HMAC(masterSecret, "4BF6F0"). Regenerated -- the
+// original masterSecret used to derive the first version of this key was
+// never persisted anywhere and METER_HMAC_MASTER_SECRET was never actually
+// set on Vercel, so the oracle's signature check has been failing closed
+// (fail-closed on a missing master secret, not silently open) since that
+// code went in. This key and the server's env var were derived together
+// from the same new masterSecret so they match.
 // NOT committed: fill in the per-board value locally before flashing (see
 // app/api/_lib/meterHmac.ts for how it's derived server-side) -- never
 // paste a real derived key here in a commit, this repo is public.
@@ -405,6 +435,17 @@ struct Budget {
 // millis() when this device last began a cycle -- used only by the local
 // fallback when no wall clock is available yet.
 uint32_t cycleLocalStart = 0;
+
+// Set once NTP sync has been requested, so loop() only calls initClock() a
+// single time per boot -- the SNTP client keeps itself resynced afterward.
+bool clockInitStarted = false;
+
+// Local calendar day (tm_yday, 0-365) last seen by checkLocalMidnight(), or
+// -1 before the first NTP sync of this boot. Not persisted -- a reboot
+// re-derives it within seconds of reconnecting, and being wrong for one
+// boot means at most one skipped or harmlessly-repeated check, never a
+// wrong reset.
+int lastSeenYday = -1;
 
 // Consecutive PZEM read failures. Reset to zero on any successful read.
 uint16_t pzemFailCount = 0;
@@ -551,11 +592,14 @@ String makeDeviceID() {
  *  Firebase's own server sentinel, which stays authoritative regardless of
  *  whether this sync ever succeeds.
  * ===========================================================================*/
+// Non-blocking -- configTzTime() just starts ESP-IDF's SNTP client, which
+// syncs (and keeps itself resynced afterward) in the background. Called
+// once from loop() after wifiUp is first confirmed true, not from setup();
+// see the top-of-file changelog for why setup() is the wrong place. WAT-1 =
+// West Africa Time, UTC+1, no DST -- correct for where these meters sit.
 void initClock() {
-  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-  uint32_t t0 = millis();
-  while (time(nullptr) < 1700000000UL && millis() - t0 < 8000UL) delay(200);
-  Serial.printf("[NTP] epoch %lu\n", (unsigned long)time(nullptr));
+  configTzTime("WAT-1", "pool.ntp.org", "time.nist.gov");
+  Serial.println("[NTP] sync requested");
 }
 
 // Returns 0 when the clock hasn't synchronised yet.
@@ -867,6 +911,52 @@ void checkCycleFallback() {
   uint64_t now = unixMillis();
   startNewCycle(now > 0 ? now : budget.cycleStartedAt + CYCLE_GRACE_MS,
                 "local fallback roll");
+}
+
+/* ---------------------------------------------------------------------------
+ *  Mirrors a locally-triggered cycle reset back to Firebase, so the app's
+ *  Budget page reflects the real cycle-start time instead of a stale value
+ *  from the last cron tick. Best-effort: a failed write here doesn't undo
+ *  the reset that already happened locally on this device, it just leaves
+ *  the app's copy stale until the next successful write (the next
+ *  NTP-driven reset, or the daily cron overwriting it anyway).
+ * -------------------------------------------------------------------------*/
+void publishCycleStartedAt(uint64_t stamp) {
+  if (!(wifiUp && fbReady && Firebase.ready())) return;
+  String path = "/meters/" + deviceID + "/cycleStartedAt";
+  if (!Firebase.RTDB.setDouble(&fbdo, path.c_str(), (double)stamp))
+    Serial.println("cycleStartedAt publish failed: " + fbdo.errorReason());
+}
+
+/* ---------------------------------------------------------------------------
+ *  Precise local-midnight cycle reset. Cheap enough (a few field reads plus
+ *  an int compare) to check every loop() pass, so it actually fires within
+ *  a second or two of true local midnight -- unlike checkCycleFallback()'s
+ *  millis()-based path above, which only guarantees "within CYCLE_GRACE_MS
+ *  of the last signal" and can land at essentially any time of day. This is
+ *  the primary mechanism once NTP is synced; checkCycleFallback() keeps
+ *  covering things exactly as before for a meter that never gets sync at
+ *  all (no WiFi, blocked NTP ports, etc.).
+ * -------------------------------------------------------------------------*/
+void checkLocalMidnight() {
+  time_t now = time(nullptr);
+  if (now < 1700000000UL) return;   // not synced yet -- defer to the fallback above
+
+  struct tm tmNow;
+  localtime_r(&now, &tmNow);
+
+  if (lastSeenYday < 0) {
+    lastSeenYday = tmNow.tm_yday;    // first sync this boot -- record only, don't reset mid-day
+    return;
+  }
+  if (tmNow.tm_yday == lastSeenYday) return;
+
+  lastSeenYday = tmNow.tm_yday;
+  if (!budget.budgetSet) return;     // nothing to roll if no budget is set yet
+
+  uint64_t stamp = (uint64_t)now * 1000ULL;
+  startNewCycle(stamp, "local midnight (NTP)");
+  publishCycleStartedAt(stamp);
 }
 
 /* ===========================================================================
@@ -1479,16 +1569,13 @@ void setup() {
   cycleLocalStart = millis();
   loadWiFiCreds();
   connectWiFi();
-  // NOT calling initClock() here -- confirmed on real hardware that
-  // configTime() at this point in setup() hits a hard lwIP assertion
+  // Still NOT calling initClock() here -- confirmed on real hardware that
+  // configTime() this early in setup() hits a hard lwIP assertion
   // (udp_new_ip_type: "Required to lock TCPIP core functionality!") and
-  // force-reboots the board, every cold boot. unixMillis() already
-  // degrades safely to 0 with no NTP sync at all, and cycleOverdue() below
-  // already has a millis()-based local fallback for exactly that case --
-  // so this isn't a missing feature, it's removing a call that traded a
-  // minor precision nicety (wall-clock-accurate fallback timing) for a
-  // guaranteed crash on every boot. Not worth chasing the exact lwIP race
-  // this close to a deadline when the degraded path was already built in.
+  // force-reboots the board, every cold boot. NTP is enabled now, just from
+  // loop() instead (see the wifiUp check near the bottom of SECTION 16) --
+  // by then setup() has fully finished and the network stack has had a lot
+  // more time to settle than it has at this exact line.
   initFirebase();
   if (wifiUp) pullConfig();
   beginOverrideStream();
@@ -1566,6 +1653,10 @@ void loop() {
   // Local cycle fallback, evaluated whether or not the network is up.
   if (now - tCycle >= CYCLE_CHECK_MS) { tCycle = now; checkCycleFallback(); }
 
+  // Precise local-midnight reset -- cheap, checked every pass so it fires
+  // within a second or two of true midnight once NTP is synced.
+  checkLocalMidnight();
+
   // While pairing, poll for a successful claim faster than the normal
   // config-pull interval, so the confirmation shows up promptly.
   if (pairingActive && wifiUp && now - tPairCheck >= PAIR_CHECK_MS) {
@@ -1596,4 +1687,13 @@ void loop() {
   bool linkNow = (WiFi.status() == WL_CONNECTED);
   if (!wifiUp && linkNow) { wifiUp = true;  initFirebase(); beginOverrideStream(); }
   if (wifiUp && !linkNow) { wifiUp = false; fbReady = false; }
+
+  // One-time NTP kickoff, whenever WiFi first comes up -- whether that's
+  // the normal case (already true the first time loop() runs, from
+  // connectWiFi() in setup()) or a later reconnect after a drop. Only ever
+  // fires once per boot; the SNTP client keeps itself resynced from there.
+  if (wifiUp && !clockInitStarted) {
+    clockInitStarted = true;
+    initClock();
+  }
 }
