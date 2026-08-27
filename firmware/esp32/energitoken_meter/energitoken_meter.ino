@@ -300,10 +300,11 @@
 // *** PER-BOARD *** -- the two physical meters have opposite relay-module
 // polarity. ESP-A (device 4BF6F0, confirmed via esp_base_mac_addr_get() --
 // see makeDeviceID()) is active-low: LOW energises the coil, which is what
-// these two lines are set for right now. ESP-B is the opposite --
-// active-high. Flip both lines (swap LOW<->HIGH) before reflashing
-// whichever board these values don't currently match, and flip them back
-// before ever reflashing the other one again.
+// these two lines are set for right now. ESP-B (device F94098) is the
+// opposite -- active-high, confirmed on the actual hardware 2026-08-27.
+// Flip both lines (swap LOW<->HIGH) before reflashing whichever board these
+// values don't currently match, and flip them back before ever reflashing
+// the other one again.
 #define RELAY_CLOSED    LOW     // active-low board (ESP-A): LOW energises the coil
 #define RELAY_OPEN      HIGH
 
@@ -390,13 +391,13 @@ char WIFI_PASSWORD[65] = "testing123";
 // credential that alone can't be trusted for that. Regenerate + reflash
 // with a new key if this specific board's flash is ever compromised --
 // it can't be used to derive any other device's key.
-// ESP-A (device 4BF6F0): HMAC(masterSecret, "4BF6F0"). Regenerated -- the
-// original masterSecret used to derive the first version of this key was
-// never persisted anywhere and METER_HMAC_MASTER_SECRET was never actually
-// set on Vercel, so the oracle's signature check has been failing closed
-// (fail-closed on a missing master secret, not silently open) since that
-// code went in. This key and the server's env var were derived together
-// from the same new masterSecret so they match.
+// ESP-A (device 4BF6F0): HMAC(masterSecret, "4BF6F0"). Rotated 2026-08-27 --
+// the prior masterSecret had never been backed up locally, so it was
+// regenerated instead of recovered. The new masterSecret is backed up in
+// app/.env and Downloads/METER_HMAC_MASTER_SECRET.txt this time. This key
+// and the server's METER_HMAC_MASTER_SECRET env var were derived together
+// from that same new masterSecret, so they match -- this board must be
+// reflashed with this key before its consumption reports will verify again.
 // NOT committed: fill in the per-board value locally before flashing (see
 // app/api/_lib/meterHmac.ts for how it's derived server-side) -- never
 // paste a real derived key here in a commit, this repo is public.
