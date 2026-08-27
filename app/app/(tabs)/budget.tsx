@@ -59,6 +59,35 @@ function useDailyUsage(walletAddress: string | null, periodDays: PeriodDays) {
 /** Sanity ceiling: 100 kWh/day is several times a heavy Nigerian household. */
 const MAX_BUDGET_UNITS = 100;
 
+const CYCLE_LENGTH_MS = 24 * 60 * 60 * 1000;
+
+function formatDuration(ms: number): string {
+  const totalMinutes = Math.max(0, Math.round(ms / 60000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours === 0) return `${minutes}m`;
+  return `${hours}h ${minutes}m`;
+}
+
+/** "Cycle started X ago, resets in ~Y" -- ticks every minute so it reads as
+ * live rather than a stale snapshot from whenever the screen last rendered.
+ * The "~" is deliberate: the meter can roll early (local-midnight NTP check)
+ * or late (25h fallback), so 24h from cycleStartedAt is a close estimate of
+ * the next reset, not a promise -- see startNewCycle() in the firmware. */
+function useCycleClock(cycleStartedAt: number | undefined) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (cycleStartedAt == null) return;
+    const timer = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(timer);
+  }, [cycleStartedAt]);
+
+  if (cycleStartedAt == null) return null;
+  const elapsed = Math.max(0, now - cycleStartedAt);
+  const remaining = Math.max(0, CYCLE_LENGTH_MS - elapsed);
+  return { elapsed, remaining };
+}
+
 export default function BudgetScreen() {
   const isDesktop = useIsDesktopWeb();
   const { walletAddress, getSigner } = useWallet();
@@ -75,6 +104,7 @@ export default function BudgetScreen() {
 
   const { reading, loading, error, deviceId, hasDevice } = useMeterData(walletAddress, getSigner);
   const { days: dailyUsage } = useDailyUsage(walletAddress, periodDays);
+  const cycleClock = useCycleClock(reading?.cycleStartedAt);
   const [durationInput, setDurationInput] = useState("");
 
   const refreshBalance = useCallback(async () => {
@@ -305,6 +335,12 @@ export default function BudgetScreen() {
                   <Text style={[typography.dataXs, styles.summaryUnit]}> units</Text>
                 </Text>
               </View>
+              {cycleClock && (
+                <Text style={[typography.caption, styles.cycleNote]}>
+                  Cycle started {formatDuration(cycleClock.elapsed)} ago · resets in ~
+                  {formatDuration(cycleClock.remaining)}
+                </Text>
+              )}
 
               <Text style={[typography.label, styles.fieldLabel]}>DURATION (DAYS)</Text>
               <TextInput
@@ -410,8 +446,9 @@ export default function BudgetScreen() {
           </View>
 
           <Text style={[typography.caption, styles.cycleNote]}>
-            A cycle is one budget day, as counted by your meter. Usage and shedding reset when the
-            meter starts a new cycle.
+            {cycleClock
+              ? `Cycle started ${formatDuration(cycleClock.elapsed)} ago · resets in ~${formatDuration(cycleClock.remaining)}`
+              : "A cycle is one budget day, as counted by your meter. Usage and shedding reset when the meter starts a new cycle."}
           </Text>
 
           {/* ── Set budget -- the page's actual job, right up front ── */}

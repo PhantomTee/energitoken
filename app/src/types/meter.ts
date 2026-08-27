@@ -24,6 +24,12 @@ export type MeterReading = {
   relays: RelayState;
   relayOverrides?: RelayOverrides;
   updatedAt: number;
+  /** Unix ms when the meter's current budget cycle began -- absent until a
+   * budget has been set at least once. Written atomically with budgetWh on
+   * set/reset, and rewritten whenever the meter itself rolls a new cycle
+   * (local midnight via NTP, or the 25h no-signal fallback -- see
+   * startNewCycle() in the firmware). A cycle is nominally one day. */
+  cycleStartedAt?: number;
   /** Watt-hours as of the last actual on-chain burn -- absent until the
    * oracle has burned for this device at least once. energyWh minus this is
    * "consumed but not yet settled," the figure the Dashboard's pending/
