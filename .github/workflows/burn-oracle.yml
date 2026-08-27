@@ -1,16 +1,37 @@
 name: EnergiToken consumption oracle
 
 # Keeps on-chain token balances honest against real electricity usage, and
-# keeps each meter's daily budget cycle rolling over.
-# Three schedules:
-#   - set-pending (every 30 min): keeps each wallet's pendingBurn current so
-#     transfer() can enforce a spendable balance between burns.
-#   - burn (hourly): actually burns settled consumption and resets pendingBurn.
-#   - cycle-tick (daily): rewrites cycleStartedAt for every budgeted device,
-#     since budgetWh is a daily figure that's only ever written once -- see
+# keeps each meter's daily budget cycle rolling over. Three jobs:
+#   - set-pending: keeps each wallet's pendingBurn current so transfer() can
+#     enforce a spendable balance between burns.
+#   - burn: actually burns settled consumption and resets pendingBurn.
+#   - cycle-tick: rewrites cycleStartedAt for every budgeted device, since
+#     budgetWh is a daily figure that's only ever written once -- see
 #     firebase/schema.md's cycleStartedAt note for why this exists.
+#
+# All three used to be gated behind separate cron expressions (30min/1h/24h)
+# via `if: github.event.schedule == '...'`, on the assumption that each of
+# the three `schedule:` entries below would fire independently on its own
+# cadence. In practice, GitHub Actions' scheduler drops and delays schedule
+# events heavily -- observed gaps of 3-7 hours between firings instead of
+# the configured 30 minutes, with no guarantee any specific cron expression
+# is the one that survives. Gating each job to one specific expression meant
+# most actual firings landed on a job whose `if` didn't match, doing nothing.
+#
+# Now every job runs on every firing, regardless of which schedule (if any)
+# triggered it. This trades "precise per-job cadence" for "whichever
+# schedule GitHub actually honors covers all three" -- burn and
+# set-pending ride along on cycle-tick's firings and vice versa, instead of
+# each being independently starved. Redundant execution is safe: burn and
+# cycle-tick are both idempotent no-ops when there's nothing new to do (see
+# processDevice()'s "No new consumption since last burn" / tickDevice()'s
+# unconditional-but-harmless cycleStartedAt rewrite).
+#
 # A GitHub Actions cron, not Vercel cron, per the design brief -- keeps
-# ORACLE_SECRET out of Vercel's own cron config and in one place (repo secrets).
+# ORACLE_SECRET out of Vercel's own cron config and in one place (repo
+# secrets). Also: Vercel's Hobby-tier cron is capped at once/day, which
+# would be strictly worse for set-pending/burn than even GitHub's flaky
+# 30min/1h schedules.
 on:
   schedule:
     - cron: "*/30 * * * *"
@@ -19,8 +40,7 @@ on:
   workflow_dispatch: {}
 
 jobs:
-  set-pending:
-    if: github.event.schedule == '*/30 * * * *' || github.event_name == 'workflow_dispatch'
+  oracle-tick:
     runs-on: ubuntu-latest
     steps:
       - name: Call /api/oracle/set-pending
@@ -29,22 +49,12 @@ jobs:
             -H "x-oracle-secret: ${{ secrets.ORACLE_SECRET }}" \
             -H "Content-Type: application/json" \
             -d '{}'
-
-  burn:
-    if: github.event.schedule == '0 * * * *' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
       - name: Call /api/oracle/burn
         run: |
           curl -sf -X POST "https://energitoken.vercel.app/api/oracle/burn" \
             -H "x-oracle-secret: ${{ secrets.ORACLE_SECRET }}" \
             -H "Content-Type: application/json" \
             -d '{}'
-
-  cycle-tick:
-    if: github.event.schedule == '0 0 * * *' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
       - name: Call /api/oracle/cycle-tick
         run: |
           curl -sf -X POST "https://energitoken.vercel.app/api/oracle/cycle-tick" \
