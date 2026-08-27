@@ -1,26 +1,20 @@
 import React from "react";
 import { View, Text, StyleSheet, Pressable, Platform, ActivityIndicator } from "react-native";
-import { colors, relayTierLabels, RelayTier } from "../theme/colors";
+import { colors, relayTierLabels, relayTierDevices, relayTierThreshold, RelayTier } from "../theme/colors";
 import { typography, spacing, radius } from "../theme/typography";
 import { RelayState, RelayOverrides } from "../types/meter";
 
 const TIERS: RelayTier[] = ["r1", "r2", "r3", "r4"];
 const isWeb = Platform.OS === "web";
 
-const TIER_META: Record<
-  RelayTier,
-  { devices: string; threshold: string; accent: string; tint: string; alwaysOn?: boolean }
-> = {
-  r1: {
-    devices: "Lighting, phone charging",
-    threshold: "Always on",
-    accent: colors.terracotta[700],
-    tint: colors.terracotta[100],
-    alwaysOn: true,
-  },
-  r2: { devices: "Fans, some lights", threshold: "Sheds at 95% used", accent: colors.terracotta[500], tint: colors.neutral[100] },
-  r3: { devices: "TV, sockets", threshold: "Sheds at 85% used", accent: colors.indigo[500], tint: colors.neutral[100] },
-  r4: { devices: "Water heater, AC", threshold: "Sheds at 70% used", accent: colors.neutral[500], tint: colors.neutral[100] },
+// Per-component styling only (accent/tint/alwaysOn) -- devices/threshold
+// text comes from theme/colors.ts's shared relayTierDevices/
+// relayTierThreshold, the single source of truth Budget's table also reads.
+const TIER_META: Record<RelayTier, { accent: string; tint: string; alwaysOn?: boolean }> = {
+  r1: { accent: colors.terracotta[700], tint: colors.terracotta[100], alwaysOn: true },
+  r2: { accent: colors.terracotta[500], tint: colors.neutral[100] },
+  r3: { accent: colors.indigo[500], tint: colors.neutral[100] },
+  r4: { accent: colors.neutral[500], tint: colors.neutral[100] },
 };
 
 type Props = {
@@ -141,7 +135,7 @@ export function RelayIndicator({ relays, overrides, onToggle, disabledTier, vari
                 <Text style={[typography.bodyStrong, styles.cardLabel, { color: meta.accent }]}>
                   {tier.toUpperCase()} {relayTierLabels[tier]}
                 </Text>
-                <Text style={[typography.caption, styles.cardDevices]}>{meta.devices}</Text>
+                <Text style={[typography.caption, styles.cardDevices]}>{relayTierDevices[tier]}</Text>
               </View>
               <View style={styles.cardRight}>
                 {busy ? (
@@ -161,7 +155,7 @@ export function RelayIndicator({ relays, overrides, onToggle, disabledTier, vari
                       meta.alwaysOn ? { color: meta.accent, fontWeight: "700" } : styles.cardThresholdDefault,
                     ]}
                   >
-                    {meta.threshold}
+                    {relayTierThreshold[tier]}
                   </Text>
                 )}
               </View>

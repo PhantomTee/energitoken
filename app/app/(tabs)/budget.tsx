@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, Platform, KeyboardAvoidingView } from "react-native";
 import { useFocusEffect, Link } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, RelayTier, relayTierLabels } from "../../src/theme/colors";
+import { colors, RelayTier, relayTierLabels, relayTierDevices, relayTierThreshold } from "../../src/theme/colors";
 import { typography, spacing, radius } from "../../src/theme/typography";
 import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
 import { BudgetRing } from "../../src/components/BudgetRing";
@@ -60,12 +60,13 @@ function useDailyUsage(walletAddress: string | null, periodDays: PeriodDays) {
 /** Sanity ceiling: 100 kWh/day is several times a heavy Nigerian household. */
 const MAX_BUDGET_UNITS = 100;
 
-const RELAY_TABLE_ROWS: { tier: RelayTier; devices: string; threshold: string }[] = [
-  { tier: "r1", devices: "Lighting, phone charging", threshold: "Always on" },
-  { tier: "r2", devices: "Fans, some lights", threshold: "Sheds at 95% used" },
-  { tier: "r3", devices: "TV, sockets", threshold: "Sheds at 85% used" },
-  { tier: "r4", devices: "Water heater, AC", threshold: "Sheds at 70% used" },
-];
+// devices/threshold text lives in theme/colors.ts's relayTierDevices/
+// relayTierThreshold -- the single source of truth RelayIndicator also
+// reads, so the two can't drift out of sync the way two separate hardcoded
+// copies did before.
+const RELAY_TABLE_ROWS: { tier: RelayTier; devices: string; threshold: string }[] = (
+  ["r1", "r2", "r3", "r4"] as const
+).map((tier) => ({ tier, devices: relayTierDevices[tier], threshold: relayTierThreshold[tier] }));
 
 export default function BudgetScreen() {
   const isDesktop = useIsDesktopWeb();

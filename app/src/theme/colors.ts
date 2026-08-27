@@ -57,3 +57,28 @@ export const relayTierLabels: Record<RelayTier, string> = {
   r3: "Optional",
   r4: "Luxury",
 };
+
+/**
+ * Illustrative example devices per tier, shown on Budget/RelayIndicator so
+ * a household has a concrete sense of what "essential" vs "luxury" might
+ * mean -- not read from any real per-household wiring data, since the app
+ * has no way to know what's actually plugged into each relay. Edit these
+ * if they don't match this deployment's real setup.
+ *
+ * Single source of truth: this used to be hardcoded separately in both
+ * RelayIndicator.tsx and budget.tsx, verbatim, with no shared import --
+ * editing one silently left the other stale.
+ */
+export const relayTierDevices: Record<RelayTier, string> = {
+  r1: "Lighting, phone charging",
+  r2: "Fans, some lights",
+  r3: "TV, sockets",
+  r4: "Water heater, AC",
+};
+
+export const relayTierThreshold: Record<RelayTier, string> = {
+  r1: "Always on",
+  r2: "Sheds at 95% used",
+  r3: "Sheds at 85% used",
+  r4: "Sheds at 70% used",
+};
