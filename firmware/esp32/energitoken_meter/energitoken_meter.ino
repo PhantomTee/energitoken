@@ -254,11 +254,12 @@
  *  SECTION 2 — CONSTANTS
  * ===========================================================================*/
 // *** PER-BOARD *** -- the two physical meters have opposite relay-module
-// polarity. ESP-A (device FB3F78) is active-low: LOW energises the coil,
-// which is what these two lines are set for right now. ESP-B is the
-// opposite -- active-high. Flip both lines (swap LOW<->HIGH) before
-// reflashing whichever board these values don't currently match, and flip
-// them back before ever reflashing the other one again.
+// polarity. ESP-A (device 4BF6F0, confirmed via esp_base_mac_addr_get() --
+// see makeDeviceID()) is active-low: LOW energises the coil, which is what
+// these two lines are set for right now. ESP-B is the opposite --
+// active-high. Flip both lines (swap LOW<->HIGH) before reflashing
+// whichever board these values don't currently match, and flip them back
+// before ever reflashing the other one again.
 #define RELAY_CLOSED    LOW     // active-low board (ESP-A): LOW energises the coil
 #define RELAY_OPEN      HIGH
 
