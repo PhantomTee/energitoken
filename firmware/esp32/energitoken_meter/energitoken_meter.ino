@@ -243,6 +243,16 @@
  *      override via the new shared clearAllOverrides() (factored out of
  *      applyBalanceGate(), which used the same clear-on-Firebase-and-
  *      locally logic already).
+ *    - initRelays() now always starts every relay OFF, full stop. The
+ *      previous version used the balance persisted in NVS to decide the
+ *      very first digitalWrite() -- correct for a board that was already
+ *      gated off, but still optimistically turned everything on for a
+ *      board that merely looked fine last time it checked, and that
+ *      snapshot can be stale (spent from the app while the meter was
+ *      powered off, budget exhausted overnight while offline, etc.).
+ *      Relays now only come on once the real, fresh check has actually run
+ *      -- applyBalanceGate()/runAlgorithm() on their normal loop() timers,
+ *      once WiFi/Firebase has confirmed the household's real current state.
  * ============================================================================
  */
 
@@ -701,10 +711,20 @@ void setRelay(uint8_t i, bool closed) {
 // full power, including the critical tier, for the entire boot sequence --
 // worst case ~38s (WiFi timeout + Firebase auth + first config pull) before
 // applyBalanceGate() ever gets a chance to run and correct it.
+// Every relay starts OFF, full stop -- not "on unless last known balance
+// says otherwise". The previous version used the balance persisted in NVS
+// (see setup()) to decide the very first digitalWrite(), which correctly
+// covered a board that was already gated off, but still optimistically
+// turned everything on for a board that merely *looked* fine last time it
+// checked -- and that NVS snapshot could be stale (spent from the app
+// while the meter was powered off, budget exhausted overnight, etc.).
+// Relays only come back on once the real, fresh check has actually run:
+// applyBalanceGate()/runAlgorithm() on their normal loop() timers, once
+// WiFi/Firebase has confirmed the household's real current state.
 void initRelays() {
   for (uint8_t i = 0; i < 4; i++) {
     pinMode(RELAY_PINS[i], OUTPUT);
-    setRelay(i, !balanceGated);
+    setRelay(i, false);
   }
 }
 
@@ -1586,14 +1606,12 @@ void setup() {
   pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(BUZZER_PIN, LOW);
 
-  // loadNVS() (and the balanceGated derivation right after it) have to
-  // happen before initRelays() now -- a household with no confirmed
-  // balance, or one already gated off for zero credit, needs that
-  // reflected in the very first digitalWrite() this board makes, not
-  // "everything on" for the entire boot sequence until Firebase catches
-  // up. Fails closed: !tokenBalKnown gates just as hard as a confirmed
-  // zero does -- see applyBalanceGate()'s own comment for why this doesn't
-  // re-gate a board on every ordinary reboot (NVS remembers).
+  // initRelays() itself now starts every relay OFF unconditionally (see its
+  // own comment) -- loadNVS() still has to run first regardless, so
+  // balanceGated reflects the real persisted state by the time
+  // applyBalanceGate() runs its first real check in loop(), rather than
+  // comparing against the compile-time default and wrongly treating an
+  // already-gated board as "newly" gated on every ordinary reboot.
   loadNVS();
   balanceGated = !tokenBalKnown || tokenBal <= 0;
 
