@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { ethers } from "ethers";
 
@@ -37,7 +38,15 @@ export function useWallet() {
   // problem but isn't. Requiring the address match converts that into a
   // clean "not connected yet" throw, which the caller's retry loop
   // (getSignerWithRetry in firebaseSession.ts) already handles correctly.
-  const getSigner = async (): Promise<ethers.Signer> => {
+  // Memoized: an unstable getSigner (a fresh closure every render, which
+  // this was before) becomes a fresh reference in every useCallback/
+  // useEffect elsewhere in the app that lists it as a dependency (Dashboard's
+  // refreshBalance, Budget's, Transfer's...) -- and those screens already
+  // re-render on their own 1s clock ticks, so an unstable getSigner cascaded
+  // into those effects re-arming and re-firing (including real network
+  // calls: session token, balance, meter data) far more often than an
+  // actual focus/mount event, not just once per intended trigger.
+  const getSigner = useCallback(async (): Promise<ethers.Signer> => {
     const connected = walletAddress
       ? wallets.find(
           (w) => w.walletClientType === "privy" && w.address?.toLowerCase() === walletAddress.toLowerCase()
@@ -47,7 +56,7 @@ export function useWallet() {
     const eip1193Provider = await connected.getEthereumProvider();
     const browserProvider = new ethers.BrowserProvider(eip1193Provider);
     return browserProvider.getSigner();
-  };
+  }, [wallets, walletAddress]);
 
   return {
     isReady: ready,

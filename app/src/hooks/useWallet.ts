@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import { usePrivy, useEmbeddedEthereumWallet } from "@privy-io/expo";
 import { ethers } from "ethers";
 
@@ -18,12 +19,17 @@ export function useWallet() {
    * screens can send real transactions (e.g. transfer()) through Privy
    * without touching Privy's API shape directly.
    */
-  const getSigner = async (): Promise<ethers.Signer> => {
+  // Memoized for the same reason as useWallet.web.ts's getSigner: an
+  // unstable reference here becomes a fresh reference in every
+  // useCallback/useEffect elsewhere that lists it as a dependency, which
+  // can cascade into effects re-arming and re-firing (including real
+  // network calls) far more often than an actual mount/focus event.
+  const getSigner = useCallback(async (): Promise<ethers.Signer> => {
     if (!wallet) throw new Error("No embedded wallet available");
     const eip1193Provider = await wallet.getProvider();
     const browserProvider = new ethers.BrowserProvider(eip1193Provider);
     return browserProvider.getSigner();
-  };
+  }, [wallet]);
 
   return {
     isReady,
