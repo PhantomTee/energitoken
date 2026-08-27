@@ -232,6 +232,17 @@
  *      cycleStartedAt back to Firebase (publishCycleStartedAt()) so the
  *      app's Budget page shows the real cycle-start time instead of a stale
  *      one from the last cron tick.
+ *    - New budgetClearedAt handling in pullConfig() (edge-triggered, same
+ *      pattern as cycleStartedAt): budgetWh itself was structurally unable
+ *      to signal "clear the budget" -- pullConfig() deliberately ignores a
+ *      zero or absent budgetWh so a stale write can never accidentally zero
+ *      out a real budget, which also meant there was no way to un-set one
+ *      at all. The app's new "Reset Budget" button writes this dedicated
+ *      signal instead; on change, drops back to budgetSet=false (fully
+ *      unrestricted, no automatic shedding) and clears every relay
+ *      override via the new shared clearAllOverrides() (factored out of
+ *      applyBalanceGate(), which used the same clear-on-Firebase-and-
+ *      locally logic already).
  * ============================================================================
  */
 
@@ -430,6 +441,14 @@ struct Budget {
   // Last cycleStartedAt seen from the database, unix ms. Persisted so a
   // reboot doesn't re-trigger a cycle that's already been applied.
   uint64_t cycleStartedAt = 0;
+
+  // Last budgetClearedAt seen from the database, unix ms. Edge-triggered
+  // signal (same idea as cycleStartedAt) that the household reset their
+  // budget entirely -- budgetWh itself can't communicate "go back to
+  // unrestricted", since pullConfig() deliberately ignores a zero/absent
+  // budgetWh so a stale write can never accidentally zero out a real
+  // budget. See pullConfig() below.
+  uint64_t budgetClearedAt = 0;
 } budget;
 
 // millis() when this device last began a cycle -- used only by the local
@@ -620,6 +639,7 @@ void loadNVS() {
   budget.budgetSet   = prefs.getBool("bset", false);
   budget.baselineSet = prefs.getBool("blset", false);
   budget.cycleStartedAt = prefs.getULong64("cyc", 0ULL);
+  budget.budgetClearedAt = prefs.getULong64("bclr", 0ULL);
   tokenBal      = prefs.getFloat("tBal", 0.0f);
   tokenBalKnown = prefs.getBool("tKnown", false);
   prefs.end();
@@ -638,6 +658,7 @@ void saveNVS() {
   prefs.putBool("bset",  budget.budgetSet);
   prefs.putBool("blset", budget.baselineSet);
   prefs.putULong64("cyc", budget.cycleStartedAt);
+  prefs.putULong64("bclr", budget.budgetClearedAt);
   prefs.putFloat("tBal", tokenBal);
   prefs.putBool("tKnown", tokenBalKnown);
   prefs.end();
@@ -802,23 +823,34 @@ void applyOverrides() {
  *    3. Balance confirmed positive, no override -> runAlgorithm() thresholds
  *       (including critical, at 100% of the household's own budget)
  * -------------------------------------------------------------------------*/
+/* ---------------------------------------------------------------------------
+ *  Clears every manual relay override, locally and in Firebase. Shared by
+ *  applyBalanceGate() (fires the moment the household newly runs out of
+ *  credit) and pullConfig()'s budgetClearedAt handling (fires on an
+ *  explicit budget reset) -- same reasoning both times: a stale "forced
+ *  on/off" override from before the triggering event would otherwise
+ *  silently reassert itself instead of the household actually starting
+ *  clean.
+ * -------------------------------------------------------------------------*/
+void clearAllOverrides() {
+  for (uint8_t i = 0; i < 4; i++) { overridePresent[i] = false; overrideValue[i] = false; }
+  if (wifiUp && fbReady && Firebase.ready()) {
+    String path = "/meters/" + deviceID + "/relayOverrides";
+    if (!Firebase.RTDB.deleteNode(&fbdo, path.c_str()))
+      Serial.println("Override clear failed: " + fbdo.errorReason());
+  }
+}
+
 void applyBalanceGate() {
   bool wasGated = balanceGated;
   balanceGated = (!tokenBalKnown || tokenBal <= 0);
 
   // Newly gated (not just still gated from last cycle): clear every manual
-  // override, both locally and in Firebase. Otherwise a stale "forced on"
-  // override from before the household ran out of credit would silently
-  // reassert itself the instant balance is restored, bypassing whatever
-  // shedding state the household should actually start the new credit at.
-  if (balanceGated && !wasGated) {
-    for (uint8_t i = 0; i < 4; i++) { overridePresent[i] = false; overrideValue[i] = false; }
-    if (wifiUp && fbReady && Firebase.ready()) {
-      String path = "/meters/" + deviceID + "/relayOverrides";
-      if (!Firebase.RTDB.deleteNode(&fbdo, path.c_str()))
-        Serial.println("Override clear failed: " + fbdo.errorReason());
-    }
-  }
+  // override. Otherwise a stale "forced on" override from before the
+  // household ran out of credit would silently reassert itself the instant
+  // balance is restored, bypassing whatever shedding state the household
+  // should actually start the new credit at.
+  if (balanceGated && !wasGated) clearAllOverrides();
 
   if (!balanceGated) return;
   for (uint8_t i = 0; i < 4; i++) {
@@ -1423,6 +1455,27 @@ void pullConfig() {
   if (json.get(result, "cycleStartedAt") && result.success) {
     uint64_t v = (uint64_t)result.doubleValue;
     if (v > 0 && v != budget.cycleStartedAt) startNewCycle(v, "signal from database");
+  }
+
+  // budgetClearedAt — READ ONLY, unix ms, edge-triggered exactly like
+  // cycleStartedAt above. Written by /api/data's resetBudget action.
+  // budgetWh itself can never signal "go back to unrestricted" (see its own
+  // comment above), so this is the dedicated clear signal: drop back to no
+  // budget set, and restore every relay via the same override-clear
+  // applyBalanceGate() uses. The server writes a fresh cycleStartedAt in
+  // the same request, so that block above already handles resetting
+  // cycleWh/the baseline -- no need to duplicate that here.
+  if (json.get(result, "budgetClearedAt") && result.success) {
+    uint64_t v = (uint64_t)result.doubleValue;
+    if (v > 0 && v != budget.budgetClearedAt) {
+      budget.budgetClearedAt = v;
+      budget.budgetSet = false;
+      budget.totalWh   = 0;
+      budget.percent   = 0;
+      saveNVS();
+      clearAllOverrides();
+      Serial.println("[BUDGET] cleared -- back to unrestricted");
+    }
   }
 
   // Token balance -- shown on the local balance screen, feeds the
