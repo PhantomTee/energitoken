@@ -40,13 +40,22 @@ type Props = {
   variant?: "guide" | "compact";
 };
 
-function nextOverrideValue(current: boolean | undefined, displayedOn: boolean): boolean | null {
+function nextOverrideValue(tier: RelayTier, current: boolean | undefined, displayedOn: boolean): boolean | null {
   // From auto, one tap should do the thing that looks obvious on screen --
   // flip whatever's currently displayed -- rather than always forcing ON
   // first regardless of state. Forcing ON when the load is already on (its
   // auto value) produced no visible change, so turning something off that
   // was already on used to take two taps instead of one.
-  if (current === undefined) return !displayedOn;
+  if (current === undefined) {
+    // r1 (critical) can never be forced off -- the firmware's
+    // applyOverrides() unconditionally ignores an off override for this
+    // tier. Offering "off" here anyway used to write it to Firebase and
+    // show a "FORCED OFF" badge the relay itself would never actually
+    // honor. Only offer "force on" (useful when budget exhaustion has shed
+    // it), never "force off".
+    if (tier === "r1") return displayedOn ? null : true;
+    return !displayedOn;
+  }
   return null; // already forced (either direction) -> back to auto
 }
 
@@ -61,6 +70,9 @@ export function RelayIndicator({ relays, overrides, onToggle, disabledTier, vari
           const isManual = override !== undefined;
           const on = isManual ? override : relays[tier];
           const busy = disabledTier === tier;
+          // Nothing a tap could usefully do: r1 is on (its only allowed
+          // override direction) and not currently manual.
+          const locked = tier === "r1" && !isManual && on;
 
           const pill = (
             <View style={styles.compactCard}>
@@ -92,12 +104,12 @@ export function RelayIndicator({ relays, overrides, onToggle, disabledTier, vari
             </View>
           );
 
-          if (!interactive) return <View key={tier} style={styles.compactItem}>{pill}</View>;
+          if (!interactive || locked) return <View key={tier} style={styles.compactItem}>{pill}</View>;
 
           return (
             <Pressable
               key={tier}
-              onPress={() => onToggle(tier, nextOverrideValue(override, on))}
+              onPress={() => onToggle(tier, nextOverrideValue(tier, override, on))}
               disabled={busy}
               style={({ pressed }) => [styles.compactItem, pressed && styles.pressed]}
             >
@@ -119,6 +131,7 @@ export function RelayIndicator({ relays, overrides, onToggle, disabledTier, vari
           // represents user intent even before firmware has caught up to it.
           const on = isManual ? override : relays[tier];
           const busy = disabledTier === tier;
+          const locked = tier === "r1" && !isManual && on;
           const meta = TIER_META[tier];
 
           const card = (
@@ -155,14 +168,14 @@ export function RelayIndicator({ relays, overrides, onToggle, disabledTier, vari
             </View>
           );
 
-          if (!interactive) {
+          if (!interactive || locked) {
             return <View key={tier}>{card}</View>;
           }
 
           return (
             <Pressable
               key={tier}
-              onPress={() => onToggle(tier, nextOverrideValue(override, on))}
+              onPress={() => onToggle(tier, nextOverrideValue(tier, override, on))}
               disabled={busy}
               style={({ pressed, hovered }: any) => [pressed && styles.pressed, hovered && styles.hovered]}
             >
