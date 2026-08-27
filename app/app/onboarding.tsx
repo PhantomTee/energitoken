@@ -5,7 +5,7 @@ import { colors } from "../src/theme/colors";
 import { typography, spacing, radius } from "../src/theme/typography";
 import { AdinkraAccent } from "../src/theme/motifs/AdinkraAccent";
 import { useWallet } from "../src/hooks/useWallet";
-import { clearFirebaseSession } from "../src/services/firebaseSession";
+import { clearSessionToken } from "../src/services/firebaseSession";
 import { claimDevice, DEVICE_CODE_PATTERN } from "../src/services/deviceBinding";
 import { QRScanner } from "../src/components/QRScanner";
 import { Ionicons } from "@expo/vector-icons";
@@ -44,7 +44,7 @@ export default function OnboardingScreen() {
       router.back();
       return;
     }
-    await clearFirebaseSession();
+    await clearSessionToken();
     await logout();
     router.replace("/login");
   };

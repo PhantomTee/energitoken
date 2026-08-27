@@ -1,103 +1,24 @@
 {
+  "//": [
+    "Deny-all, deliberately. This used to be a detailed per-node ACL keyed on",
+    "auth.uid (Firebase Anonymous Auth), but the app no longer authenticates",
+    "to Firebase as a client at all -- see app/src/services/firebaseSession.ts.",
+    "Every read/write now goes through this project's own /api endpoints,",
+    "which use the Admin SDK (app/api/_lib/firebaseAdmin.ts) and always",
+    "bypass these rules regardless of what they say. The ESP32 meters",
+    "authenticate with a legacy database secret (FB_SECRET in firmware),",
+    "which also bypasses these rules unconditionally.",
+    "",
+    "That means the old per-uid rules were never actually being evaluated",
+    "for real traffic (auth.uid is always null for the client SDK now, since",
+    "nothing signs in) -- they read like a real ACL but weren't doing",
+    "anything. This says so directly instead: nothing reaches the database",
+    "through these rules at all. If a client SDK path is ever reintroduced,",
+    "write real rules for it then -- don't resurrect this file's old shape",
+    "without re-deriving it against whatever auth model exists at that point."
+  ],
   "rules": {
-    "uidToWallet": {
-      "$uid": {
-        ".read":  "auth != null && auth.uid == $uid",
-        ".write": false
-      }
-    },
-
-    "walletToDevice": {
-      "$wallet": {
-        ".read":  "auth != null && root.child('uidToWallet').child(auth.uid).val() == $wallet",
-        ".write": false
-      }
-    },
-
-    "deviceToWallet": {
-      "$deviceId": {
-        ".read":  "auth != null",
-        ".write": false
-      }
-    },
-
-    "meters": {
-      "$deviceId": {
-        ".read": "auth != null && root.child('deviceToWallet').child($deviceId).val() == root.child('uidToWallet').child(auth.uid).val()",
-
-        "budgetWh": {
-          ".write": "auth != null && root.child('deviceToWallet').child($deviceId).val() == root.child('uidToWallet').child(auth.uid).val()",
-          ".validate": "newData.isNumber() && newData.val() >= 0"
-        },
-
-        "cycleStartedAt": {
-          ".write": "auth != null && root.child('deviceToWallet').child($deviceId).val() == root.child('uidToWallet').child(auth.uid).val()",
-          ".validate": "newData.isNumber()"
-        },
-
-        "relayOverrides": {
-          "$tier": {
-            ".write": "auth != null && root.child('deviceToWallet').child($deviceId).val() == root.child('uidToWallet').child(auth.uid).val()",
-            ".validate": "newData.isBoolean()"
-          }
-        },
-
-        "tokenBalance": {
-          ".write": "auth != null && root.child('deviceToWallet').child($deviceId).val() == root.child('uidToWallet').child(auth.uid).val()",
-          ".validate": "newData.isNumber() && newData.val() >= 0"
-        },
-
-        "voltage":     { ".write": false },
-        "current":     { ".write": false },
-        "power":       { ".write": false },
-        "frequency":   { ".write": false },
-        "powerFactor": { ".write": false },
-        "energyWh":    { ".write": false },
-        "energyWhInt": { ".write": false },
-        "sig":         { ".write": false },
-        "relays":      { ".write": false },
-        "updatedAt":   { ".write": false },
-        "percentUsed": { ".write": false }
-      }
-    },
-
-    "burnCheckpoints": {
-      "$deviceId": {
-        ".read":  false,
-        ".write": false
-      }
-    },
-
-    "pendingDevices": {
-      "$deviceId": {
-        ".read":  "auth != null",
-        ".write": false
-      }
-    },
-
-    "pushTokens": {
-      "$wallet": {
-        ".read": false,
-        ".write": "auth != null && root.child('uidToWallet').child(auth.uid).val() == $wallet"
-      }
-    },
-
-    "notifications": {
-      "$wallet": {
-        ".read": "auth != null && root.child('uidToWallet').child(auth.uid).val() == $wallet",
-        "$notificationId": {
-          "read": {
-            ".write": "auth != null && root.child('uidToWallet').child(auth.uid).val() == $wallet && newData.isBoolean()"
-          }
-        }
-      }
-    },
-
-    "directory": {
-      ".read": "auth != null",
-      "$emailKey": {
-        ".write": "auth != null && newData.val() == root.child('uidToWallet').child(auth.uid).val() && (!data.exists() || data.val() == newData.val())"
-      }
-    }
+    ".read": false,
+    ".write": false
   }
 }

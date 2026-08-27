@@ -17,7 +17,7 @@ import { setMeterTokenBalance } from "../../src/services/budget";
 import { useMeterData } from "../../src/hooks/useMeterData";
 import { writeDirectoryEntry } from "../../src/services/directory";
 import { tokensToUnits } from "../../src/services/units";
-import { clearFirebaseSession } from "../../src/services/firebaseSession";
+import { clearSessionToken } from "../../src/services/firebaseSession";
 import { useNotifications } from "../../src/hooks/useNotifications";
 import { usePushNotifications } from "../../src/hooks/usePushNotifications";
 import { NotificationsPanel } from "../../src/components/NotificationsPanel";
@@ -149,7 +149,7 @@ export default function DashboardScreen() {
   }, [reading?.relays]);
 
   const handleLogout = async () => {
-    await clearFirebaseSession();
+    await clearSessionToken();
     await logout();
     router.replace("/login");
   };

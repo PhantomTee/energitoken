@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ethers } from "ethers";
 import { apiRequest } from "../services/apiClient";
-import { MeterReading } from "../mock/mockMeterData";
+import { MeterReading } from "../types/meter";
 
 const POLL_INTERVAL_MS = 4000;
 

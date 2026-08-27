@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { MeterReading } from "../mock/mockMeterData";
+import { MeterReading } from "../types/meter";
 
 export type PowerPoint = { t: number; watts: number };
 

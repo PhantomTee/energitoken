@@ -148,7 +148,7 @@ export async function getSessionToken(
 }
 
 /** Call on Privy logout so the next user doesn't inherit this wallet's cached session. */
-export async function clearFirebaseSession(): Promise<void> {
+export async function clearSessionToken(): Promise<void> {
   cached = null;
   await AsyncStorage.removeItem(TOKEN_STORAGE_KEY).catch(() => {});
 }

@@ -8,7 +8,7 @@ import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
 import { CopyableField } from "../../src/components/CopyableField";
 import { useWallet } from "../../src/hooks/useWallet";
 import { getDeviceForWallet, unbindDevice } from "../../src/services/deviceBinding";
-import { clearFirebaseSession } from "../../src/services/firebaseSession";
+import { clearSessionToken } from "../../src/services/firebaseSession";
 import { displayNameFromEmail } from "../../src/services/displayName";
 import { useTransactionHistory } from "../../src/hooks/useTransactionHistory";
 import { exportTransactionsCsv } from "../../src/services/exportReport";
@@ -78,7 +78,7 @@ export default function ProfileScreen() {
   }, [loadDevice]);
 
   const handleLogout = async () => {
-    await clearFirebaseSession();
+    await clearSessionToken();
     await logout();
     router.replace("/login");
   };

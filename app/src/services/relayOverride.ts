@@ -1,6 +1,6 @@
 import { ethers } from "ethers";
 import { apiRequest } from "./apiClient";
-import { RelayState } from "../mock/mockMeterData";
+import { RelayState } from "../types/meter";
 
 export type RelayTierKey = keyof RelayState;
 

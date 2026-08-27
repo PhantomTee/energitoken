@@ -2,7 +2,7 @@ import React from "react";
 import { View, Text, StyleSheet, Pressable, Platform, ActivityIndicator } from "react-native";
 import { colors, relayTierLabels, RelayTier } from "../theme/colors";
 import { typography, spacing, radius } from "../theme/typography";
-import { RelayState, RelayOverrides } from "../mock/mockMeterData";
+import { RelayState, RelayOverrides } from "../types/meter";
 
 const TIERS: RelayTier[] = ["r1", "r2", "r3", "r4"];
 const isWeb = Platform.OS === "web";

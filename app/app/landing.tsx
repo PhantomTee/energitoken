@@ -93,9 +93,6 @@ export default function LandingScreen() {
             <Pressable style={styles.heroPrimaryButton} onPress={() => router.push("/login")}>
               <Text style={[typography.bodyStrong, styles.heroPrimaryButtonText]}>Get Started</Text>
             </Pressable>
-            <Pressable style={styles.heroSecondaryButton} onPress={() => router.push("/login")}>
-              <Text style={[typography.bodyStrong, styles.heroSecondaryButtonText]}>View Demo</Text>
-            </Pressable>
           </View>
         </View>
         {!isNarrow && (
@@ -232,14 +229,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
   },
   heroPrimaryButtonText: { color: colors.neutral.white },
-  heroSecondaryButton: {
-    borderWidth: 1,
-    borderColor: colors.indigo[300],
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-  },
-  heroSecondaryButtonText: { color: colors.indigo[900] },
   heroRight: { flex: 1, minWidth: 280, alignItems: "center" },
   heroArt: {
     width: "100%",
