@@ -14,9 +14,12 @@ export const CONTRACT_ADDRESS: string = contractInfo.address;
 export const CONTRACT_ABI = contractInfo.abi as ethers.InterfaceAbi;
 
 // rpc-amoy.polygon.technology (the old default) stopped resolving entirely --
-// confirmed dead via direct DNS lookup, not just flaky. publicnode.com is a
-// reliable, no-API-key-required public RPC aggregator.
-const AMOY_RPC_URL = process.env.EXPO_PUBLIC_AMOY_RPC_URL ?? "https://polygon-amoy-bor-rpc.publicnode.com";
+// confirmed dead via direct DNS lookup, not just flaky. publicnode.com
+// worked but rate-limits per IP hard enough under real use to surface as
+// visible 429s (see contract.ts's withRetry and contractEvents.ts's own
+// comment on the same endpoint) -- drpc.org is Polygon's own docs-listed
+// free public RPC for Amoy and has held up better in practice.
+const AMOY_RPC_URL = process.env.EXPO_PUBLIC_AMOY_RPC_URL ?? "https://polygon-amoy.drpc.org";
 export const AMOY_CHAIN_ID = 80002n;
 
 let readProvider: ethers.JsonRpcProvider | null = null;
