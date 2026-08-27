@@ -137,6 +137,10 @@ async function processDevice(db: ReturnType<typeof adminDb>, deviceId: string): 
         deviceId,
         rebaselinedAt: Date.now(),
       });
+      // Same mirror as the normal-burn path -- without this, a meter reset
+      // would leave the Dashboard badge showing a huge stale "pending"
+      // amount computed against the old, now-meaningless baseline.
+      await db.ref(`meters/${deviceId}/lastBurnedWh`).set(currentEnergyWh);
       return { deviceId, ok: true, burned: false, reason: "Meter counter reset — checkpoint rebaselined" };
     }
 
@@ -156,6 +160,15 @@ async function processDevice(db: ReturnType<typeof adminDb>, deviceId: string): 
       walletAddress,
       deviceId,
     });
+
+    // Mirrors the same figure into the (client-readable) meters/{deviceId}
+    // node -- burnCheckpoints itself stays locked (".read": false in
+    // database.rules.json), but the app needs *some* way to compute "how
+    // much have I used since the last real burn" for the live pending/
+    // settled indicator on Dashboard. This one field is the minimal
+    // surface: reading.energyWh - reading.lastBurnedWh, both already part
+    // of the same live-polled meter reading.
+    await db.ref(`meters/${deviceId}/lastBurnedWh`).set(currentEnergyWh);
 
     // ── 6. Notify: consumption + any budget thresholds crossed ──────────
     const units = (deltaWh / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 });

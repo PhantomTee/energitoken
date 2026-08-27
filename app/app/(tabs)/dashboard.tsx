@@ -8,6 +8,7 @@ import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
 import { MetricTile } from "../../src/components/MetricTile";
 import { RelayIndicator } from "../../src/components/RelayIndicator";
 import { LiveConsumptionChart } from "../../src/components/LiveConsumptionChart";
+import { PendingBurnBadge } from "../../src/components/PendingBurnBadge";
 import { useConsumptionHistory } from "../../src/hooks/useConsumptionHistory";
 import { useWallet } from "../../src/hooks/useWallet";
 import { TopUpModal } from "../../src/components/TopUpModal";
@@ -88,6 +89,13 @@ export default function DashboardScreen() {
   useFocusEffect(
     useCallback(() => {
       refreshBalance();
+      // Balance settlement moves on its own schedule (30-min pendingBurn
+      // updates, hourly burns) regardless of whether anyone's looking, so a
+      // focus-only refresh can sit stale the whole time a screen is open.
+      // 2 minutes is frequent enough to feel current without hammering the
+      // RPC on every render.
+      const interval = setInterval(refreshBalance, 2 * 60 * 1000);
+      return () => clearInterval(interval);
     }, [refreshBalance])
   );
 
@@ -151,6 +159,11 @@ export default function DashboardScreen() {
       setRelayBusyTier(null);
     }
   };
+
+  const unburnedWh =
+    reading?.energyWh != null && reading?.lastBurnedWh != null
+      ? Math.max(0, reading.energyWh - reading.lastBurnedWh)
+      : null;
 
   const meterStatus: MeterStatus | null =
     !hasDevice
@@ -278,12 +291,9 @@ export default function DashboardScreen() {
                 {spendableWh === null ? "···" : tokensToUnits(spendableWh).toLocaleString()}
                 <Text style={[typography.dataXs, styles.walletUnit]}> units</Text>
               </Text>
-              {balanceWh !== null && spendableWh !== null && balanceWh !== spendableWh && (
-                <Text style={[typography.caption, styles.walletSpendableHint]}>
-                  {tokensToUnits(balanceWh).toLocaleString()} units on-chain — the rest is energy
-                  already used but not yet settled.
-                </Text>
-              )}
+              <View style={styles.walletBadgeRow}>
+                <PendingBurnBadge unburnedWh={unburnedWh} />
+              </View>
               {walletAddress && (
                 <Pressable style={styles.walletTopUpButton} onPress={() => setTopUpVisible(true)}>
                   <Text style={[typography.bodyStrong, styles.quickActionText]}>+ Top Up Balance</Text>
@@ -317,12 +327,9 @@ export default function DashboardScreen() {
             <Text style={[typography.dataSm, styles.balanceUnit]}>
               ≈ {balanceWh === null ? "···" : balanceWh.toLocaleString()} ENGY (Wh)
             </Text>
-            {balanceWh !== null && spendableWh !== null && balanceWh !== spendableWh && (
-              <Text style={[typography.caption, styles.balanceSpendableHint]}>
-                {tokensToUnits(spendableWh).toLocaleString()} units spendable — the rest is energy
-                already used but not yet settled on-chain.
-              </Text>
-            )}
+            <View style={styles.balanceBadgeRow}>
+              <PendingBurnBadge unburnedWh={unburnedWh} />
+            </View>
             {walletAddress && (
               <Pressable style={styles.topUpButton} onPress={() => setTopUpVisible(true)}>
                 <Text style={[typography.bodyStrong, styles.quickActionText]}>Top Up</Text>
@@ -482,7 +489,7 @@ const styles = StyleSheet.create({
   balanceValue: { color: colors.panelInsetText, marginTop: spacing.xs },
   balanceValueUnit: { color: colors.indigo[100] },
   balanceUnit: { color: colors.indigo[100], opacity: 0.85, marginBottom: spacing.md },
-  balanceSpendableHint: { color: colors.indigo[100], opacity: 0.7, marginTop: -spacing.sm, marginBottom: spacing.md },
+  balanceBadgeRow: { marginBottom: spacing.md },
   topUpButton: {
     backgroundColor: colors.terracotta[500],
     borderRadius: radius.pill,
@@ -546,7 +553,7 @@ const styles = StyleSheet.create({
   walletLabel: { color: colors.textSecondary, marginTop: spacing.md },
   walletValue: { color: colors.indigo[900], marginTop: spacing.xs },
   walletUnit: { color: colors.textSecondary },
-  walletSpendableHint: { color: colors.textSecondary, marginTop: spacing.xs },
+  walletBadgeRow: { marginTop: spacing.xs },
   walletTopUpButton: {
     backgroundColor: colors.terracotta[500],
     borderRadius: radius.md,

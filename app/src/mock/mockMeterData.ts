@@ -24,4 +24,9 @@ export type MeterReading = {
   relays: RelayState;
   relayOverrides?: RelayOverrides;
   updatedAt: number;
+  /** Watt-hours as of the last actual on-chain burn -- absent until the
+   * oracle has burned for this device at least once. energyWh minus this is
+   * "consumed but not yet settled," the figure the Dashboard's pending/
+   * settled badge is built on. */
+  lastBurnedWh?: number;
 };
