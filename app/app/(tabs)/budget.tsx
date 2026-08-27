@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, Platform, KeyboardAvoidingView } from "react-native";
 import { useFocusEffect, Link } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
-import { colors, RelayTier, relayTierLabels, relayTierDevices, relayTierThreshold } from "../../src/theme/colors";
+import { colors } from "../../src/theme/colors";
 import { typography, spacing, radius } from "../../src/theme/typography";
 import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
 import { BudgetRing } from "../../src/components/BudgetRing";
@@ -59,14 +58,6 @@ function useDailyUsage(walletAddress: string | null, periodDays: PeriodDays) {
 
 /** Sanity ceiling: 100 kWh/day is several times a heavy Nigerian household. */
 const MAX_BUDGET_UNITS = 100;
-
-// devices/threshold text lives in theme/colors.ts's relayTierDevices/
-// relayTierThreshold -- the single source of truth RelayIndicator also
-// reads, so the two can't drift out of sync the way two separate hardcoded
-// copies did before.
-const RELAY_TABLE_ROWS: { tier: RelayTier; devices: string; threshold: string }[] = (
-  ["r1", "r2", "r3", "r4"] as const
-).map((tier) => ({ tier, devices: relayTierDevices[tier], threshold: relayTierThreshold[tier] }));
 
 export default function BudgetScreen() {
   const isDesktop = useIsDesktopWeb();
@@ -360,46 +351,31 @@ export default function BudgetScreen() {
             </View>
           </View>
 
-          {/* ── Desktop: Relay Thresholds table ── */}
-          <View style={styles.thresholdCard}>
-            <View style={styles.sectionTitleRow}>
-              <Ionicons name="shield-checkmark-outline" size={18} color={colors.terracotta[500]} />
-              <Text style={[typography.h2, styles.cardTitle]}>Relay Thresholds (R1{"–"}R4)</Text>
+          {/* ── Desktop: Reset budget ── */}
+          {currentBudgetUnits !== null && (
+            <View style={styles.resetCardDesktop}>
+              <Pressable
+                style={[styles.resetButton, resetting && styles.buttonDisabled]}
+                onPress={handleResetBudget}
+                disabled={resetting}
+              >
+                {resetting ? (
+                  <ActivityIndicator color={colors.danger} />
+                ) : (
+                  <Text style={[typography.bodyStrong, styles.resetButtonText]}>
+                    {resetConfirming ? "Tap again to confirm" : "Reset Budget"}
+                  </Text>
+                )}
+              </Pressable>
+              {resetConfirming && (
+                <Text style={[typography.caption, styles.warnText]}>
+                  Clears your budget entirely, restores every relay to normal, and clears any
+                  manual overrides.
+                </Text>
+              )}
+              {resetError && <Text style={[typography.caption, styles.errorText]}>{resetError}</Text>}
             </View>
-            <Text style={[typography.caption, styles.loadGuideIntro]}>
-              How your household circuits prioritize energy when approaching budget limits -- lower
-              priority relays disconnect first. Manage overrides from the Dashboard.
-            </Text>
-            <View style={styles.thresholdHeaderRow}>
-              <Text style={[typography.label, styles.thCol1]}>RELAY</Text>
-              <Text style={[typography.label, styles.thCol2]}>CONNECTED CIRCUITS</Text>
-              <Text style={[typography.label, styles.thCol3]}>CUTOFF THRESHOLD</Text>
-              <Text style={[typography.label, styles.thCol4]}>STATUS</Text>
-            </View>
-            {RELAY_TABLE_ROWS.map((row) => {
-              const override = reading?.relayOverrides?.[row.tier];
-              const isManual = override !== undefined;
-              const on = isManual ? override : (reading?.relays?.[row.tier] ?? false);
-              return (
-                <View key={row.tier} style={styles.thresholdRow}>
-                  <View style={styles.thCol1}>
-                    <Text style={[typography.bodyStrong, styles.thRelayName]}>
-                      {row.tier.toUpperCase()} {relayTierLabels[row.tier]}
-                    </Text>
-                  </View>
-                  <Text style={[typography.caption, styles.thCol2, styles.thDevices]}>{row.devices}</Text>
-                  <Text style={[typography.dataXs, styles.thCol3, styles.thThreshold]}>{row.threshold}</Text>
-                  <View style={styles.thCol4}>
-                    <View style={[styles.thStatusPill, on ? styles.thStatusPillOn : styles.thStatusPillOff]}>
-                      <Text style={[typography.dataXs, on ? styles.thStatusTextOn : styles.thStatusTextOff]}>
-                        {isManual ? (on ? "FORCED ON" : "FORCED OFF") : on ? "ON" : "OFF"}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
+          )}
         </>
       )}
 
@@ -659,39 +635,14 @@ const styles = StyleSheet.create({
   },
   dailyAllowanceLabel: { color: colors.indigo[700] },
   dailyAllowanceValue: { color: colors.indigo[900], marginTop: 2 },
-  thresholdCard: {
+  resetCardDesktop: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,
     padding: spacing.xl,
-    gap: spacing.md,
+    gap: spacing.sm,
   },
-  thresholdHeaderRow: {
-    flexDirection: "row",
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    paddingBottom: spacing.sm,
-  },
-  thresholdRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  thCol1: { flex: 1.2 },
-  thCol2: { flex: 2 },
-  thCol3: { flex: 1.4 },
-  thCol4: { flex: 0.8, alignItems: "flex-end" },
-  thRelayName: { color: colors.textPrimary },
-  thDevices: { color: colors.textSecondary },
-  thThreshold: { color: colors.textSecondary },
-  thStatusPill: { borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 3 },
-  thStatusPillOn: { backgroundColor: colors.terracotta[100] },
-  thStatusPillOff: { backgroundColor: colors.neutral[100] },
-  thStatusTextOn: { color: colors.terracotta[700] },
-  thStatusTextOff: { color: colors.textSecondary },
   progressCard: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
@@ -709,8 +660,6 @@ const styles = StyleSheet.create({
   summaryUnit: { color: colors.textSecondary },
   cycleNote: { color: colors.textSecondary, opacity: 0.8 },
   sectionTitle: { color: colors.textPrimary, marginTop: spacing.sm },
-  sectionTitleRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.sm },
-  loadGuideIntro: { color: colors.textSecondary, marginTop: -spacing.xs },
   periodRow: { flexDirection: "row", gap: spacing.sm },
   periodChip: {
     borderWidth: 1,
