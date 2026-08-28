@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { createHmac, timingSafeEqual } from "crypto";
+import { ethers } from "ethers";
 import { adminDb, deviceIdForWallet } from "../_lib/firebaseAdmin";
 import { sendNotification } from "../_lib/notify";
 import { getSpendableBalanceServer } from "../_lib/engyReads";
@@ -70,17 +71,7 @@ export default async function handler(req: Req, res: Res) {
     return;
   }
 
-  let events: TransferEvent[];
-  try {
-    events = extractTransferEvents(payload);
-  } catch (error) {
-    // Logged, not thrown as a 500 loop -- see extractTransferEvents' own
-    // comment for why this is still a stub. A 501 tells Alchemy this
-    // delivery genuinely isn't handled yet, distinct from a real failure.
-    console.error("transfer-webhook: extractTransferEvents failed", error);
-    res.status(501).json({ error: "Payload parsing not yet implemented for this webhook type" });
-    return;
-  }
+  const events = extractTransferEvents(payload);
 
   try {
     const db = adminDb();
@@ -144,25 +135,52 @@ function verifySignature(rawBody: string, signature: string | undefined, signing
 
 type TransferEvent = { from: string; to: string; valueWh: bigint };
 
+type RawLog = { data?: string; topics?: string[] };
+
+const TRANSFER_EVENT = new ethers.Interface(["event Transfer(address indexed from, address indexed to, uint256 value)"]);
+
 /**
- * NOT YET IMPLEMENTED. Deliberately stubbed rather than guessed: Alchemy
- * has more than one webhook type that could plausibly watch this contract's
- * Transfer events, and each has a different JSON payload shape --
- *   - "Address Activity" webhooks watch specific wallet addresses (would
- *     need every paired household's wallet individually registered as a
- *     watched address, maintained as devices pair/unpair) and report
- *     `event.activity[]` entries with fromAddress/toAddress/value/asset.
- *   - Custom (GraphQL-filtered) webhooks can watch the contract address's
- *     logs directly, filtered to the Transfer event topic, with no
- *     per-wallet maintenance -- the better fit here, if it's available on
- *     the account tier in use -- and report raw log entries that need
- *     decoding against the Transfer(address,address,uint256) ABI.
- * Writing a parser against a guessed shape risks it being wrong for
- * whichever type actually gets configured. Once the webhook exists,
- * Alchemy's dashboard has a "send test webhook" button -- paste that real
- * payload in and this function gets filled in against ground truth instead
- * of assumption.
+ * Decodes the Custom (GraphQL) webhook's block.logs entries into Transfer
+ * events. Field names (data, topics, account.address, transaction.hash/index)
+ * are taken from Alchemy's actual dashboard query template, not guessed.
+ * The envelope wrapping those logs (event.data.block.logs, alongside
+ * webhookId/id/createdAt/type at the top level) is the one part not yet
+ * confirmed against a real delivered payload -- worth double-checking
+ * against the first real delivery this receives.
+ *
+ * ethers' own ABI decoding is used rather than manually slicing topics/data
+ * (topics[1]/topics[2] are the indexed from/to, left-padded to 32 bytes;
+ * data holds the non-indexed uint256 value) -- it's the same decode path
+ * this project already trusts elsewhere and handles checksumming for free.
  */
-function extractTransferEvents(_payload: unknown): TransferEvent[] {
-  throw new Error("extractTransferEvents: waiting on a real Alchemy webhook payload to implement against");
+function extractTransferEvents(payload: unknown): TransferEvent[] {
+  const envelope = payload as { event?: { data?: { block?: { logs?: RawLog[] } } } };
+  const block = envelope.event?.data?.block;
+  if (!block) {
+    // The one part of the envelope not yet confirmed against a real
+    // delivery -- if this fires, the top-level shape differs from
+    // Alchemy's documented `event.data.block.logs` and needs a look at
+    // the actual payload logged here.
+    console.error("transfer-webhook: unexpected payload envelope", JSON.stringify(payload).slice(0, 2000));
+    return [];
+  }
+  const logs = block.logs ?? [];
+
+  const events: TransferEvent[] = [];
+  for (const log of logs) {
+    if (!log.topics || !log.data) continue;
+    let parsed: ethers.LogDescription | null;
+    try {
+      parsed = TRANSFER_EVENT.parseLog({ topics: log.topics, data: log.data });
+    } catch {
+      continue; // not a well-formed Transfer log -- skip rather than fail the whole batch
+    }
+    if (!parsed || parsed.name !== "Transfer") continue;
+    events.push({
+      from: ethers.getAddress(parsed.args[0] as string),
+      to: ethers.getAddress(parsed.args[1] as string),
+      valueWh: parsed.args[2] as bigint,
+    });
+  }
+  return events;
 }
