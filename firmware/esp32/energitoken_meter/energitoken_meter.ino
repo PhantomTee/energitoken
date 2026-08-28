@@ -617,11 +617,32 @@ void checkRelayTransitions() {
 // returned a completely different, correct MAC on the same board that this
 // function had been reporting a stable-but-wrong ID for.
 // esp_base_mac_addr_get() reads the factory-burned base MAC straight from
-// eFuse -- no WiFi/netif state required, so no such failure mode exists.
+// eFuse and, per its own documentation, needs no WiFi/netif state --
+// *except* that turned out not to hold on every arduino-esp32 core
+// version. Confirmed on real hardware 2026-08-28: on the core version
+// this project's pinned platformio.ini resolves to, calling it here (before
+// connectWiFi() ever runs) returned all zeros, not a real MAC -- the same
+// class of "looked stable, was actually wrong" failure the comment above
+// already describes for WiFi.macAddress(), just via a different API this
+// time. Community-confirmed root cause (espressif/arduino-esp32#11285):
+// esp_base_mac_addr_get() used to fall back to esp_read_mac() internally
+// when WiFi wasn't initialized yet; that fallback was removed in newer
+// core versions. esp_read_mac(mac, ESP_MAC_WIFI_STA) is the documented,
+// version-independent replacement -- works with no WiFi/netif state
+// regardless of core version, so it's used here as an automatic fallback
+// only when the primary read comes back zero, rather than replacing it
+// outright: this preserves the exact value already established for both
+// boards (4BF6F0, F94098) on whichever core version doesn't need the
+// fallback at all, and self-heals on whichever does.
 String makeDeviceID() {
   if (strlen(DEVICE_ID_OVERRIDE) > 0) return String(DEVICE_ID_OVERRIDE);
   uint8_t mac[6] = {0};
   esp_base_mac_addr_get(mac);
+  bool allZero = true;
+  for (uint8_t i = 0; i < 6; i++) {
+    if (mac[i] != 0) { allZero = false; break; }
+  }
+  if (allZero) esp_read_mac(mac, ESP_MAC_WIFI_STA);
   char b[7];
   snprintf(b, sizeof(b), "%02X%02X%02X", mac[3], mac[4], mac[5]);
   return String(b);
