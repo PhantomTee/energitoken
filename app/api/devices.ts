@@ -3,6 +3,7 @@ import { adminDb } from "./_lib/firebaseAdmin";
 import { walletFromBearer } from "./_lib/appSession";
 import { sendNotification } from "./_lib/notify";
 import { processDevice } from "./oracle/burn";
+import { withOracleLock } from "./_lib/oracleLock";
 
 type Req = IncomingMessage & { method?: string; body?: unknown; headers: Record<string, string | string[] | undefined> };
 type Res = ServerResponse & { status: (code: number) => Res; json: (body: unknown) => void };
@@ -174,9 +175,22 @@ async function handleUnbind(res: Res, walletAddress: string): Promise<void> {
     // proceeds -- the scheduled oracle run would otherwise find the device
     // with no deviceToWallet entry and simply skip it forever, silently
     // writing off that consumption rather than settling it.
-    await processDevice(db, deviceId).catch((err) =>
-      console.error("devices unbind: final settlement failed", { deviceId, error: err })
-    );
+    //
+    // Routed through the same withOracleLock() the burn oracle itself uses
+    // -- calling processDevice() directly here used to race a concurrent
+    // bulk burn run: both could read the same pre-burn burnCheckpoints
+    // value and both call burnEngy() for it, burning the same consumption
+    // twice with no way to reconcile it afterward (this function's own
+    // unconditional burnCheckpoints wipe below erases the evidence). If the
+    // lock is held, settlement is skipped this once, same as any other
+    // settlement failure -- not fatal to unbinding itself.
+    const settlement = await withOracleLock(() => processDevice(db, deviceId)).catch((err) => {
+      console.error("devices unbind: final settlement failed", { deviceId, error: err });
+      return null;
+    });
+    if (settlement && !settlement.ok) {
+      console.error("devices unbind: final settlement skipped, another oracle run in progress", { deviceId });
+    }
 
     await db.ref().update({
       [`walletToDevice/${walletAddress}`]: null,
