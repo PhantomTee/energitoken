@@ -9,7 +9,7 @@ import { useWallet } from "../../src/hooks/useWallet";
 import { useMeterData } from "../../src/hooks/useMeterData";
 import { useTransactionHistory } from "../../src/hooks/useTransactionHistory";
 import { getEngyBalance, getSpendableBalance } from "../../src/services/contract";
-import { setBudgetWh, resetBudget } from "../../src/services/budget";
+import { setBudgetWh, resetBudget, setMeterTokenBalance } from "../../src/services/budget";
 import { whToUnits, unitsToWh, tokensToUnits } from "../../src/services/units";
 import { useIsDesktopWeb } from "../../src/hooks/useIsDesktopWeb";
 import { MobileTopBar } from "../../src/components/MobileTopBar";
@@ -107,6 +107,11 @@ export default function BudgetScreen() {
   const cycleClock = useCycleClock(reading?.cycleStartedAt);
   const [durationInput, setDurationInput] = useState("");
 
+  // Mirrors the fresh spendable balance into Firebase, same as
+  // dashboard.tsx and transfer.tsx's refreshBalance -- without this, a
+  // household watching Budget after receiving a transfer or a top-up
+  // wouldn't have their meter notice at all until they separately visited
+  // Dashboard.
   const refreshBalance = useCallback(async () => {
     if (!walletAddress) return;
     try {
@@ -116,10 +121,16 @@ export default function BudgetScreen() {
       ]);
       setBalanceWh(balance);
       setSpendableWh(spendable);
+      if (deviceId) {
+        setMeterTokenBalance(Number(spendable), walletAddress, getSigner).catch(() => {
+          // best-effort mirror for the meter's local display; a failed write
+          // here shouldn't disrupt the balance the app itself just showed
+        });
+      }
     } catch {
       // leave the previous balance on screen rather than clearing it on a transient RPC error
     }
-  }, [walletAddress]);
+  }, [walletAddress, deviceId, getSigner]);
 
   useFocusEffect(
     useCallback(() => {
