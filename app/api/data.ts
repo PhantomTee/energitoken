@@ -212,15 +212,25 @@ async function savePushToken(res: Res, walletAddress: string, body: unknown): Pr
  *
  * Note: this changes the key an already-registered email hashes to, so an
  * existing directory entry written under the old '.'->',' scheme won't be
- * found by a lookup computed with this function. Self-healing in practice:
- * the Dashboard re-registers the caller's own email on every login
- * (dashboard.tsx's writeDirectoryEntry effect), which overwrites nothing
- * (registerDirectory only sets when unclaimed) but does create the new-key
- * entry going forward. A stale old-key entry is simply orphaned, not wrong.
+ * found by a lookup computed with this function alone. Self-healing in
+ * practice: the Dashboard re-registers the caller's own email on every
+ * login (dashboard.tsx's writeDirectoryEntry effect), which overwrites
+ * nothing (registerDirectory only sets when unclaimed) but does create the
+ * new-key entry going forward. Until that happens for a given user, though,
+ * a lookup for their email would 404 for everyone else -- resolveDirectory
+ * below falls back to the old key so lookups keep working during the
+ * transition; only writes use the new scheme, so nothing new is ever
+ * created under the vulnerable old key.
  */
 function encodeEmailKey(email: string): string {
   const normalized = email.trim().toLowerCase();
   return createHash("sha256").update(normalized).digest("hex");
+}
+
+/** Reproduces the pre-8ac7627 key scheme, read-only fallback for entries
+ * written before the SHA-256 switch -- see encodeEmailKey's comment. */
+function encodeEmailKeyLegacy(email: string): string {
+  return email.trim().toLowerCase().replace(/\./g, ",");
 }
 
 async function resolveDirectory(req: Req, res: Res): Promise<void> {
@@ -230,7 +240,12 @@ async function resolveDirectory(req: Req, res: Res): Promise<void> {
     return;
   }
   const snap = await adminDb().ref(`directory/${encodeEmailKey(email)}`).get();
-  res.status(200).json({ walletAddress: snap.exists() ? (snap.val() as string) : null });
+  if (snap.exists()) {
+    res.status(200).json({ walletAddress: snap.val() as string });
+    return;
+  }
+  const legacySnap = await adminDb().ref(`directory/${encodeEmailKeyLegacy(email)}`).get();
+  res.status(200).json({ walletAddress: legacySnap.exists() ? (legacySnap.val() as string) : null });
 }
 
 /**
