@@ -61,8 +61,13 @@ export default function ProfileScreen() {
   const [unbinding, setUnbinding] = useState(false);
   const [unbindError, setUnbindError] = useState<string | null>(null);
   const [qrVisible, setQrVisible] = useState(false);
-  const [relayAlerts, setRelayAlerts] = useState(true);
-  const [budgetWarnings, setBudgetWarnings] = useState(true);
+  // Disabled, not just local state that looked live but persisted nowhere --
+  // no backend preference store or push-filtering exists yet (see the file
+  // header comment), so a toggle that responded to taps was telling
+  // households their alert preference took effect when every relay/budget
+  // push kept sending regardless. Fixed "on" until that backend work exists.
+  const relayAlerts = true;
+  const budgetWarnings = true;
   const displayName = displayNameFromEmail(email);
   const { transactions: exportTransactions } = useTransactionHistory(isDesktop ? walletAddress : null);
 
@@ -165,22 +170,22 @@ export default function ProfileScreen() {
                 <Text style={[typography.h2, styles.desktopCardTitle]}>Alerts &amp; Warnings</Text>
               </View>
               <SettingsRow
-                label="Relay shed alerts"
+                label="Relay shed alerts (coming soon)"
                 value={
                   <Switch
                     value={relayAlerts}
-                    onValueChange={setRelayAlerts}
+                    disabled
                     trackColor={{ true: colors.indigo[500], false: colors.border }}
                   />
                 }
               />
               <View style={styles.divider} />
               <SettingsRow
-                label="Low budget warnings"
+                label="Low budget warnings (coming soon)"
                 value={
                   <Switch
                     value={budgetWarnings}
-                    onValueChange={setBudgetWarnings}
+                    disabled
                     trackColor={{ true: colors.indigo[500], false: colors.border }}
                   />
                 }
@@ -300,22 +305,22 @@ export default function ProfileScreen() {
           <SectionHeader>NOTIFICATIONS</SectionHeader>
           <View style={styles.card}>
             <SettingsRow
-              label="Relay shed alerts"
+              label="Relay shed alerts (coming soon)"
               value={
                 <Switch
                   value={relayAlerts}
-                  onValueChange={setRelayAlerts}
+                  disabled
                   trackColor={{ true: colors.terracotta[400], false: colors.border }}
                 />
               }
             />
             <View style={styles.divider} />
             <SettingsRow
-              label="Low budget warnings"
+              label="Low budget warnings (coming soon)"
               value={
                 <Switch
                   value={budgetWarnings}
-                  onValueChange={setBudgetWarnings}
+                  disabled
                   trackColor={{ true: colors.terracotta[400], false: colors.border }}
                 />
               }
