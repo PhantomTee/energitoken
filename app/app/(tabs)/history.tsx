@@ -9,6 +9,7 @@ import { useWallet } from "../../src/hooks/useWallet";
 import { useTransactionHistory } from "../../src/hooks/useTransactionHistory";
 import { TxRecord, TxDirection } from "../../src/services/contractEvents";
 import { exportTransactionsCsv, exportBillingReportPdf } from "../../src/services/exportReport";
+import { whToUnits } from "../../src/services/units";
 import { useIsDesktopWeb } from "../../src/hooks/useIsDesktopWeb";
 import { MobileTopBar } from "../../src/components/MobileTopBar";
 
@@ -51,8 +52,9 @@ function TransactionRow({ tx }: { tx: TxRecord }) {
       </View>
       <View style={styles.rowRight}>
         <Text style={[typography.dataSm, { color: meta.amountColor }]}>
-          {meta.symbol}{tx.amountWh.toLocaleString()} Wh
+          {meta.symbol}{whToUnits(tx.amountWh).toLocaleString()} units
         </Text>
+        <Text style={[typography.dataXs, styles.rowAmountWh]}>{tx.amountWh.toLocaleString()} Wh</Text>
         <View style={styles.statusPill}>
           <Text style={[typography.dataXs, styles.statusPillText]}>Confirmed</Text>
         </View>
@@ -211,6 +213,7 @@ const styles = StyleSheet.create({
   rowCounterparty: { color: colors.textSecondary, marginTop: 2 },
   rowLink: { color: colors.indigo[400], marginTop: 2 },
   rowRight: { alignItems: "flex-end", gap: 4 },
+  rowAmountWh: { color: colors.textSecondary, opacity: 0.85 },
   statusPill: {
     backgroundColor: colors.indigo[100],
     borderRadius: radius.pill,

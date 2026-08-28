@@ -36,7 +36,7 @@ import { exportTransactionsCsv } from "../../src/services/exportReport";
 import { useIsDesktopWeb } from "../../src/hooks/useIsDesktopWeb";
 import { displayNameFromEmail } from "../../src/services/displayName";
 import { useMeterData } from "../../src/hooks/useMeterData";
-import { getUnbudgetedWh } from "../../src/services/units";
+import { getUnbudgetedWh, whToUnits } from "../../src/services/units";
 
 const TX_DIRECTION_META: Record<TxDirection, string> = {
   mint: "Purchased",
@@ -583,7 +583,7 @@ export default function TransferScreen() {
                     ]}
                   >
                     {tx.direction === "transfer-out" || tx.direction === "burn" ? "-" : "+"}
-                    {tx.amountWh.toLocaleString()} Wh
+                    {whToUnits(tx.amountWh).toLocaleString()} units
                   </Text>
                   <View style={styles.thStatus}>
                     <View style={styles.historyStatusPill}>
