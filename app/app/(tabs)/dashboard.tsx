@@ -435,7 +435,12 @@ export default function DashboardScreen() {
       )}
 
       {walletAddress && (
-        <TopUpModal visible={topUpVisible} onClose={() => setTopUpVisible(false)} walletAddress={walletAddress} />
+        <TopUpModal
+          visible={topUpVisible}
+          onClose={() => setTopUpVisible(false)}
+          walletAddress={walletAddress}
+          getSigner={getSigner}
+        />
       )}
 
       <NotificationsPanel

@@ -1,9 +1,11 @@
 import React, { useState } from "react";
 import { Modal, View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, Platform, Linking, KeyboardAvoidingView } from "react-native";
 import * as WebBrowser from "expo-web-browser";
+import { ethers } from "ethers";
 import { colors } from "../theme/colors";
 import { typography, spacing, radius } from "../theme/typography";
 import { useIsDesktopWeb } from "../hooks/useIsDesktopWeb";
+import { apiRequest } from "../services/apiClient";
 import { Ionicons } from "@expo/vector-icons";
 
 const BACKEND_URL = Platform.OS === "web" ? "" : process.env.EXPO_PUBLIC_BACKEND_URL ?? "https://energitoken.vercel.app";
@@ -14,6 +16,7 @@ type Props = {
   visible: boolean;
   onClose: () => void;
   walletAddress: string;
+  getSigner: () => Promise<ethers.Signer>;
   onMinted?: () => void;
 };
 
@@ -39,7 +42,7 @@ async function pollOrderStatus(
   return "timeout";
 }
 
-export function TopUpModal({ visible, onClose, walletAddress, onMinted }: Props) {
+export function TopUpModal({ visible, onClose, walletAddress, getSigner, onMinted }: Props) {
   const isDesktop = useIsDesktopWeb();
   const [amountNgn, setAmountNgn] = useState("");
   const [loading, setLoading] = useState(false);
@@ -62,13 +65,17 @@ export function TopUpModal({ visible, onClose, walletAddress, onMinted }: Props)
     setError(null);
     setLoading(true);
     try {
-      const response = await fetch(`${BACKEND_URL}/api/payments/create`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress, amountNgn: amount }),
-      });
-      const json = await response.json();
-      if (!response.ok) throw new Error(json.error ?? "Failed to start payment");
+      // Authenticated: the server derives walletAddress from this session
+      // token rather than trusting it from the request body -- this
+      // endpoint used to accept any wallet address from an unauthenticated
+      // POST, letting anyone create Flutterwave payment orders on another
+      // wallet's behalf.
+      const json = await apiRequest<{ reference: string; checkoutUrl: string }>(
+        "/api/payments/create",
+        walletAddress,
+        getSigner,
+        { method: "POST", body: { amountNgn: amount } }
+      );
 
       if (Platform.OS === "web") {
         Linking.openURL(json.checkoutUrl);

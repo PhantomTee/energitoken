@@ -85,32 +85,47 @@ async function getSignerWithRetry(getSigner: () => Promise<ethers.Signer>): Prom
 const SIGN_TIMEOUT_MS = 20000;
 const CREATE_FETCH_TIMEOUT_MS = 15000;
 
+async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CREATE_FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (err) {
+    throw err instanceof Error && err.name === "AbortError"
+      ? new Error("Couldn't reach the server. Check your connection and try again.")
+      : err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function createSession(walletAddress: string, getSigner: () => Promise<ethers.Signer>): Promise<StoredSession> {
+  // Step 1: fetch a fresh one-time nonce to sign -- see sessionMessage.ts
+  // for why this replaced the old static message.
+  const nonceResponse = await fetchWithTimeout(
+    `${BACKEND_URL}/api/session/create?walletAddress=${encodeURIComponent(walletAddress)}`,
+    { method: "GET" }
+  );
+  const nonceJson = await nonceResponse.json().catch(() => ({}));
+  if (!nonceResponse.ok) {
+    throw new Error((nonceJson as { error?: string }).error ?? `Failed to get a login nonce (${nonceResponse.status})`);
+  }
+  const { nonce } = nonceJson as { nonce: string };
+
+  // Step 2: sign it and trade the signature for a session token.
   const signer = await getSignerWithRetry(getSigner);
-  const message = buildSessionMessage(walletAddress);
+  const message = buildSessionMessage(walletAddress, nonce);
   const signature = await withTimeout(
     signer.signMessage(message),
     SIGN_TIMEOUT_MS,
     "Signing timed out. Please try again."
   );
 
-  const controller = new AbortController();
-  const fetchTimer = setTimeout(() => controller.abort(), CREATE_FETCH_TIMEOUT_MS);
-  let response: Response;
-  try {
-    response = await fetch(`${BACKEND_URL}/api/session/create`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ walletAddress, signature }),
-      signal: controller.signal,
-    });
-  } catch (err) {
-    throw err instanceof Error && err.name === "AbortError"
-      ? new Error("Couldn't reach the server. Check your connection and try again.")
-      : err;
-  } finally {
-    clearTimeout(fetchTimer);
-  }
+  const response = await fetchWithTimeout(`${BACKEND_URL}/api/session/create`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ walletAddress, signature, nonce }),
+  });
 
   const json = await response.json().catch(() => ({}));
   if (!response.ok) {
