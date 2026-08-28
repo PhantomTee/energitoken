@@ -28,6 +28,7 @@ import {
   checkNetworkAndGas,
 } from "../../src/services/contract";
 import { resolveEmailToAddress } from "../../src/services/directory";
+import { setMeterTokenBalance } from "../../src/services/budget";
 import { QRScanner } from "../../src/components/QRScanner";
 import { useTransactionHistory } from "../../src/hooks/useTransactionHistory";
 import { TxDirection } from "../../src/services/contractEvents";
@@ -148,8 +149,14 @@ export default function TransferScreen() {
   const { transactions: historyTransactions, refresh: refreshHistory } = useTransactionHistory(
     isDesktop ? walletAddress : null
   );
-  const { reading } = useMeterData(walletAddress, getSigner);
+  const { reading, deviceId } = useMeterData(walletAddress, getSigner);
 
+  // Mirrors the fresh spendable balance into Firebase the same way
+  // dashboard.tsx's refreshBalance does -- without this, a transfer
+  // confirming on-chain never reaches the meter (which only reads its
+  // balance from Firebase, at FB_PULL_MS) until the household happens to
+  // open the Dashboard tab next. That gap, not a slow poll, is why the
+  // buzzer wasn't firing "on time" after a send.
   const refreshBalance = useCallback(async () => {
     if (!walletAddress) return;
     try {
@@ -159,10 +166,16 @@ export default function TransferScreen() {
       ]);
       setBalanceWh(balance);
       setSpendableWh(spendable);
+      if (deviceId) {
+        setMeterTokenBalance(Number(spendable), walletAddress, getSigner).catch(() => {
+          // best-effort mirror for the meter's local display; a failed write
+          // here shouldn't disrupt the balance the app itself just showed
+        });
+      }
     } catch {
       // leave balances as-is; the UI shows a loading state until a read succeeds
     }
-  }, [walletAddress]);
+  }, [walletAddress, deviceId, getSigner]);
 
   // What's actually free to send: spendable balance minus today's
   // remaining budget allowance (see getUnbudgetedWh). No budget set at all
