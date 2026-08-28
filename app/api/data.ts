@@ -36,7 +36,8 @@ export default async function handler(req: Req, res: Res) {
       if (resource === "meters") return await getMine(res, walletAddress);
       if (resource === "notifications") return await listNotifications(res, walletAddress);
       if (resource === "directory") return await resolveDirectory(req, res);
-      res.status(400).json({ error: "resource must be one of meters, notifications, directory" });
+      if (resource === "burnHistory") return await getBurnHistory(res, walletAddress);
+      res.status(400).json({ error: "resource must be one of meters, notifications, directory, burnHistory" });
       return;
     }
 
@@ -73,6 +74,26 @@ async function getMine(res: Res, walletAddress: string): Promise<void> {
   }
   const snap = await adminDb().ref(`meters/${deviceId}`).get();
   res.status(200).json({ hasDevice: true, deviceId, reading: snap.exists() ? snap.val() : null });
+}
+
+/** Read side of oracle/burn.ts's append-only burnHistory log -- see that
+ * file's comment for why the chart needs this instead of scanning the
+ * chain directly. No orderByChild/limitToLast here deliberately: that
+ * needs a .indexOn rule this deploy doesn't have, and burns are infrequent
+ * enough (gated behind the oracle's own cron) that even months of history
+ * is a small, unbounded read. Order doesn't matter to the caller -- it
+ * buckets entries by calendar day, not by arrival order. */
+async function getBurnHistory(res: Res, walletAddress: string): Promise<void> {
+  const deviceId = await deviceIdForWallet(walletAddress);
+  if (!deviceId) {
+    res.status(200).json({ entries: [] });
+    return;
+  }
+  const snap = await adminDb().ref(`burnHistory/${deviceId}`).get();
+  const entries: Array<{ deltaWh: number; timestamp: number }> = snap.exists()
+    ? Object.values(snap.val() as Record<string, { deltaWh: number; timestamp: number }>)
+    : [];
+  res.status(200).json({ entries });
 }
 
 async function setBudget(res: Res, walletAddress: string, body: unknown): Promise<void> {

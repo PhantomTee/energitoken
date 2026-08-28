@@ -1,13 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, Platform, KeyboardAvoidingView } from "react-native";
 import { useFocusEffect, Link } from "expo-router";
+import { ethers } from "ethers";
 import { colors } from "../../src/theme/colors";
 import { typography, spacing, radius } from "../../src/theme/typography";
 import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
 import { BudgetRing } from "../../src/components/BudgetRing";
 import { useWallet } from "../../src/hooks/useWallet";
 import { useMeterData } from "../../src/hooks/useMeterData";
-import { useTransactionHistory } from "../../src/hooks/useTransactionHistory";
+import { useBurnHistory } from "../../src/hooks/useBurnHistory";
 import { getEngyBalance, getSpendableBalance } from "../../src/services/contract";
 import { setBudgetWh, resetBudget, setMeterTokenBalance } from "../../src/services/budget";
 import { whToUnits, unitsToWh, tokensToUnits } from "../../src/services/units";
@@ -22,21 +23,28 @@ function dayKey(ts: number) {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 }
 
-/** Buckets burn (consumption) transactions into calendar days over the trailing
- * `periodDays` window, so it can be compared against the daily budget as a
- * rough over/under trend -- built from the same on-chain burn events the
- * History screen's Consumption tab already reads, not a separate log. */
-function useDailyUsage(walletAddress: string | null, periodDays: PeriodDays) {
-  const { transactions, loading, error } = useTransactionHistory(walletAddress);
+/** Buckets the durable burn-history log (see useBurnHistory) into calendar
+ * days over the trailing `periodDays` window, so it can be compared against
+ * the daily budget as a rough over/under trend. Used to be built from
+ * scanning on-chain burn events directly, but that scan only ever sees the
+ * last ~100 minutes of blocks (contractEvents.ts's MAX_LOOKBACK_BLOCKS) --
+ * nowhere near enough for a multi-day chart given how infrequently the burn
+ * oracle actually runs, which is why every bar came up empty. */
+function useDailyUsage(
+  walletAddress: string | null,
+  getSigner: () => Promise<ethers.Signer>,
+  periodDays: PeriodDays
+) {
+  const { entries, loading, error } = useBurnHistory(walletAddress, getSigner);
 
   const days = useMemo(() => {
     const now = Date.now();
     const cutoff = now - periodDays * 24 * 60 * 60 * 1000;
     const byDay = new Map<string, number>();
-    for (const tx of transactions) {
-      if (tx.direction !== "burn" || tx.timestamp < cutoff) continue;
-      const key = dayKey(tx.timestamp);
-      byDay.set(key, (byDay.get(key) ?? 0) + tx.amountWh);
+    for (const entry of entries) {
+      if (entry.timestamp < cutoff) continue;
+      const key = dayKey(entry.timestamp);
+      byDay.set(key, (byDay.get(key) ?? 0) + entry.deltaWh);
     }
 
     const result: { key: string; label: string; wh: number }[] = [];
@@ -50,7 +58,7 @@ function useDailyUsage(walletAddress: string | null, periodDays: PeriodDays) {
       });
     }
     return result;
-  }, [transactions, periodDays]);
+  }, [entries, periodDays]);
 
   return { days, loading, error };
 }
@@ -103,7 +111,7 @@ export default function BudgetScreen() {
   const [periodDays, setPeriodDays] = useState<PeriodDays>(7);
 
   const { reading, loading, error, deviceId, hasDevice } = useMeterData(walletAddress, getSigner);
-  const { days: dailyUsage } = useDailyUsage(walletAddress, periodDays);
+  const { days: dailyUsage } = useDailyUsage(walletAddress, getSigner, periodDays);
   const cycleClock = useCycleClock(reading?.cycleStartedAt);
   const [durationInput, setDurationInput] = useState("");
 
@@ -345,6 +353,9 @@ export default function BudgetScreen() {
                   {availableUnits === null ? "···" : availableUnits.toLocaleString()}
                   <Text style={[typography.dataXs, styles.summaryUnit]}> units</Text>
                 </Text>
+                <Text style={[typography.dataXs, styles.currentBalanceWh]}>
+                  ≈ {spendableWh === null ? "···" : spendableWh.toLocaleString()} ENGY (Wh)
+                </Text>
               </View>
               {cycleClock && (
                 <Text style={[typography.caption, styles.cycleNote]}>
@@ -437,6 +448,9 @@ export default function BudgetScreen() {
                 <Text style={[typography.dataMd, styles.summaryValue]}>
                   {availableUnits === null ? "···" : availableUnits.toLocaleString()}
                   <Text style={[typography.dataXs, styles.summaryUnit]}> units</Text>
+                </Text>
+                <Text style={[typography.dataXs, styles.summaryWh]}>
+                  ≈ {spendableWh === null ? "···" : spendableWh.toLocaleString()} Wh
                 </Text>
               </View>
               <View style={styles.statBlock}>
@@ -676,6 +690,7 @@ const styles = StyleSheet.create({
   },
   currentBalanceLabel: { color: colors.textSecondary },
   currentBalanceValue: { color: colors.indigo[900], marginTop: 2 },
+  currentBalanceWh: { color: colors.textSecondary, opacity: 0.85, marginTop: 2 },
   dailyAllowanceBox: {
     backgroundColor: colors.indigo[100],
     borderRadius: radius.md,
@@ -706,6 +721,7 @@ const styles = StyleSheet.create({
   summaryLabel: { color: colors.terracotta[500] },
   summaryValue: { color: colors.textPrimary, marginTop: 2 },
   summaryUnit: { color: colors.textSecondary },
+  summaryWh: { color: colors.textSecondary, opacity: 0.85, marginTop: 1 },
   cycleNote: { color: colors.textSecondary, opacity: 0.8 },
   sectionTitle: { color: colors.textPrimary, marginTop: spacing.sm },
   periodRow: { flexDirection: "row", gap: spacing.sm },

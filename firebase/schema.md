@@ -76,6 +76,31 @@ mirrored here, not raw on-chain balance, for the same reason the app shows
 spendable everywhere else: it's what the household actually still has to
 use. Same write scoping as `budgetWh`.
 
+## `/burnHistory/{deviceId}/{pushId}`
+
+```
+/burnHistory/{deviceId}/{pushId}
+    deltaWh:   number   (Wh burned in this one oracle run)
+    timestamp: number   (unix ms)
+```
+
+Append-only, written by `api/oracle/burn.ts` every time it actually burns
+consumption on-chain (never on a no-op run). Exists because the Budget
+page's consumption chart used to be built by scanning on-chain burn events
+directly (`src/services/contractEvents.ts`), which only ever sees the last
+~3,000 blocks -- on Amoy's ~2s block time, roughly 100 minutes -- nowhere
+near enough for a 7/14/30-day trend given how infrequently the burn oracle
+actually runs (see `.github/workflows/burn-oracle.yml`'s own comment on how
+irregular GitHub Actions' schedule is in practice). This log has no such
+window: every real burn is kept, read in full by `api/data.ts`'s
+`getBurnHistory` and bucketed by calendar day client-side
+(`app/(tabs)/budget.tsx`'s `useDailyUsage`).
+
+Distinct from `/burnCheckpoints/{deviceId}`, which stays a single
+overwritten record (the last-burned baseline the oracle diffs against) and
+stays `.read: false` -- this path exists specifically to be readable
+history, not a checkpoint.
+
 ## `/deviceToWallet/{deviceId}` and `/walletToDevice/{wallet}`
 
 The pairing a household creates once, during onboarding, by typing their

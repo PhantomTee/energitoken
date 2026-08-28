@@ -173,6 +173,18 @@ export async function processDevice(db: ReturnType<typeof adminDb>, deviceId: st
       deviceId,
     });
 
+    // Durable per-burn log for the Budget page's consumption chart --
+    // unlike the checkpoint above (overwritten every time, only the latest
+    // value survives), this is append-only. The chart used to be built from
+    // scanning on-chain Transfer/burn events directly, but that scan is
+    // capped to the last ~3,000 blocks (~100 minutes on Amoy) -- far too
+    // small a window for a multi-day trend given how infrequently this
+    // oracle actually runs. See api/data.ts's getBurnHistory for the read side.
+    await db.ref(`burnHistory/${deviceId}`).push({
+      deltaWh,
+      timestamp: Date.now(),
+    });
+
     // Mirrors the same figure into the (client-readable) meters/{deviceId}
     // node -- burnCheckpoints itself stays locked (".read": false in
     // database.rules.json), but the app needs *some* way to compute "how
