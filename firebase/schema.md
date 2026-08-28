@@ -54,12 +54,17 @@ fix: firmware resets its local cycle whenever the value it reads back
 differs from the last one it stored in NVS, independent of whether budgetWh
 itself moved. Two things write it, atomically alongside `budgetWh` from
 `setBudgetWh()` whenever a household sets or changes their plan (an
-immediate reset), and a daily cron (`api/oracle/cycle-tick.ts`, see
-`.github/workflows/burn-oracle.yml`) that rewrites it every 24 hours
-regardless (the routine roll-over). Firmware should also keep a local
-24-hour fallback that rolls the cycle on-device if no new signal has arrived
-in time, so a missed cron run doesn't strand every meter shed to
-critical-only until someone notices.
+immediate reset), and a cron (`api/oracle/cycle-tick.ts`, see
+`.github/workflows/burn-oracle.yml`) that rewrites it at most once per real
+West Africa Time calendar day (the routine roll-over) -- gated on the WAT
+date actually having changed since the last roll, not on 24 hours having
+elapsed, since the underlying GitHub Actions schedule fires irregularly
+(anywhere from every 30 minutes to every several hours per that workflow's
+own comment) and an unconditional rewrite on every firing was rolling the
+cycle, and refilling the shed budget, far more than once a day. Firmware
+should also keep a local 24-hour fallback that rolls the cycle on-device if
+no new signal has arrived in time, so a missed cron run doesn't strand
+every meter shed to critical-only until someone notices.
 
 `tokenBalance` exists purely so a physical meter, which has no way to read
 the blockchain itself, can show a household's balance on its own local
