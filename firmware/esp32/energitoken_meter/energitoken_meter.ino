@@ -532,6 +532,19 @@ float    lastTopUpAmount   = 0;
 // every cycle. See the precedence table on applyBalanceGate() itself.
 bool     balanceGated      = false;
 
+// True whenever applyBudgetGate() has the relays forced off because the
+// household's own daily allowance is fully used (budget.percent >= 100%).
+// Same absolute-stop treatment as balanceGated, and for the same reason:
+// without this, a "force on" override set before exhaustion (or tapped
+// after, since evalChannel() alone can't refuse an override) would keep
+// spending real balance past the household's own chosen daily cap with no
+// way to plan around it -- the whole point of a budget is that hitting it
+// means stop, not "unless you'd overridden something earlier." Recomputed
+// fresh from budget.percent every check, not latched, so it self-clears
+// the instant startNewCycle() resets percent back to 0 -- no separate
+// release signal needed.
+bool     budgetGated       = false;
+
 const char* MENU[4] = { "1 Set budget days",
                         "2 Relay states",
                         "3 Token balance",
@@ -785,21 +798,26 @@ void evalChannel(uint8_t idx, float shedPoint) {
 }
 
 void applyOverrides() {
-  // The gate is authoritative at zero balance -- an override closing a
-  // relay the gate just opened, then the gate reopening it again, is the
-  // same fighting-writers bug as runAlgorithm() below, just with a
-  // different second writer. Overriding while genuinely at zero credit is
-  // deliberately impossible; it works exactly as before at any positive
-  // balance.
+  // Both gates are authoritative, for the same reason: an override closing
+  // a relay a gate just opened, then the gate reopening it again, is the
+  // fighting-writers bug runAlgorithm() below was already protected from --
+  // just with overrides as the second writer. Overriding while genuinely
+  // at zero credit, or with the day's budget fully used, is deliberately
+  // impossible; it works exactly as before at any positive balance under
+  // the daily allowance.
   if (balanceGated) return;
+  if (budgetGated) return;
   for (uint8_t i = 0; i < 4; i++) {
     if (!overridePresent[i]) continue;          // no key means auto
     bool want = overrideValue[i];
     // Critical can still never be forced OFF by an override -- that's a
     // stray-tap safety net, not a statement that critical never sheds
-    // (it now does, via evalChannel(0, THRESH_R1) below, once the
-    // household's own budget hits 100%). An override CAN bring critical
-    // back on after that happens, same as any other tier.
+    // (it does, via evalChannel(0, THRESH_R1) below, before 100% is even
+    // reached against a positive balance, and applyBudgetGate() above
+    // takes it the rest of the way once the daily allowance is fully
+    // used). An override can still bring critical back on below 100%,
+    // same as any other tier -- just not once the day's allowance itself
+    // is exhausted.
     if (i == 0 && !want) want = true;
     if (relayState[i] != want) setRelay(i, want);
   }
@@ -807,13 +825,8 @@ void applyOverrides() {
 
 /* ---------------------------------------------------------------------------
  *  Zero/unknown-balance gate: with no *confirmed* purchased credit, nothing
- *  runs, including critical. Critical also sheds via the household's own
- *  budget now (evalChannel(0, THRESH_R1) in runAlgorithm(), at 100% used) --
- *  but that's a *self-chosen* limit the household can override past (an app
- *  override can still bring critical back on, spending from balance outside
- *  today's budgeted allowance). This gate is different: it fires only when
- *  there's no confirmed purchased credit at all, and nothing -- not even an
- *  override -- can bring anything back on until that changes.
+ *  runs, including critical, and nothing -- not even an override -- can
+ *  bring anything back on until that changes.
  *
  *  Fails CLOSED, deliberately: gated whenever tokenBalKnown is false, not
  *  just when a confirmed reading is <= 0. A board that's never synced a
@@ -838,11 +851,18 @@ void applyOverrides() {
  *  to prevent. The flag makes this the sole writer at zero balance instead
  *  of the fastest of three competing ones.
  *
+ *  applyBudgetGate() right below is the same idea for the OTHER absolute
+ *  stop -- the household's own daily allowance fully used -- which used to
+ *  be a *self-chosen* limit an override could spend past (real balance,
+ *  outside today's budgeted amount) until that was deliberately closed:
+ *  hitting 100% is meant to be a hard stop the household can plan around,
+ *  not one a stale override quietly punches a hole through.
+ *
  *  Full precedence, called in this order from loop():
- *    1. Balance unknown or <= 0   -> this gate: everything off, absolute
- *    2. Balance confirmed positive, override set -> applyOverrides() wins
- *    3. Balance confirmed positive, no override -> runAlgorithm() thresholds
- *       (including critical, at 100% of the household's own budget)
+ *    1. Balance unknown or <= 0        -> balance gate:  everything off, absolute
+ *    2. Balance positive, budget 100%  -> budget gate:   everything off, absolute
+ *    3. Neither gate, override set     -> applyOverrides() wins
+ *    4. Neither gate, no override      -> runAlgorithm() thresholds
  * -------------------------------------------------------------------------*/
 /* ---------------------------------------------------------------------------
  *  Clears every manual relay override, locally and in Firebase. Shared by
@@ -879,9 +899,38 @@ void applyBalanceGate() {
   }
 }
 
+/* ---------------------------------------------------------------------------
+ *  Full budget exhaustion, same absolute treatment as applyBalanceGate()
+ *  above: once budget.percent reaches 100%, nothing -- not even a manual
+ *  "force on" override, on any tier -- keeps a relay powered. Hitting the
+ *  daily allowance is meant to be a hard stop the household can plan
+ *  around, not one an earlier override quietly punches a hole through.
+ *  Only budgetSet households are gated by this; no budget set at all means
+ *  unrestricted, same as everywhere else in this firmware.
+ *
+ *  Clears the same way balanceGated does on the newly-gated transition, and
+ *  self-releases the same way too: nothing here sets it back to false
+ *  directly, it's just recomputed from budget.percent every check, so the
+ *  moment startNewCycle() resets percent to 0 (a new day, or an explicit
+ *  Reset Budget/budgetClearedAt), this naturally reads false again on the
+ *  very next pass with no separate release signal to keep in sync.
+ * -------------------------------------------------------------------------*/
+void applyBudgetGate() {
+  bool wasGated = budgetGated;
+  budgetGated = budget.budgetSet && budget.percent >= 100.0f;
+
+  if (budgetGated && !wasGated) clearAllOverrides();
+
+  if (!budgetGated) return;
+  for (uint8_t i = 0; i < 4; i++) {
+    if (relayState[i]) setRelay(i, false);
+  }
+}
+
 void runAlgorithm() {
   if (!meas.valid) return;
   if (balanceGated) return;   // no purchased credit: the gate owns the relays, not this
+  if (budgetGated) return;    // daily allowance fully used: same treatment, see applyBudgetGate()
 
   // Capture a baseline only when none exists. A baseline restored from
   // flash by loadNVS() is authoritative and must survive a power cut,
@@ -1689,11 +1738,12 @@ void loop() {
     }
   }
 
-  // Manual overrides and the zero-balance gate, independent of PZEM
-  // validity -- a loose sensor lead must not freeze either one.
+  // Manual overrides and both absolute gates, independent of PZEM
+  // validity -- a loose sensor lead must not freeze any of them.
   if (now - tOverride >= OVERRIDE_APPLY_MS) {
     tOverride = now;
     applyBalanceGate();   // must run first -- sets balanceGated, which applyOverrides() below checks
+    applyBudgetGate();    // same reasoning -- sets budgetGated, which applyOverrides() below also checks
     applyOverrides();
   }
 
