@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "http";
-import { ordersRef } from "../_lib/firebaseAdmin";
+import { claimOrderForProcessing, releaseOrder } from "../_lib/paymentOrder";
 import { mintEngy } from "../_lib/mintEngy";
 import { sendNotification } from "../_lib/notify";
 import { resetCycleForWallet } from "../_lib/meterReset";
@@ -43,39 +43,31 @@ export default async function handler(req: Req, res: Res) {
       return;
     }
 
-    const snapshot = await ordersRef().child(reference).get();
-    const order = snapshot.val();
-    if (!order) {
-      res.status(404).json({ error: "Unknown reference" });
+    // Atomic claim (same mechanism as callback.ts): only one caller can ever
+    // move this order out of "mint_failed", so a retry-mint call racing a
+    // fresh Flutterwave webhook retry can't both attempt to mint it.
+    const claim = await claimOrderForProcessing(reference, ["mint_failed"]);
+    if (!claim.claimed) {
+      if (!claim.order) {
+        res.status(404).json({ error: "Unknown reference" });
+        return;
+      }
+      res.status(400).json({ error: `Order is in '${claim.order.status}' state, not 'mint_failed' — refusing to retry` });
       return;
     }
-
-    if (order.status !== "mint_failed") {
-      res.status(400).json({ error: `Order is in '${order.status}' state, not 'mint_failed' — refusing to retry` });
-      return;
-    }
-
-    await ordersRef().child(reference).update({ status: "minting", updatedAt: Date.now() });
+    const order = claim.order;
 
     let txHash: string;
     try {
       txHash = await mintEngy(order.walletAddress, order.whAmount);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown mint error";
-      await ordersRef().child(reference).update({
-        status: "mint_failed",
-        mintError: message,
-        updatedAt: Date.now(),
-      });
+      await releaseOrder(reference, "mint_failed", { mintError: message });
       res.status(500).json({ error: "Retry failed", detail: message });
       return;
     }
 
-    await ordersRef().child(reference).update({
-      status: "minted",
-      mintTxHash: txHash,
-      updatedAt: Date.now(),
-    });
+    await releaseOrder(reference, "minted", { mintTxHash: txHash });
 
     await resetCycleForWallet(order.walletAddress).catch((err) =>
       console.error("payments/retry-mint: resetCycleForWallet failed", err)

@@ -8,6 +8,9 @@ export type NotificationType =
   | "device";      // pairing events
 
 const EXPO_PUSH_ENDPOINT = "https://exp.host/--/api/v2/push/send";
+const PUSH_TIMEOUT_MS = 10_000;
+/** Expo's push API hard-caps a single request at 100 messages. */
+const EXPO_PUSH_BATCH_SIZE = 100;
 
 /**
  * Writes an in-app notification to /notifications/{wallet} AND sends a push
@@ -63,15 +66,28 @@ async function sendPushNotification(
       priority: "high" as const,
     }));
 
-    // Expo's push API accepts a batch array directly, up to 100 per request.
-    const response = await fetch(EXPO_PUSH_ENDPOINT, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify(messages),
-    });
-
-    if (!response.ok) {
-      console.error("sendPushNotification: Expo push API returned", response.status);
+    // A single wallet realistically has a handful of devices, never close
+    // to 100, but chunking defensively costs nothing and means this never
+    // silently breaks if that assumption stops being true.
+    for (let i = 0; i < messages.length; i += EXPO_PUSH_BATCH_SIZE) {
+      const batch = messages.slice(i, i + EXPO_PUSH_BATCH_SIZE);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), PUSH_TIMEOUT_MS);
+      try {
+        const response = await fetch(EXPO_PUSH_ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify(batch),
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          console.error("sendPushNotification: Expo push API returned", response.status);
+        }
+      } catch (err) {
+        console.error("sendPushNotification: batch failed", err instanceof Error ? err.message : err);
+      } finally {
+        clearTimeout(timer);
+      }
     }
   } catch (error) {
     console.error("sendPushNotification failed", error);

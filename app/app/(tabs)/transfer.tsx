@@ -49,6 +49,23 @@ function formatTxDate(ts: number) {
 }
 
 /**
+ * Parses the amount field into a whole-Wh BigInt, or null if the input
+ * isn't a genuine positive whole number worth transferring. Never throws:
+ * `BigInt(Math.floor(Number(input)))` used to be called directly on
+ * whatever the user typed or pasted, and `BigInt()` throws a RangeError on
+ * a non-finite number -- Number("1e400") is Infinity, which is > 0 and so
+ * passed every earlier check, then crashed the render the moment it
+ * reached a raw BigInt() call. Rejects (rather than silently flooring)
+ * decimal input too, so "1.9" can't display as "1.9 ENGY" while actually
+ * sending 1 -- the user should retype a whole number, not have it guessed.
+ */
+function parseAmountWh(input: string): bigint | null {
+  const n = Number(input);
+  if (!Number.isFinite(n) || n <= 0 || !Number.isInteger(n) || !Number.isSafeInteger(n)) return null;
+  return BigInt(n);
+}
+
+/**
  * Recipients can be a raw wallet address or an email -- emails are resolved
  * against the /directory node (written by the Dashboard after login). If an
  * email hasn't logged in yet there's nothing to resolve to, so that's
@@ -201,8 +218,9 @@ export default function TransferScreen() {
           ? recipient
           : null;
   const amountWh = Number(amount);
+  const parsedAmountWh = parseAmountWh(amount);
   const isValidRecipient = effectiveAddress !== null;
-  const isValidAmount = unbudgetedWh !== null && amountWh > 0 && BigInt(Math.floor(amountWh)) <= unbudgetedWh;
+  const isValidAmount = unbudgetedWh !== null && parsedAmountWh !== null && parsedAmountWh <= unbudgetedWh;
   const canSubmit = isValidAmount && isValidRecipient && !resolving && networkOk === true && gasOk === true;
 
   // Live network + gas check, once recipient and amount are otherwise valid --
@@ -240,7 +258,7 @@ export default function TransferScreen() {
   }, [isValidRecipient, isValidAmount, getSigner]);
 
   const handleSend = async () => {
-    if (!effectiveAddress) return;
+    if (!effectiveAddress || parsedAmountWh === null) return;
     setShowConfirm(false);
     setTxHash(undefined);
     setTxError(undefined);
@@ -252,7 +270,7 @@ export default function TransferScreen() {
       // app-level policy (today's remaining budget stays reserved), not the
       // contract's hard on-chain limit, so it gets its own accurate message
       // instead of borrowing the spendable-balance one.
-      if (unbudgetedWh !== null && BigInt(Math.floor(amountWh)) > unbudgetedWh) {
+      if (unbudgetedWh !== null && parsedAmountWh > unbudgetedWh) {
         setTxState("failed");
         setTxError("That amount reaches into today's remaining budget allowance. Lower the amount, or free it up by reducing your budget first.");
         return;
@@ -265,7 +283,7 @@ export default function TransferScreen() {
         return;
       }
 
-      const tx = await sendTransferTx(signer, effectiveAddress, BigInt(Math.floor(amountWh)));
+      const tx = await sendTransferTx(signer, effectiveAddress, parsedAmountWh);
       setTxHash(tx.hash);
       setTxState("submitted");
       await tx.wait();
@@ -453,9 +471,9 @@ export default function TransferScreen() {
       />
       {amount.length > 0 && unbudgetedWh !== null && !isValidAmount && (
         <Text style={[typography.caption, styles.errorHint]}>
-          {amountWh <= 0
-            ? "Enter an amount greater than 0."
-            : spendableWh !== null && BigInt(Math.floor(amountWh)) > spendableWh
+          {parsedAmountWh === null
+            ? "Enter a whole number of Wh greater than 0."
+            : spendableWh !== null && parsedAmountWh > spendableWh
               ? "Amount exceeds your spendable balance."
               : "That reaches into today's remaining budget allowance."}
         </Text>

@@ -12,6 +12,27 @@ import { createHash, timingSafeEqual } from "crypto";
 
 const FLW_BASE_URL = "https://api.flutterwave.com/v3";
 
+// Every call below used to have no bounded timeout -- a hung connection to
+// Flutterwave (their side down, a network partition) left the serverless
+// function awaiting a promise with no deadline, tying up the invocation
+// instead of failing fast with a retriable error.
+const FLW_TIMEOUT_MS = 10_000;
+
+async function fetchFlw(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FLW_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error(`Flutterwave request timed out after ${FLW_TIMEOUT_MS}ms: ${url}`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export type FlutterwaveTransactionStatus = {
   id: number;
   tx_ref: string;
@@ -48,7 +69,7 @@ export async function createPayment(input: {
   redirectUrl: string;
   customerEmail?: string;
 }): Promise<{ link: string }> {
-  const response = await fetch(`${FLW_BASE_URL}/payments`, {
+  const response = await fetchFlw(`${FLW_BASE_URL}/payments`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -79,7 +100,7 @@ export async function createPayment(input: {
  * status right after the user returns from checkout, ahead of any webhook).
  */
 export async function verifyTransactionByReference(txRef: string): Promise<FlutterwaveTransactionStatus> {
-  const response = await fetch(
+  const response = await fetchFlw(
     `${FLW_BASE_URL}/transactions/verify_by_reference?tx_ref=${encodeURIComponent(txRef)}`,
     { headers: { Authorization: `Bearer ${getSecretKey()}` } }
   );
@@ -99,7 +120,7 @@ export async function verifyTransactionByReference(txRef: string): Promise<Flutt
  * from the webhook payload's data.id, never trusted on its own.
  */
 export async function verifyTransactionById(id: number): Promise<FlutterwaveTransactionStatus> {
-  const response = await fetch(`${FLW_BASE_URL}/transactions/${id}/verify`, {
+  const response = await fetchFlw(`${FLW_BASE_URL}/transactions/${id}/verify`, {
     headers: { Authorization: `Bearer ${getSecretKey()}` },
   });
 

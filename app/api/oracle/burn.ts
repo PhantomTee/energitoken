@@ -87,7 +87,12 @@ export default async function handler(req: Req, res: Res) {
   }
 }
 
-async function processDevice(db: ReturnType<typeof adminDb>, deviceId: string): Promise<DeviceBurnResult> {
+/** Exported so devices.ts's unbind handler can settle a device's
+ * outstanding consumption one last time before removing its pairing --
+ * see that file for why an unbind that only removed mappings left burns
+ * unsettled for a device with no owner to burn against by the next
+ * scheduled oracle run. */
+export async function processDevice(db: ReturnType<typeof adminDb>, deviceId: string): Promise<DeviceBurnResult> {
   try {
     // ── 1. Resolve wallet ────────────────────────────────────────────────
     const walletSnap = await db.ref(`deviceToWallet/${deviceId}`).get();

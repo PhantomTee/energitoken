@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "http";
+import { createHash } from "crypto";
 import { ServerValue } from "firebase-admin/database";
 import { adminDb, deviceIdForWallet } from "./_lib/firebaseAdmin";
 import { walletFromBearer } from "./_lib/appSession";
@@ -199,8 +200,27 @@ async function savePushToken(res: Res, walletAddress: string, body: unknown): Pr
 
 // ── directory ───────────────────────────────────────────────────────────
 
+/**
+ * Firebase Realtime Database keys can't contain '.', '#', '$', '[', or ']'.
+ * The old encoding only replaced '.', so an email with any of the other
+ * four characters in its local part (rare, but valid per RFC 5321) made
+ * this call throw and the endpoint 500. A hash of the normalized address
+ * sidesteps the whole reserved-character set instead of chasing each one
+ * individually, at the cost of the key no longer being human-readable in
+ * the Firebase console -- acceptable since nothing reads this key directly,
+ * only computes it from an email to look up.
+ *
+ * Note: this changes the key an already-registered email hashes to, so an
+ * existing directory entry written under the old '.'->',' scheme won't be
+ * found by a lookup computed with this function. Self-healing in practice:
+ * the Dashboard re-registers the caller's own email on every login
+ * (dashboard.tsx's writeDirectoryEntry effect), which overwrites nothing
+ * (registerDirectory only sets when unclaimed) but does create the new-key
+ * entry going forward. A stale old-key entry is simply orphaned, not wrong.
+ */
 function encodeEmailKey(email: string): string {
-  return email.trim().toLowerCase().replace(/\./g, ",");
+  const normalized = email.trim().toLowerCase();
+  return createHash("sha256").update(normalized).digest("hex");
 }
 
 async function resolveDirectory(req: Req, res: Res): Promise<void> {
@@ -213,6 +233,20 @@ async function resolveDirectory(req: Req, res: Res): Promise<void> {
   res.status(200).json({ walletAddress: snap.exists() ? (snap.val() as string) : null });
 }
 
+/**
+ * Known gap: this trusts whatever email string the caller's session sends,
+ * not a Privy-verified claim that the session's wallet actually owns it --
+ * verifying that server-side needs a Privy server credential (app secret or
+ * verification key) this deployment doesn't have configured. The
+ * legitimate client only ever sends its own Privy-reported email
+ * (dashboard.tsx derives `email` from useWallet(), never a free-text
+ * field), but a caller hitting this endpoint directly with a valid session
+ * token and an arbitrary email string in the body isn't stopped by
+ * anything here. Until a Privy identity check is wired in, this function
+ * can only prevent a SECOND wallet from silently overwriting a FIRST
+ * wallet's claim on the same email -- see the transaction below -- not
+ * verify the first claim was legitimate to begin with.
+ */
 async function registerDirectory(res: Res, walletAddress: string, body: unknown): Promise<void> {
   const { email } = (body ?? {}) as { email?: string };
   if (!email || typeof email !== "string") {
@@ -220,7 +254,21 @@ async function registerDirectory(res: Res, walletAddress: string, body: unknown)
     return;
   }
   const entryRef = adminDb().ref(`directory/${encodeEmailKey(email)}`);
-  const snap = await entryRef.get();
-  if (!snap.exists()) await entryRef.set(walletAddress);
+  // Transactional claim-or-confirm, not read-then-write: two different
+  // wallets registering the same email concurrently could otherwise both
+  // read "unclaimed" before either writes, and the second write would
+  // silently win with no error to either caller.
+  const result = await entryRef.transaction((current: string | null) => {
+    if (current === null) return walletAddress; // unclaimed -- claim it
+    return; // already set (by this wallet or another) -- leave untouched, don't overwrite
+  });
+  const finalOwner = result.snapshot.val() as string;
+  if (finalOwner !== walletAddress) {
+    // Distinguishable from success -- the old code returned `{ ok: true }`
+    // here too, silently telling a wallet its email registration "worked"
+    // when it actually just lost a conflict to whoever claimed it first.
+    res.status(409).json({ error: "This email is already registered to a different wallet." });
+    return;
+  }
   res.status(200).json({ ok: true });
 }

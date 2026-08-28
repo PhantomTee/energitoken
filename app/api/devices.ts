@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "http";
 import { adminDb } from "./_lib/firebaseAdmin";
 import { walletFromBearer } from "./_lib/appSession";
 import { sendNotification } from "./_lib/notify";
+import { processDevice } from "./oracle/burn";
 
 type Req = IncomingMessage & { method?: string; body?: unknown; headers: Record<string, string | string[] | undefined> };
 type Res = ServerResponse & { status: (code: number) => Res; json: (body: unknown) => void };
@@ -59,6 +60,12 @@ export default async function handler(req: Req, res: Res) {
  *  - Both bindings (deviceToWallet and walletToDevice) are written by the
  *    Admin SDK — the client has no direct Firebase write access to these paths.
  *  - A wallet can only pair to one device (write-once walletToDevice).
+ *  - The claim itself (pendingDevices/{id}/claimed: false -> true) runs as
+ *    a Firebase transaction, not a separate read-then-write -- two devices
+ *    claims racing the same code (e.g. two people who saw the same demo
+ *    unit's screen) would otherwise both pass the "not yet claimed" check
+ *    and both write, with the second write silently overwriting the first
+ *    (last-write-wins) even though the first caller's UI reported success.
  */
 async function handleClaim(req: Req, res: Res, walletAddress: string): Promise<void> {
   try {
@@ -74,40 +81,55 @@ async function handleClaim(req: Req, res: Res, walletAddress: string): Promise<v
     const db = adminDb();
     const now = Date.now();
 
-    const pendingSnap = await db.ref(`pendingDevices/${deviceId}`).get();
-    if (!pendingSnap.exists()) {
-      res.status(404).json({ error: "Device not in pairing mode. Hold the setup button on the meter." });
-      return;
-    }
-
-    const pending = pendingSnap.val() as { createdAt: number; claimed?: boolean };
-    if (pending.claimed) {
-      res.status(409).json({ error: "Device already claimed." });
-      return;
-    }
-    if (now - pending.createdAt > PAIRING_WINDOW_MS) {
-      res.status(410).json({ error: "Pairing window expired. Press the setup button again." });
-      return;
-    }
-
-    const existingWalletSnap = await db.ref(`deviceToWallet/${deviceId}`).get();
-    if (existingWalletSnap.exists() && existingWalletSnap.val() !== walletAddress) {
-      res.status(409).json({ error: "This device is already linked to another account." });
-      return;
-    }
-
+    // A wallet can only ever hold one device -- checked before the claim
+    // transaction so a wallet that's already paired gets a clear error
+    // rather than winning the race and leaving deviceToWallet/walletToDevice
+    // pointing at each other inconsistently.
     const existingDeviceSnap = await db.ref(`walletToDevice/${walletAddress}`).get();
     if (existingDeviceSnap.exists() && existingDeviceSnap.val() !== deviceId) {
       res.status(409).json({ error: "Your account is already linked to a different device." });
       return;
     }
 
+    const pendingRef = db.ref(`pendingDevices/${deviceId}`);
+    const claimResult = await pendingRef.transaction((current: { createdAt: number; claimed?: boolean } | null) => {
+      if (!current) return current; // not in pairing mode -- abort, handled below
+      if (current.claimed) return; // already claimed -- abort the transaction
+      if (now - current.createdAt > PAIRING_WINDOW_MS) return; // expired -- abort
+      return { ...current, claimed: true, claimedAt: now, claimedByWallet: walletAddress };
+    });
+
+    if (!claimResult.committed) {
+      const snap = await pendingRef.get();
+      if (!snap.exists()) {
+        res.status(404).json({ error: "Device not in pairing mode. Hold the setup button on the meter." });
+        return;
+      }
+      const pending = snap.val() as { createdAt: number; claimed?: boolean };
+      if (pending.claimed) {
+        res.status(409).json({ error: "Device already claimed." });
+        return;
+      }
+      res.status(410).json({ error: "Pairing window expired. Press the setup button again." });
+      return;
+    }
+
+    // The pairing claim transaction above is the real race-closer; this
+    // deviceToWallet check just guards against the (rare) case of a device
+    // ID being reused/reclaimed for a different wallet than one already
+    // bound to it in deviceToWallet from an earlier, unrelated pairing.
+    const existingWalletSnap = await db.ref(`deviceToWallet/${deviceId}`).get();
+    if (existingWalletSnap.exists() && existingWalletSnap.val() !== walletAddress) {
+      // Roll back the claim we just won so the device isn't left stuck
+      // "claimed" by a pairing that can't actually complete.
+      await pendingRef.update({ claimed: false, claimedAt: null, claimedByWallet: null });
+      res.status(409).json({ error: "This device is already linked to another account." });
+      return;
+    }
+
     await db.ref().update({
       [`deviceToWallet/${deviceId}`]: walletAddress,
       [`walletToDevice/${walletAddress}`]: deviceId,
-      [`pendingDevices/${deviceId}/claimed`]: true,
-      [`pendingDevices/${deviceId}/claimedAt`]: now,
-      [`pendingDevices/${deviceId}/claimedByWallet`]: walletAddress,
     });
 
     await sendNotification(walletAddress, {
@@ -129,6 +151,12 @@ async function handleClaim(req: Req, res: Res, walletAddress: string): Promise<v
  * request body -- otherwise anyone who knows a victim's wallet address
  * (not secret: deviceToWallet is readable by any authenticated session)
  * could unbind their meter as pure griefing, with no credential at all.
+ *
+ * Also settles the device's outstanding consumption and clears its
+ * household-specific state before removing the pairing -- an unbind that
+ * only removed the mappings left real problems for whoever pairs the
+ * device next: unburned consumption with no wallet to burn it against, and
+ * a stale budget/cycle/relay-override state a new household never set.
  */
 async function handleUnbind(res: Res, walletAddress: string): Promise<void> {
   try {
@@ -140,9 +168,26 @@ async function handleUnbind(res: Res, walletAddress: string): Promise<void> {
     }
     const deviceId: string = deviceSnap.val();
 
+    // Best-effort final settlement: burn whatever consumption has accrued
+    // since the last oracle run, against the wallet that's about to be
+    // unbound. If this fails (e.g. an RPC hiccup), unbinding still
+    // proceeds -- the scheduled oracle run would otherwise find the device
+    // with no deviceToWallet entry and simply skip it forever, silently
+    // writing off that consumption rather than settling it.
+    await processDevice(db, deviceId).catch((err) =>
+      console.error("devices unbind: final settlement failed", { deviceId, error: err })
+    );
+
     await db.ref().update({
       [`walletToDevice/${walletAddress}`]: null,
       [`deviceToWallet/${deviceId}`]: null,
+      // Clear household-specific meter state so the next pairing (by this
+      // wallet or another) starts clean rather than inheriting the old
+      // household's budget, over-budget cycle, and manual relay overrides.
+      [`meters/${deviceId}/budgetWh`]: null,
+      [`meters/${deviceId}/cycleStartedAt`]: null,
+      [`meters/${deviceId}/relayOverrides`]: null,
+      [`burnCheckpoints/${deviceId}`]: null,
     });
 
     res.status(200).json({ ok: true, deviceId });

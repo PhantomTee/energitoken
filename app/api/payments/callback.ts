@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "http";
-import { ordersRef } from "../_lib/firebaseAdmin";
+import { claimOrderForProcessing, releaseOrder } from "../_lib/paymentOrder";
 import { mintEngy } from "../_lib/mintEngy";
 import { verifyTransactionById, verifyWebhookSignature } from "../_lib/flutterwaveClient";
 import { sendNotification } from "../_lib/notify";
@@ -25,6 +25,12 @@ type Res = ServerResponse & { status: (code: number) => Res; json: (body: unknow
  *     and the Firebase update doesn't allow a second mint.
  *  5. If the mint transaction itself fails, the order is marked "mint_failed"
  *     so it's distinguishable and retriable, not stuck forever.
+ *  6. The order is claimed via a Firebase transaction (moved to
+ *     "processing") before any of the above runs -- Flutterwave does send
+ *     duplicate webhook deliveries for the same event, and without an
+ *     atomic claim, two concurrent deliveries could both read "not yet
+ *     minted" and both mint. Only the delivery that wins the transaction
+ *     proceeds; the other gets a 200 telling Flutterwave not to retry.
  */
 export default async function handler(req: Req, res: Res) {
   if (req.method !== "POST") {
@@ -51,32 +57,37 @@ export default async function handler(req: Req, res: Res) {
       return;
     }
 
-    // Load our stored order first — reject any reference we never created.
-    const snapshot = await ordersRef().child(txRef).get();
-    const order = snapshot.val();
-    if (!order) {
-      res.status(404).json({ error: "Unknown reference" });
+    // Atomically claim the order (initial/pending/failed -> processing)
+    // before doing anything else -- see security-model note 6 above.
+    const claim = await claimOrderForProcessing(txRef, ["initial", "pending", "failed"]);
+    if (!claim.claimed) {
+      if (!claim.order) {
+        res.status(404).json({ error: "Unknown reference" });
+        return;
+      }
+      // Already processed — idempotent 200 so Flutterwave stops retrying.
+      if (claim.order.status === "minted") {
+        res.status(200).json({ ok: true, alreadyMinted: true });
+        return;
+      }
+      // Another delivery (or retry-mint.ts) currently holds this order.
+      // 200, not an error: this is Flutterwave sending a duplicate we
+      // deliberately don't act on, not a failure of this request.
+      res.status(200).json({ ok: true, minted: false, skipped: claim.order.status });
       return;
     }
-
-    // Already processed — idempotent 200 so Flutterwave stops retrying.
-    if (order.status === "minted") {
-      res.status(200).json({ ok: true, alreadyMinted: true });
-      return;
-    }
-
-    if (order.status === "minting") {
-      console.error("payments callback: order stuck in minting state", { txRef });
-      res.status(500).json({ error: "Order in minting state — manual inspection required" });
-      return;
-    }
+    const order = claim.order;
 
     // ── Re-verify with Flutterwave server-to-server ────────────────────────
+    // From here on, every early return must release the claimed order back
+    // to a processable status -- otherwise it's stuck in "processing"
+    // forever and no future webhook can ever mint it.
     let verified;
     try {
       verified = await verifyTransactionById(transactionId);
     } catch (err) {
       console.error("payments callback: verify failed", err);
+      await releaseOrder(txRef, "initial");
       res.status(502).json({ error: "Could not verify payment with Flutterwave" });
       return;
     }
@@ -84,6 +95,7 @@ export default async function handler(req: Req, res: Res) {
     // Cross-check: tx_ref must match what we generated.
     if (verified.tx_ref !== txRef) {
       console.error("payments callback: tx_ref mismatch", { stored: txRef, verified: verified.tx_ref });
+      await releaseOrder(txRef, "initial");
       res.status(400).json({ error: "tx_ref mismatch" });
       return;
     }
@@ -92,6 +104,7 @@ export default async function handler(req: Req, res: Res) {
     // amounts are in whole Naira, not kobo, for this endpoint).
     if (verified.amount < order.amountNgn || verified.currency !== "NGN") {
       console.error("payments callback: amount mismatch", { expected: order.amountNgn, got: verified.amount });
+      await releaseOrder(txRef, "initial");
       res.status(400).json({ error: "Amount mismatch — possible tampering" });
       return;
     }
@@ -101,33 +114,19 @@ export default async function handler(req: Req, res: Res) {
       // Flutterwave will send another webhook once it resolves; don't mark
       // "failed" here or the payment-complete screen shows a false failure
       // to the user right before the success webhook silently mints anyway.
-      await ordersRef().child(txRef).update({
-        flwStatus: verified.status,
-        flwTransactionId: transactionId,
-        updatedAt: Date.now(),
-      });
+      await releaseOrder(txRef, "pending", { flwStatus: verified.status, flwTransactionId: transactionId });
       res.status(200).json({ ok: true, minted: false, flwStatus: verified.status, pending: true });
       return;
     }
 
     if (verified.status !== "successful") {
-      await ordersRef().child(txRef).update({
-        status: "failed",
-        flwStatus: verified.status,
-        flwTransactionId: transactionId,
-        updatedAt: Date.now(),
-      });
+      await releaseOrder(txRef, "failed", { flwStatus: verified.status, flwTransactionId: transactionId });
       res.status(200).json({ ok: true, minted: false, flwStatus: verified.status });
       return;
     }
 
     // Mark as "minting" before we hit the chain — crash-safe intermediate state.
-    await ordersRef().child(txRef).update({
-      status: "minting",
-      flwTransactionId: transactionId,
-      verifiedAt: Date.now(),
-      updatedAt: Date.now(),
-    });
+    await releaseOrder(txRef, "minting", { flwTransactionId: transactionId, verifiedAt: Date.now() });
 
     let txHash: string;
     try {
@@ -135,20 +134,12 @@ export default async function handler(req: Req, res: Res) {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown mint error";
       console.error("payments callback: mint failed", { txRef, error: message });
-      await ordersRef().child(txRef).update({
-        status: "mint_failed",
-        mintError: message,
-        updatedAt: Date.now(),
-      });
+      await releaseOrder(txRef, "mint_failed", { mintError: message });
       res.status(500).json({ error: "Mint transaction failed", detail: message });
       return;
     }
 
-    await ordersRef().child(txRef).update({
-      status: "minted",
-      mintTxHash: txHash,
-      updatedAt: Date.now(),
-    });
+    await releaseOrder(txRef, "minted", { mintTxHash: txHash });
 
     // A top-up should bring back any relay shed by budget exhaustion or a
     // stale override -- best-effort, a failure here shouldn't turn a

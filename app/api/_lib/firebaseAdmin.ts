@@ -27,7 +27,7 @@ function getAdminApp() {
   });
 }
 
-export type PaymentOrderStatus = "initial" | "failed" | "minting" | "minted" | "mint_failed";
+export type PaymentOrderStatus = "initial" | "processing" | "pending" | "failed" | "minting" | "minted" | "mint_failed";
 
 export type PaymentOrder = {
   walletAddress: string;
