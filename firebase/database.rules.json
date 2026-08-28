@@ -1,101 +1,45 @@
 {
+  "//": [
+    "Deny-all, deliberately -- see app/src/services/firebaseSession.ts and",
+    "README.md's 'Why does the app never talk to Firebase directly?' section.",
+    "The app never authenticates to Firebase as a client at all any more: it",
+    "signs a message proving wallet ownership, trades it for this project's",
+    "own session token via /api/session/create, and every read/write from",
+    "then on goes through this project's own /api endpoints via the Admin",
+    "SDK, which bypasses these rules entirely -- same as the ESP32 meters'",
+    "legacy database secret.",
+    "",
+    "This file used to be a detailed per-uid ACL (auth.uid == a wallet,",
+    "checked on every path) from when the app *did* sign in via Firebase",
+    "Anonymous Auth. That model was replaced, but this file was left as an",
+    "ACL that *looked* real and active while auth.uid was always null for",
+    "every real request -- meaning `auth != null` was already effectively",
+    "unreachable for actual traffic, but a security audit correctly flagged",
+    "it as a live risk anyway: if Anonymous Auth (or any other Firebase Auth",
+    "method) were ever re-enabled on the Firebase console for an unrelated",
+    "reason, every one of those `auth != null` reads -- the full",
+    "deviceToWallet map, every pendingDevices entry, the whole email",
+    "directory -- would become exploitable by anyone who signs in, with no",
+    "code change on this side required to trigger it. Deny-all removes that",
+    "latent risk instead of relying on Anonymous Auth staying off forever.",
+    "",
+    "If a client SDK path is ever reintroduced, write real rules for it",
+    "then, scoped to whatever auth model exists at that point -- don't",
+    "resurrect this file's old per-uid shape without re-deriving it.",
+    "",
+    "Exception: .indexOn below. That's not an access rule (the Admin SDK",
+    "bypasses .read/.write regardless), it's a query-planning requirement",
+    "the Realtime Database engine enforces on every orderByChild call no",
+    "matter which SDK issues it -- listNotifications() in app/api/data.ts",
+    "queries notifications/$wallet ordered by createdAt and needs this index",
+    "to not fail outright."
+  ],
   "rules": {
-    "uidToWallet": {
-      "$uid": {
-        ".read":  "auth != null && auth.uid == $uid",
-        ".write": false
-      }
-    },
-
-    "walletToDevice": {
-      "$wallet": {
-        ".read":  "auth != null && root.child('uidToWallet').child(auth.uid).val() == $wallet",
-        ".write": false
-      }
-    },
-
-    "deviceToWallet": {
-      "$deviceId": {
-        ".read":  "auth != null",
-        ".write": false
-      }
-    },
-
-    "meters": {
-      "$deviceId": {
-        ".read": "auth != null && root.child('deviceToWallet').child($deviceId).val() == root.child('uidToWallet').child(auth.uid).val()",
-
-        "budgetWh": {
-          ".write": "auth != null && root.child('deviceToWallet').child($deviceId).val() == root.child('uidToWallet').child(auth.uid).val()",
-          ".validate": "newData.isNumber() && newData.val() >= 0"
-        },
-
-        "cycleStartedAt": {
-          ".write": "auth != null && root.child('deviceToWallet').child($deviceId).val() == root.child('uidToWallet').child(auth.uid).val()",
-          ".validate": "newData.isNumber()"
-        },
-
-        "relayOverrides": {
-          "$tier": {
-            ".write": "auth != null && root.child('deviceToWallet').child($deviceId).val() == root.child('uidToWallet').child(auth.uid).val()",
-            ".validate": "newData.isBoolean()"
-          }
-        },
-
-        "tokenBalance": {
-          ".write": "auth != null && root.child('deviceToWallet').child($deviceId).val() == root.child('uidToWallet').child(auth.uid).val()",
-          ".validate": "newData.isNumber() && newData.val() >= 0"
-        },
-
-        "voltage":     { ".write": false },
-        "current":     { ".write": false },
-        "power":       { ".write": false },
-        "frequency":   { ".write": false },
-        "powerFactor": { ".write": false },
-        "energyWh":    { ".write": false },
-        "relays":      { ".write": false },
-        "updatedAt":   { ".write": false },
-        "percentUsed": { ".write": false }
-      }
-    },
-
-    "burnCheckpoints": {
-      "$deviceId": {
-        ".read":  false,
-        ".write": false
-      }
-    },
-
-    "pendingDevices": {
-      "$deviceId": {
-        ".read":  "auth != null",
-        ".write": false
-      }
-    },
-
-    "pushTokens": {
-      "$wallet": {
-        ".read": false,
-        ".write": "auth != null && root.child('uidToWallet').child(auth.uid).val() == $wallet"
-      }
-    },
-
+    ".read": false,
+    ".write": false,
     "notifications": {
       "$wallet": {
-        ".read": "auth != null && root.child('uidToWallet').child(auth.uid).val() == $wallet",
-        ".indexOn": ["createdAt"],
-        "$notificationId": {
-          "read": {
-            ".write": "auth != null && root.child('uidToWallet').child(auth.uid).val() == $wallet && newData.isBoolean()"
-          }
-        }
-      }
-    },
-
-    "directory": {
-      ".read": "auth != null",
-      "$emailKey": {
-        ".write": "auth != null && newData.val() == root.child('uidToWallet').child(auth.uid).val() && (!data.exists() || data.val() == newData.val())"
+        ".indexOn": ["createdAt"]
       }
     }
   }
