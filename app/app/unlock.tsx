@@ -7,6 +7,7 @@ import { AdinkraAccent } from "../src/theme/motifs/AdinkraAccent";
 import { useWallet } from "../src/hooks/useWallet";
 import { promptBiometricUnlock } from "../src/services/biometricAuth";
 import { clearFullLogin } from "../src/services/quickAuth";
+import { clearSessionToken } from "../src/services/firebaseSession";
 import { resolvePostAuthDestination } from "../src/services/postAuthRouting";
 
 /**
@@ -52,6 +53,10 @@ export default function UnlockScreen() {
 
   const handleUseCodeInstead = async () => {
     await clearFullLogin();
+    // Matches onboarding.tsx's and profile.tsx's logout paths -- otherwise
+    // the next person to log in on this device (a household energy app is
+    // plausibly shared) could inherit this wallet's cached session token.
+    await clearSessionToken();
     await logout();
     router.replace("/login");
   };
