@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { ServerValue } from "firebase-admin/database";
 import { adminDb } from "../_lib/firebaseAdmin";
+import { withOracleLock } from "../_lib/oracleLock";
 
 type Req = IncomingMessage & { method?: string; body?: unknown; headers: Record<string, string | string[] | undefined> };
 type Res = ServerResponse & { status: (code: number) => Res; json: (body: unknown) => void };
@@ -40,30 +41,36 @@ export default async function handler(req: Req, res: Res) {
   }
 
   try {
-    const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
-    const { deviceId } = (body ?? {}) as { deviceId?: string };
+    const outcome = await withOracleLock(async () => {
+      const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+      const { deviceId } = (body ?? {}) as { deviceId?: string };
 
-    const db = adminDb();
+      const db = adminDb();
 
-    if (deviceId) {
-      const result = await tickDevice(db, deviceId);
-      if ("error" in result) {
-        res.status(result.error === "Device not paired to any wallet" ? 404 : 500).json(result);
+      if (deviceId) {
+        const result = await tickDevice(db, deviceId);
+        if ("error" in result) {
+          res.status(result.error === "Device not paired to any wallet" ? 404 : 500).json(result);
+          return;
+        }
+        res.status(200).json(result);
         return;
       }
-      res.status(200).json(result);
-      return;
+
+      const deviceMapSnap = await db.ref("deviceToWallet").get();
+      const deviceIds = deviceMapSnap.exists() ? Object.keys(deviceMapSnap.val() as Record<string, string>) : [];
+
+      const results: DeviceTickResult[] = [];
+      for (const id of deviceIds) {
+        results.push(await tickDevice(db, id));
+      }
+
+      res.status(200).json({ ok: true, processed: results.length, results });
+    });
+
+    if (!outcome.ok) {
+      res.status(423).json({ error: "Another oracle run is already in progress. Try again shortly." });
     }
-
-    const deviceMapSnap = await db.ref("deviceToWallet").get();
-    const deviceIds = deviceMapSnap.exists() ? Object.keys(deviceMapSnap.val() as Record<string, string>) : [];
-
-    const results: DeviceTickResult[] = [];
-    for (const id of deviceIds) {
-      results.push(await tickDevice(db, id));
-    }
-
-    res.status(200).json({ ok: true, processed: results.length, results });
   } catch (error) {
     console.error("oracle/cycle-tick failed", error);
     res.status(500).json({ error: error instanceof Error ? error.message : "Unknown error" });
