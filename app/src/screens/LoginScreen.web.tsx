@@ -15,6 +15,11 @@ export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+  // Set if the wallet-recovery bail-out's own logout() call fails (see the
+  // effect below) -- without this, that failure left isAuthenticated true
+  // and walletAddress null forever, so isLoading never cleared and the user
+  // was stuck on a bare spinner with no way out except a manual reload.
+  const [recoveryFailed, setRecoveryFailed] = useState(false);
 
   // Set to true once sendCode() succeeds — prevents a transient
   // isAuthenticated=true (Privy v3 partial hydration) from hiding the form.
@@ -74,7 +79,11 @@ export default function LoginScreen() {
       if (!cancelled) createWallet().catch(() => {/* handled by logout timer */});
     }, 3000);
     const bailTimer = setTimeout(() => {
-      if (!cancelled) logout().catch(() => {});
+      if (!cancelled) {
+        logout().catch(() => {
+          if (!cancelled) setRecoveryFailed(true);
+        });
+      }
     }, 10000);
 
     return () => {
@@ -113,8 +122,25 @@ export default function LoginScreen() {
 
   // Show full-screen spinner only while SDK initialises or a returning user's
   // wallet address is resolving (redirect is imminent). Never show it once the
-  // OTP has been sent — that would hide the code-entry field.
-  const isLoading = !ready || (!otpSent.current && isAuthenticated && !walletAddress);
+  // OTP has been sent — that would hide the code-entry field. Excludes
+  // recoveryFailed so a failed bail-out logout doesn't spin forever.
+  const isLoading = !ready || (!otpSent.current && isAuthenticated && !walletAddress && !recoveryFailed);
+
+  if (recoveryFailed) {
+    return (
+      <View style={styles.screenCenter}>
+        {/* screenCenter's background is dark (indigo[900]) -- subtitle's
+            color is tuned for the light card elsewhere on this screen, so
+            it's overridden here rather than reused as-is. */}
+        <Text style={[typography.body, styles.subtitle, styles.recoveryFailedText]}>
+          Something went wrong signing you in. Please reload the page and try again.
+        </Text>
+        <Pressable style={styles.button} onPress={() => window.location.reload()}>
+          <Text style={[typography.bodyStrong, styles.buttonText]}>Reload</Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -239,6 +265,7 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
   },
   cardLabel: { color: colors.textSecondary, textAlign: "center", marginBottom: spacing.md },
+  recoveryFailedText: { color: colors.indigo[100], marginBottom: spacing.lg },
   subtitle: { color: colors.textSecondary, marginBottom: spacing.lg, textAlign: "center" },
   inputRow: {
     flexDirection: "row",
