@@ -67,7 +67,20 @@ function useDailyUsage(
 /** Sanity ceiling: 100 kWh/day is several times a heavy Nigerian household. */
 const MAX_BUDGET_UNITS = 100;
 
-const CYCLE_LENGTH_MS = 24 * 60 * 60 * 1000;
+const WAT_OFFSET_MS = 60 * 60 * 1000; // UTC+1, no DST -- same zone the backend's cycle-tick.ts targets
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** The real reset target is always the next WAT calendar-day boundary, not
+ * a rolling 24h window from whenever the cycle happened to start -- the
+ * firmware's own local-midnight check (checkLocalMidnight() in the .ino)
+ * works the same way: it doesn't care how long the current cycle has run,
+ * it fires the instant the WAT date changes. A cycle that started at
+ * 19:01 resets in ~5h, not ~24h. */
+function msUntilNextWatMidnight(nowMs: number): number {
+  const watNow = new Date(nowMs + WAT_OFFSET_MS);
+  const watMidnightTodayUtcMs = Date.UTC(watNow.getUTCFullYear(), watNow.getUTCMonth(), watNow.getUTCDate()) - WAT_OFFSET_MS;
+  return Math.max(0, watMidnightTodayUtcMs + DAY_MS - nowMs);
+}
 
 function formatDuration(ms: number): string {
   const totalMinutes = Math.max(0, Math.round(ms / 60000));
@@ -79,9 +92,10 @@ function formatDuration(ms: number): string {
 
 /** "Cycle started X ago, resets in ~Y" -- ticks every minute so it reads as
  * live rather than a stale snapshot from whenever the screen last rendered.
- * The "~" is deliberate: the meter can roll early (local-midnight NTP check)
- * or late (25h fallback), so 24h from cycleStartedAt is a close estimate of
- * the next reset, not a promise -- see startNewCycle() in the firmware. */
+ * The "~" is deliberate: the meter can roll a little early or late around
+ * the WAT midnight boundary (NTP sync jitter, or the 25h no-signal
+ * fallback if a board never got NTP at all), so this is a close estimate
+ * of the next reset, not a promise -- see startNewCycle() in the firmware. */
 function useCycleClock(cycleStartedAt: number | undefined) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -92,7 +106,7 @@ function useCycleClock(cycleStartedAt: number | undefined) {
 
   if (cycleStartedAt == null) return null;
   const elapsed = Math.max(0, now - cycleStartedAt);
-  const remaining = Math.max(0, CYCLE_LENGTH_MS - elapsed);
+  const remaining = msUntilNextWatMidnight(now);
   return { elapsed, remaining };
 }
 
