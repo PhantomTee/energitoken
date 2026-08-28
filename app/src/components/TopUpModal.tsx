@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Modal, View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, Platform, Linking, KeyboardAvoidingView } from "react-native";
 import * as WebBrowser from "expo-web-browser";
 import { ethers } from "ethers";
@@ -9,8 +9,14 @@ import { apiRequest } from "../services/apiClient";
 import { Ionicons } from "@expo/vector-icons";
 
 const BACKEND_URL = Platform.OS === "web" ? "" : process.env.EXPO_PUBLIC_BACKEND_URL ?? "https://energitoken.vercel.app";
-const NGN_PER_UNIT = 1000; // 1 unit = 1 kWh = 1000 Wh, WH_PER_NGN=1 on server → 1000 NGN per unit
-const MIN_TOP_UP_NGN = 100; // must match TARIFF.minNgn in app/api/payments/create.ts
+
+// Fallback only, used until /api/tariff responds -- previously this file
+// hardcoded its own copy of the tariff permanently (not just as a
+// fallback), which could silently drift from the server's real value with
+// no way to notice. Now fetched live below; these two constants are only
+// ever what's briefly shown before that first response lands.
+const FALLBACK_NGN_PER_UNIT = 1000;
+const FALLBACK_MIN_TOP_UP_NGN = 100;
 
 type Props = {
   visible: boolean;
@@ -49,8 +55,29 @@ export function TopUpModal({ visible, onClose, walletAddress, getSigner, onMinte
   const [polling, setPolling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [tariff, setTariff] = useState({ ngnPerUnit: FALLBACK_NGN_PER_UNIT, minNgn: FALLBACK_MIN_TOP_UP_NGN });
 
-  const unitsPreview = amountNgn ? (Number(amountNgn) / NGN_PER_UNIT).toFixed(3) : "0";
+  // Live tariff, fetched fresh each time the modal opens rather than
+  // trusting a hardcoded local copy that could silently drift from the
+  // server's real rate (see M3 in the security audit this was fixed from).
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    fetch(`${BACKEND_URL}/api/tariff`)
+      .then((res) => res.json())
+      .then((json: { whPerNgn?: number; minNgn?: number }) => {
+        if (cancelled || !json.whPerNgn || !json.minNgn) return;
+        setTariff({ ngnPerUnit: 1000 / json.whPerNgn, minNgn: json.minNgn });
+      })
+      .catch(() => {
+        // network glitch -- keep the fallback, don't block the flow on it
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible]);
+
+  const unitsPreview = amountNgn ? (Number(amountNgn) / tariff.ngnPerUnit).toFixed(3) : "0";
 
   const handlePay = async () => {
     const amount = Number(amountNgn);
@@ -58,8 +85,8 @@ export function TopUpModal({ visible, onClose, walletAddress, getSigner, onMinte
       setError("Enter an amount greater than 0.");
       return;
     }
-    if (amount < MIN_TOP_UP_NGN) {
-      setError(`Minimum top-up is ₦${MIN_TOP_UP_NGN}.`);
+    if (amount < tariff.minNgn) {
+      setError(`Minimum top-up is ₦${tariff.minNgn.toLocaleString()}.`);
       return;
     }
     setError(null);
@@ -173,7 +200,7 @@ export function TopUpModal({ visible, onClose, walletAddress, getSigner, onMinte
               </View>
 
               <Text style={[typography.caption, styles.minNote]}>
-                ₦1,000 = 1 unit (1 kWh) · minimum ₦{MIN_TOP_UP_NGN}
+                ₦{tariff.ngnPerUnit.toLocaleString()} = 1 unit (1 kWh) · minimum ₦{tariff.minNgn.toLocaleString()}
               </Text>
               {error && <Text style={[typography.caption, styles.errorText]}>{error}</Text>}
 
