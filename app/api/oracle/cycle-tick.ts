@@ -63,7 +63,9 @@ export default async function handler(req: Req, res: Res) {
   }
 
   try {
-    const outcome = await withOracleLock(async () => {
+    // Returns the response instead of sending it -- see withOracleLock's own
+    // note on why responding inside the callback wedged the lock.
+    const outcome = await withOracleLock(async (): Promise<{ status: number; body: unknown }> => {
       const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
       const { deviceId } = (body ?? {}) as { deviceId?: string };
 
@@ -72,11 +74,9 @@ export default async function handler(req: Req, res: Res) {
       if (deviceId) {
         const result = await tickDevice(db, deviceId);
         if ("error" in result) {
-          res.status(result.error === "Device not paired to any wallet" ? 404 : 500).json(result);
-          return;
+          return { status: result.error === "Device not paired to any wallet" ? 404 : 500, body: result };
         }
-        res.status(200).json(result);
-        return;
+        return { status: 200, body: result };
       }
 
       const deviceMapSnap = await db.ref("deviceToWallet").get();
@@ -87,12 +87,14 @@ export default async function handler(req: Req, res: Res) {
         results.push(await tickDevice(db, id));
       }
 
-      res.status(200).json({ ok: true, processed: results.length, results });
+      return { status: 200, body: { ok: true, processed: results.length, results } };
     });
 
     if (!outcome.ok) {
       res.status(423).json({ error: "Another oracle run is already in progress. Try again shortly." });
+      return;
     }
+    res.status(outcome.result.status).json(outcome.result.body);
   } catch (error) {
     console.error("oracle/cycle-tick failed", error);
     res.status(500).json({ error: error instanceof Error ? error.message : "Unknown error" });

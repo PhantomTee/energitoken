@@ -39,25 +39,39 @@ on:
     - cron: "0 0 * * *"
   workflow_dispatch: {}
 
+# --fail-with-body, not -f: plain -f makes curl exit non-zero while
+# discarding the response body, so a failing run logged only "exit code 22"
+# with no indication of why. That cost a day of blind failures when every
+# burn started returning 423 (see api/_lib/oracleLock.ts) -- the status and
+# the endpoint's own error message were both being thrown away.
+#
+# `if: always()` on the later steps: these three are independent maintenance
+# jobs, and this workflow's whole design note above is that all three should
+# run on every firing. Without it, a failure in one silently skipped the
+# rest -- cycle-tick didn't run for over a day because burn failed first.
+# The job still reports failure overall; the other steps just aren't
+# collateral damage.
 jobs:
   oracle-tick:
     runs-on: ubuntu-latest
     steps:
       - name: Call /api/oracle/set-pending
         run: |
-          curl -sf -X POST "https://energitoken.vercel.app/api/oracle/set-pending" \
+          curl -s --fail-with-body -X POST "https://energitoken.vercel.app/api/oracle/set-pending" \
             -H "x-oracle-secret: ${{ secrets.ORACLE_SECRET }}" \
             -H "Content-Type: application/json" \
             -d '{}'
       - name: Call /api/oracle/burn
+        if: always()
         run: |
-          curl -sf -X POST "https://energitoken.vercel.app/api/oracle/burn" \
+          curl -s --fail-with-body -X POST "https://energitoken.vercel.app/api/oracle/burn" \
             -H "x-oracle-secret: ${{ secrets.ORACLE_SECRET }}" \
             -H "Content-Type: application/json" \
             -d '{}'
       - name: Call /api/oracle/cycle-tick
+        if: always()
         run: |
-          curl -sf -X POST "https://energitoken.vercel.app/api/oracle/cycle-tick" \
+          curl -s --fail-with-body -X POST "https://energitoken.vercel.app/api/oracle/cycle-tick" \
             -H "x-oracle-secret: ${{ secrets.ORACLE_SECRET }}" \
             -H "Content-Type: application/json" \
             -d '{}'

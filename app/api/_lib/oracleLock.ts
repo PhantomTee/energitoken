@@ -24,6 +24,19 @@ const LOCK_TTL_MS = 5 * 60 * 1000;
  * than blocking a serverless invocation on a lock that might not clear for
  * minutes. A stale lock (holder crashed before releasing) is reclaimable
  * once LOCK_TTL_MS has passed.
+ *
+ * IMPORTANT -- `fn` must NOT write the HTTP response. Return the status and
+ * body from it and let the caller send them after this resolves. All three
+ * oracle endpoints originally called res.json() inside `fn`, which broke
+ * every one of them: the release below runs in a `finally`, i.e. AFTER `fn`
+ * returns, and Vercel/Lambda can freeze the container the moment a response
+ * is flushed -- so the release transaction frequently never committed and
+ * the lock stayed held for the full LOCK_TTL_MS. Since burn-oracle.yml runs
+ * set-pending -> burn -> cycle-tick back-to-back within seconds, job 1
+ * always succeeded and then wedged jobs 2 and 3 with a 423 (and `bash -e`
+ * meant job 3 never ran at all). Every scheduled run failed this way from
+ * 2026-08-28 until it was fixed. Responding only after this function
+ * resolves guarantees the release has committed first.
  */
 export async function withOracleLock<T>(fn: () => Promise<T>): Promise<{ ok: true; result: T } | { ok: false }> {
   const holder = randomUUID();
