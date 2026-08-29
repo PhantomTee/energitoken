@@ -1069,7 +1069,32 @@ void checkLocalMidnight() {
   localtime_r(&now, &tmNow);
 
   if (lastSeenYday < 0) {
-    lastSeenYday = tmNow.tm_yday;    // first sync this boot -- record only, don't reset mid-day
+    // First sync of this boot. This used to record the day and return, full
+    // stop -- which meant a meter that booted *after* local midnight (powered
+    // off overnight, or simply reset, both routine) never rolled the midnight
+    // it had already missed. It sat on a pre-midnight cycleStartedAt, kept
+    // accumulating yesterday's consumption into today's percentUsed, and
+    // didn't roll until either the NEXT midnight (up to ~24h late) or
+    // checkCycleFallback()'s 25h grace, whichever came first. Observed live:
+    // a cycle started 20:37 was still the active cycle at 01:20 the next day,
+    // reading over 100% used.
+    //
+    // Fix is the same "compare calendar dates, not elapsed time" reasoning
+    // api/oracle/cycle-tick.ts uses server-side: if the STORED cycle belongs
+    // to an earlier calendar day than today, that midnight was missed while
+    // this board was off, so roll it now. Same day -> genuinely mid-cycle,
+    // leave it alone (the original no-spurious-mid-day-reset intent).
+    lastSeenYday = tmNow.tm_yday;
+    if (!budget.budgetSet || budget.cycleStartedAt == 0) return;
+
+    time_t storedSec = (time_t)(budget.cycleStartedAt / 1000ULL);
+    struct tm tmStored;
+    localtime_r(&storedSec, &tmStored);
+    if (tmStored.tm_yday == tmNow.tm_yday && tmStored.tm_year == tmNow.tm_year) return;
+
+    uint64_t missedStamp = (uint64_t)now * 1000ULL;
+    startNewCycle(missedStamp, "missed local midnight (caught up at boot)");
+    publishCycleStartedAt(missedStamp);
     return;
   }
   if (tmNow.tm_yday == lastSeenYday) return;
