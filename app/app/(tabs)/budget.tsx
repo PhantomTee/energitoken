@@ -72,6 +72,12 @@ const MAX_BUDGET_UNITS = 100;
 const WAT_OFFSET_MS = 60 * 60 * 1000; // UTC+1, no DST -- same zone the backend's cycle-tick.ts targets
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** Real epoch ms of the most recent 00:00 WAT boundary at or before nowMs. */
+function lastWatMidnightMs(nowMs: number): number {
+  const watNow = new Date(nowMs + WAT_OFFSET_MS);
+  return Date.UTC(watNow.getUTCFullYear(), watNow.getUTCMonth(), watNow.getUTCDate()) - WAT_OFFSET_MS;
+}
+
 /** The real reset target is always the next WAT calendar-day boundary, not
  * a rolling 24h window from whenever the cycle happened to start -- the
  * firmware's own local-midnight check (checkLocalMidnight() in the .ino)
@@ -79,9 +85,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * it fires the instant the WAT date changes. A cycle that started at
  * 19:01 resets in ~5h, not ~24h. */
 function msUntilNextWatMidnight(nowMs: number): number {
-  const watNow = new Date(nowMs + WAT_OFFSET_MS);
-  const watMidnightTodayUtcMs = Date.UTC(watNow.getUTCFullYear(), watNow.getUTCMonth(), watNow.getUTCDate()) - WAT_OFFSET_MS;
-  return Math.max(0, watMidnightTodayUtcMs + DAY_MS - nowMs);
+  return Math.max(0, lastWatMidnightMs(nowMs) + DAY_MS - nowMs);
 }
 
 /** "Cycle started X ago, resets in ~Y" -- ticks every minute so it reads as
@@ -99,7 +103,18 @@ function useCycleClock(cycleStartedAt: number | undefined) {
   }, [cycleStartedAt]);
 
   if (cycleStartedAt == null) return null;
-  const elapsed = Math.max(0, now - cycleStartedAt);
+  // Anchor the shown "started ... ago" to the same 00:00 WAT boundary the
+  // reset lands on. In normal operation the meter rolls the cycle at WAT
+  // midnight, so cycleStartedAt already is that boundary and this clamp is a
+  // no-op. But when the meter's last roll predates the most recent midnight
+  // -- a missed midnight it hasn't caught up on, or a board that last rolled
+  // in the evening before being powered off/reflashed -- raw elapsed reads as
+  // a confusing >24h span straddling a midnight ("started 9h ago · resets in
+  // 20h"). Clamping to the last midnight makes the window the calendar day it
+  // actually resets on. A cycle genuinely started later today (a budget just
+  // set) is after this midnight, so it still shows from then.
+  const effectiveStart = Math.max(cycleStartedAt, lastWatMidnightMs(now));
+  const elapsed = Math.max(0, now - effectiveStart);
   const remaining = msUntilNextWatMidnight(now);
   return { elapsed, remaining };
 }
@@ -383,6 +398,9 @@ export default function BudgetScreen() {
                   <Text style={[typography.dataMd, styles.dailyAllowanceValue]}>
                     {computedDailyUnits.toFixed(1)} <Text style={typography.dataXs}>units/day</Text>
                   </Text>
+                  <Text style={[typography.dataXs, styles.dailyAllowanceWh]}>
+                    ≈ {unitsToWh(computedDailyUnits).toLocaleString()} Wh/day
+                  </Text>
                 </View>
               )}
               {durationValid && computedDailyUnits !== null && !computedDailyValid && (
@@ -497,7 +515,7 @@ export default function BudgetScreen() {
                 <Text style={[typography.caption, styles.durationInfoText]}>
                   Your <Text style={styles.durationInfoStrong}>{availableUnits.toLocaleString()} units</Text> will
                   last <Text style={styles.durationInfoStrong}>{durationDays} days</Text> at{" "}
-                  {computedDailyUnits!.toFixed(1)} units/day.
+                  {computedDailyUnits!.toFixed(1)} units/day (≈ {unitsToWh(computedDailyUnits!).toLocaleString()} Wh/day).
                 </Text>
               </View>
             ) : (
@@ -631,6 +649,7 @@ const styles = StyleSheet.create({
   },
   dailyAllowanceLabel: { color: colors.indigo[700] },
   dailyAllowanceValue: { color: colors.indigo[900], marginTop: 2 },
+  dailyAllowanceWh: { color: colors.indigo[700], marginTop: 2 },
   resetCardDesktop: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
