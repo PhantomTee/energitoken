@@ -5,7 +5,9 @@ import { ethers } from "ethers";
 import { colors } from "../../src/theme/colors";
 import { typography, spacing, radius } from "../../src/theme/typography";
 import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
-import { BudgetRing } from "../../src/components/BudgetRing";
+import { BudgetSummary } from "../../src/components/BudgetSummary";
+import { BalanceRunwayChart } from "../../src/components/BalanceRunwayChart";
+import { DailyUsageChart } from "../../src/components/DailyUsageChart";
 import { useWallet } from "../../src/hooks/useWallet";
 import { useMeterData } from "../../src/hooks/useMeterData";
 import { useBurnHistory } from "../../src/hooks/useBurnHistory";
@@ -80,14 +82,6 @@ function msUntilNextWatMidnight(nowMs: number): number {
   const watNow = new Date(nowMs + WAT_OFFSET_MS);
   const watMidnightTodayUtcMs = Date.UTC(watNow.getUTCFullYear(), watNow.getUTCMonth(), watNow.getUTCDate()) - WAT_OFFSET_MS;
   return Math.max(0, watMidnightTodayUtcMs + DAY_MS - nowMs);
-}
-
-function formatDuration(ms: number): string {
-  const totalMinutes = Math.max(0, Math.round(ms / 60000));
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  if (hours === 0) return `${minutes}m`;
-  return `${hours}h ${minutes}m`;
 }
 
 /** "Cycle started X ago, resets in ~Y" -- ticks every minute so it reads as
@@ -182,6 +176,29 @@ export default function BudgetScreen() {
     availableUnits !== null && currentBudgetUnits !== null && currentBudgetUnits > 0
       ? availableUnits / currentBudgetUnits
       : null;
+
+  /**
+   * Average settled consumption per day over the selected window, used as the
+   * "at recent use" rate on the runway chart. The budget rate says how fast
+   * the meter will *let* a household spend; this says how fast they actually
+   * do, and the two diverge for most people.
+   *
+   * Excludes today, which is still in progress -- counting a partial day as a
+   * full one drags the average down and would overstate the runway, in the
+   * direction that leaves somebody surprised when their power cuts. Also
+   * excludes days with no settled burns at all, because a zero here doesn't
+   * mean "used no electricity": it also covers a meter that was offline, a
+   * stretch before this device was paired, and (most often, given how
+   * irregularly the burn oracle fires) a day whose consumption simply hasn't
+   * been settled on-chain yet. Averaging those in as real zeroes would make
+   * every runway look far longer than it is.
+   */
+  const recentDailyAvgUnits = useMemo(() => {
+    const completedDays = dailyUsage.slice(0, -1).filter((d) => d.wh > 0);
+    if (completedDays.length === 0) return null;
+    const totalWh = completedDays.reduce((sum, d) => sum + d.wh, 0);
+    return whToUnits(totalWh / completedDays.length);
+  }, [dailyUsage]);
 
   // ── Duration-based allocation: pick how many days the balance should
   // last, and the daily allowance (the real number the meter enforces) is
@@ -315,69 +332,36 @@ export default function BudgetScreen() {
 
       {!loading && !error && hasDevice && isDesktop && (
         <>
-          {/* ── Desktop: Consumption Curve + Allocate Budget ── */}
+          {/* ── Where the household stands. Shared with the mobile tree
+              below, which is the only place it used to exist -- the whole
+              reason the web Budget page showed no current budget, no usage
+              and no cycle clock. ── */}
+          <BudgetSummary
+            percentUsed={percentUsed}
+            availableUnits={availableUnits}
+            spendableWh={spendableWh === null ? null : Number(spendableWh)}
+            currentBudgetUnits={currentBudgetUnits}
+            usedUnits={usedUnits}
+            cycleClock={cycleClock}
+            ringSize={132}
+          />
+
+          {/* ── Desktop: credit runway + Allocate Budget ── */}
           <View style={styles.desktopRow}>
-            <View style={styles.consumptionCard}>
-              <View style={styles.consumptionCardHeader}>
-                <Text style={[typography.h2, styles.cardTitle]}>Consumption Curve</Text>
-                <View style={styles.legendRow}>
-                  <View style={styles.legendItem}>
-                    <View style={[styles.legendDot, { backgroundColor: colors.indigo[500] }]} />
-                    <Text style={[typography.caption, styles.legendText]}>Actual</Text>
-                  </View>
-                  <View style={styles.legendItem}>
-                    <View style={[styles.legendDot, { backgroundColor: colors.terracotta[500] }]} />
-                    <Text style={[typography.caption, styles.legendText]}>Over allowance</Text>
-                  </View>
-                </View>
-              </View>
-              <Text style={[typography.caption, styles.consumptionCardSubtitle]}>Actual vs Allowance (Last 7 Days)</Text>
-              {currentBudgetUnits === null ? (
-                <Text style={[typography.caption, styles.statusText]}>Set a budget below to see this chart.</Text>
-              ) : (
-                <View style={styles.desktopChart}>
-                  {dailyUsage.map((day) => {
-                    const dayUnits = whToUnits(day.wh);
-                    const barPct = Math.min(100, (dayUnits / Math.max(currentBudgetUnits, 1)) * 100);
-                    const over = dayUnits > currentBudgetUnits;
-                    return (
-                      <View key={day.key} style={styles.desktopChartBarWrap}>
-                        <View style={styles.desktopChartTrack}>
-                          <View
-                            style={[
-                              styles.desktopChartFill,
-                              { height: `${Math.max(2, barPct)}%` },
-                              { backgroundColor: over ? colors.terracotta[500] : colors.indigo[500] },
-                            ]}
-                          />
-                        </View>
-                        <Text style={[typography.dataXs, styles.desktopChartLabel]}>{day.label}</Text>
-                      </View>
-                    );
-                  })}
-                </View>
-              )}
+            <View style={styles.desktopChartCol}>
+              <BalanceRunwayChart
+                availableUnits={availableUnits}
+                budgetUnitsPerDay={currentBudgetUnits}
+                actualUnitsPerDay={recentDailyAvgUnits}
+              />
             </View>
 
             <View style={styles.allocateCard}>
               <Text style={[typography.h2, styles.cardTitle]}>Allocate Budget</Text>
-              <View style={styles.currentBalanceBox}>
-                <Text style={[typography.caption, styles.currentBalanceLabel]}>Current Balance</Text>
-                <Text style={[typography.dataMd, styles.currentBalanceValue]}>
-                  {availableUnits === null ? "···" : availableUnits.toLocaleString()}
-                  <Text style={[typography.dataXs, styles.summaryUnit]}> units</Text>
-                </Text>
-                <Text style={[typography.dataXs, styles.currentBalanceWh]}>
-                  ≈ {spendableWh === null ? "···" : spendableWh.toLocaleString()} ENGY (Wh)
-                </Text>
-              </View>
-              {cycleClock && (
-                <Text style={[typography.caption, styles.cycleNote]}>
-                  Cycle started {formatDuration(cycleClock.elapsed)} ago · resets in ~
-                  {formatDuration(cycleClock.remaining)}
-                </Text>
-              )}
-
+              {/* Balance and cycle clock deliberately not repeated here --
+                  BudgetSummary directly above carries both. This card used to
+                  be the only place desktop showed them at all, which is why
+                  they were bolted onto the allocation form to begin with. */}
               <Text style={[typography.label, styles.fieldLabel]}>DURATION (DAYS)</Text>
               <TextInput
                 style={styles.input}
@@ -423,6 +407,23 @@ export default function BudgetScreen() {
             </View>
           </View>
 
+          {/* ── Daily use vs allowance, with the same period selector the
+              mobile tree has ── */}
+          <View style={styles.periodRow}>
+            {PERIOD_OPTIONS.map((opt) => (
+              <Pressable
+                key={opt}
+                style={[styles.periodChip, periodDays === opt && styles.periodChipActive]}
+                onPress={() => setPeriodDays(opt)}
+              >
+                <Text style={[typography.caption, periodDays === opt ? styles.periodTextActive : styles.periodText]}>
+                  {opt}d
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          <DailyUsageChart days={dailyUsage} budgetUnitsPerDay={currentBudgetUnits} />
+
           {/* ── Desktop: Reset budget ── */}
           {currentBudgetUnits !== null && (
             <View style={styles.resetCardDesktop}>
@@ -453,42 +454,21 @@ export default function BudgetScreen() {
 
       {!loading && !error && hasDevice && !isDesktop && (
         <>
-          {/* ── Progress: ring + summary ── */}
-          <View style={styles.progressCard}>
-            <BudgetRing percentUsed={percentUsed} size={120} />
-            <View style={styles.progressStats}>
-              <View style={styles.statBlock}>
-                <Text style={[typography.label, styles.summaryLabel]}>Available</Text>
-                <Text style={[typography.dataMd, styles.summaryValue]}>
-                  {availableUnits === null ? "···" : availableUnits.toLocaleString()}
-                  <Text style={[typography.dataXs, styles.summaryUnit]}> units</Text>
-                </Text>
-                <Text style={[typography.dataXs, styles.summaryWh]}>
-                  ≈ {spendableWh === null ? "···" : spendableWh.toLocaleString()} Wh
-                </Text>
-              </View>
-              <View style={styles.statBlock}>
-                <Text style={[typography.label, styles.summaryLabel]}>Budget</Text>
-                <Text style={[typography.dataMd, styles.summaryValue]}>
-                  {currentBudgetUnits === null ? "—" : currentBudgetUnits.toLocaleString()}
-                  <Text style={[typography.dataXs, styles.summaryUnit]}> units/day</Text>
-                </Text>
-              </View>
-              <View style={styles.statBlock}>
-                <Text style={[typography.label, styles.summaryLabel]}>Used this cycle</Text>
-                <Text style={[typography.dataMd, styles.summaryValue]}>
-                  {usedUnits === null ? "—" : usedUnits.toLocaleString()}
-                  <Text style={[typography.dataXs, styles.summaryUnit]}> units</Text>
-                </Text>
-              </View>
-            </View>
-          </View>
+          {/* ── Progress: ring + summary (shared with the desktop tree) ── */}
+          <BudgetSummary
+            percentUsed={percentUsed}
+            availableUnits={availableUnits}
+            spendableWh={spendableWh === null ? null : Number(spendableWh)}
+            currentBudgetUnits={currentBudgetUnits}
+            usedUnits={usedUnits}
+            cycleClock={cycleClock}
+          />
 
-          <Text style={[typography.caption, styles.cycleNote]}>
-            {cycleClock
-              ? `Cycle started ${formatDuration(cycleClock.elapsed)} ago · resets in ~${formatDuration(cycleClock.remaining)}`
-              : "A cycle is one budget day, as counted by your meter. Usage and shedding reset when the meter starts a new cycle."}
-          </Text>
+          <BalanceRunwayChart
+            availableUnits={availableUnits}
+            budgetUnitsPerDay={currentBudgetUnits}
+            actualUnitsPerDay={recentDailyAvgUnits}
+          />
 
           {/* ── Set budget -- the page's actual job, right up front ── */}
           <View style={styles.setBudgetCard}>
@@ -586,7 +566,6 @@ export default function BudgetScreen() {
           </View>
 
           {/* ── Period trend: daily allowance vs actual usage ── */}
-          <Text style={[typography.h2, styles.sectionTitle]}>Allowance vs. actual</Text>
           <View style={styles.periodRow}>
             {PERIOD_OPTIONS.map((opt) => (
               <Pressable
@@ -600,41 +579,7 @@ export default function BudgetScreen() {
               </Pressable>
             ))}
           </View>
-          {currentBudgetUnits === null ? (
-            <Text style={[typography.caption, styles.statusText]}>
-              Set a daily budget below to see it plotted against actual usage.
-            </Text>
-          ) : (
-            <>
-              <View style={styles.trendChart}>
-                {dailyUsage.map((day) => {
-                  const dayUnits = whToUnits(day.wh);
-                  const barPct = Math.min(100, (dayUnits / currentBudgetUnits) * 100);
-                  const over = dayUnits > currentBudgetUnits;
-                  return (
-                    <View key={day.key} style={styles.trendBarWrap}>
-                      <View style={styles.trendBarTrack}>
-                        <View
-                          style={[
-                            styles.trendBarFill,
-                            { height: `${barPct}%` },
-                            over ? styles.trendBarOver : styles.trendBarUnder,
-                          ]}
-                        />
-                      </View>
-                      {periodDays <= 14 && (
-                        <Text style={[typography.dataXs, styles.trendBarLabel]}>{day.label.split(" ")[1]}</Text>
-                      )}
-                    </View>
-                  );
-                })}
-              </View>
-              <Text style={[typography.caption, styles.trendSummary]}>
-                Over the last {periodDays} days: {whToUnits(dailyUsage.reduce((s, d) => s + d.wh, 0)).toLocaleString()}{" "}
-                units used against a {(currentBudgetUnits * periodDays).toLocaleString()}-unit allowance.
-              </Text>
-            </>
-          )}
+          <DailyUsageChart days={dailyUsage} budgetUnitsPerDay={currentBudgetUnits} />
         </>
       )}
     </ScrollView>
@@ -667,26 +612,9 @@ const styles = StyleSheet.create({
   pairLinkText: { color: colors.indigo[400] },
   cardTitle: { color: colors.textPrimary },
   desktopRow: { flexDirection: "row", gap: spacing.xl, alignItems: "stretch" },
-  consumptionCard: {
-    flex: 2,
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.xl,
-    gap: spacing.xs,
-  },
-  consumptionCardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  legendRow: { flexDirection: "row", gap: spacing.md },
-  legendItem: { flexDirection: "row", alignItems: "center", gap: 4 },
-  legendDot: { width: 8, height: 8, borderRadius: 4 },
-  legendText: { color: colors.textSecondary },
-  consumptionCardSubtitle: { color: colors.textSecondary, marginBottom: spacing.md },
-  desktopChart: { flexDirection: "row", alignItems: "flex-end", height: 180, gap: spacing.sm },
-  desktopChartBarWrap: { flex: 1, alignItems: "center", height: "100%", justifyContent: "flex-end", gap: spacing.xs },
-  desktopChartTrack: { width: "100%", flex: 1, justifyContent: "flex-end", backgroundColor: colors.background, borderRadius: radius.sm, overflow: "hidden" },
-  desktopChartFill: { width: "100%", borderRadius: radius.sm },
-  desktopChartLabel: { color: colors.textSecondary },
+  // The runway chart brings its own card chrome, so this column only has to
+  // carry the 2:1 width split against the allocation form beside it.
+  desktopChartCol: { flex: 2 },
   allocateCard: {
     flex: 1,
     backgroundColor: colors.surface,
@@ -696,15 +624,6 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
     gap: spacing.sm,
   },
-  currentBalanceBox: {
-    backgroundColor: colors.background,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  currentBalanceLabel: { color: colors.textSecondary },
-  currentBalanceValue: { color: colors.indigo[900], marginTop: 2 },
-  currentBalanceWh: { color: colors.textSecondary, opacity: 0.85, marginTop: 2 },
   dailyAllowanceBox: {
     backgroundColor: colors.indigo[100],
     borderRadius: radius.md,
@@ -720,24 +639,6 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
     gap: spacing.sm,
   },
-  progressCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  progressStats: { flex: 1, gap: spacing.sm },
-  statBlock: {},
-  summaryLabel: { color: colors.terracotta[500] },
-  summaryValue: { color: colors.textPrimary, marginTop: 2 },
-  summaryUnit: { color: colors.textSecondary },
-  summaryWh: { color: colors.textSecondary, opacity: 0.85, marginTop: 1 },
-  cycleNote: { color: colors.textSecondary, opacity: 0.8 },
-  sectionTitle: { color: colors.textPrimary, marginTop: spacing.sm },
   periodRow: { flexDirection: "row", gap: spacing.sm },
   periodChip: {
     borderWidth: 1,
@@ -750,24 +651,6 @@ const styles = StyleSheet.create({
   periodChipActive: { backgroundColor: colors.indigo[400], borderColor: colors.indigo[400] },
   periodText: { color: colors.textSecondary },
   periodTextActive: { color: colors.neutral.white },
-  trendChart: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    height: 100,
-    gap: 4,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.sm,
-  },
-  trendBarWrap: { flex: 1, alignItems: "center", height: "100%", justifyContent: "flex-end", gap: 4 },
-  trendBarTrack: { width: "100%", flex: 1, justifyContent: "flex-end" },
-  trendBarFill: { width: "100%", borderRadius: 3, minHeight: 2 },
-  trendBarUnder: { backgroundColor: colors.indigo[400] },
-  trendBarOver: { backgroundColor: colors.terracotta[500] },
-  trendBarLabel: { color: colors.textSecondary, fontSize: 9 },
-  trendSummary: { color: colors.textSecondary },
   fieldLabel: { color: colors.textSecondary },
   setBudgetCard: {
     backgroundColor: colors.surface,

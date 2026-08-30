@@ -3,6 +3,7 @@ import { adminDb } from "../_lib/firebaseAdmin";
 import { setPendingBurnEngy } from "../_lib/setPendingBurn";
 import { verifyMeterSignature } from "../_lib/meterHmac";
 import { withOracleLock } from "../_lib/oracleLock";
+import { getSpendableBalanceServer } from "../_lib/engyReads";
 
 type Req = IncomingMessage & { method?: string; body?: unknown; headers: Record<string, string | string[] | undefined> };
 type Res = ServerResponse & { status: (code: number) => Res; json: (body: unknown) => void };
@@ -85,35 +86,91 @@ async function processDevice(db: ReturnType<typeof adminDb>, deviceId: string): 
     }
     const walletAddress: string = walletSnap.val();
 
-    // energyWhInt (not the display-only float energyWh) is what's signed --
-    // see meterHmac.ts for why an integer field avoids float-formatting
-    // mismatches between the firmware's C++ and this verification.
-    const meterSnap = await db.ref(`meters/${deviceId}`).get();
-    if (!meterSnap.exists()) {
-      return { deviceId, ok: false, error: "No meter reading found for device" };
-    }
-    const meter = meterSnap.val() as { energyWhInt?: number; sig?: string };
-    if (meter.energyWhInt === undefined) {
-      return { deviceId, ok: false, error: "Meter reading missing signed energyWhInt (firmware needs updating)" };
-    }
-    if (!verifyMeterSignature(deviceId, meter.energyWhInt, meter.sig)) {
-      return { deviceId, ok: false, error: "Invalid meter signature -- refusing to set pendingBurn against an unverified reading" };
-    }
-    const currentEnergyWh: number = meter.energyWhInt;
+    try {
+      // energyWhInt (not the display-only float energyWh) is what's signed --
+      // see meterHmac.ts for why an integer field avoids float-formatting
+      // mismatches between the firmware's C++ and this verification.
+      const meterSnap = await db.ref(`meters/${deviceId}`).get();
+      if (!meterSnap.exists()) {
+        return { deviceId, ok: false, error: "No meter reading found for device" };
+      }
+      const meter = meterSnap.val() as { energyWhInt?: number; sig?: string };
+      if (meter.energyWhInt === undefined) {
+        return { deviceId, ok: false, error: "Meter reading missing signed energyWhInt (firmware needs updating)" };
+      }
+      if (!verifyMeterSignature(deviceId, meter.energyWhInt, meter.sig)) {
+        return { deviceId, ok: false, error: "Invalid meter signature -- refusing to set pendingBurn against an unverified reading" };
+      }
+      const currentEnergyWh: number = meter.energyWhInt;
 
-    const checkpointSnap = await db.ref(`burnCheckpoints/${deviceId}/lastBurnedWh`).get();
-    const lastBurnedWh: number = checkpointSnap.exists() ? checkpointSnap.val() : 0;
+      const checkpointSnap = await db.ref(`burnCheckpoints/${deviceId}/lastBurnedWh`).get();
+      const lastBurnedWh: number = checkpointSnap.exists() ? checkpointSnap.val() : 0;
 
-    // Clamp to 0 rather than sending a negative amount on-chain -- a meter
-    // reset between burns will show up here as a negative raw delta; the
-    // next hourly burn run rebaselines the checkpoint properly.
-    const pendingWh = Math.max(0, Math.floor(currentEnergyWh - lastBurnedWh));
+      // Clamp to 0 rather than sending a negative amount on-chain -- a meter
+      // reset between burns will show up here as a negative raw delta; the
+      // next hourly burn run rebaselines the checkpoint properly.
+      const pendingWh = Math.max(0, Math.floor(currentEnergyWh - lastBurnedWh));
 
-    const txHash = await setPendingBurnEngy(walletAddress, pendingWh);
-    return { deviceId, ok: true, pendingWh, txHash };
+      const txHash = await setPendingBurnEngy(walletAddress, pendingWh);
+      return { deviceId, ok: true, pendingWh, txHash };
+    } finally {
+      // Re-assert this household's spendable balance on the meter node on
+      // EVERY exit path above -- success, an early bail-out for a missing or
+      // unsigned reading, or a thrown transaction. This is the self-healing
+      // floor under the instant path in oracle/transfer-webhook.ts: that
+      // webhook is what makes a recipient's meter beep within seconds of an
+      // incoming transfer, but if a delivery is missed, the endpoint is
+      // briefly down, or the webhook is misconfigured at the provider,
+      // nothing else server-side refreshed tokenBalance at all. The only
+      // other writer is the app's own setMeterTokenBalance, which needs the
+      // household's phone open on Dashboard/Budget/Transfer -- and even then
+      // re-mirrors only every 2 minutes. A physical meter's credit must not
+      // depend on somebody having the app in the foreground.
+      //
+      // In a `finally` rather than inline for two reasons. It has to run for
+      // devices that bail out early (a meter with no signed reading yet still
+      // needs its credit current -- the firmware's zero-balance gate cuts
+      // every relay while tokenBalance is unknown or <= 0, so a stale mirror
+      // is the difference between a household having power and not). And it
+      // has to run AFTER setPendingBurnEngy, not before: spendableBalanceOf
+      // is balanceOf minus the on-chain pendingBurn this call just rewrote,
+      // so mirroring first would publish a figure that over-states available
+      // credit by a whole tick's unsettled consumption -- the unsafe
+      // direction, letting a household spend energy it hasn't paid for.
+      await mirrorSpendableBalance(db, deviceId, walletAddress);
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("oracle/set-pending: device processing failed", { deviceId, error: message });
     return { deviceId, ok: false, error: message };
+  }
+}
+
+/**
+ * Writes the wallet's live spendable balance to the meter node the firmware
+ * polls (every FB_PULL_MS, currently 2s), so an incoming transfer reaches the
+ * physical meter without the recipient's app being involved at all.
+ *
+ * Spendable, not raw balanceOf, to match every other writer of this field
+ * (the client's setMeterTokenBalance and transfer-webhook.ts) -- the meter
+ * must gate on credit that isn't already spoken for by consumption the
+ * oracle hasn't burned yet, or a household could spend the same ENGY twice.
+ *
+ * Never throws: this is a best-effort backstop running inside a bulk loop
+ * over every paired device, and a single wallet's RPC hiccup must not fail
+ * that wallet's pendingBurn result -- let alone the other devices behind it
+ * in the loop. Logged and swallowed; the next tick re-asserts it anyway.
+ */
+async function mirrorSpendableBalance(
+  db: ReturnType<typeof adminDb>,
+  deviceId: string,
+  walletAddress: string
+): Promise<void> {
+  try {
+    const spendable = await getSpendableBalanceServer(walletAddress);
+    await db.ref(`meters/${deviceId}/tokenBalance`).set(Number(spendable));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    console.error("oracle/set-pending: balance mirror failed", { deviceId, error: message });
   }
 }

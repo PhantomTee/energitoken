@@ -327,6 +327,11 @@
 
 #define POLL_MS             2000UL
 #define LCD_MS              1000UL
+// How long each face of the live screen's top row stays up before swapping
+// (see lcdLive()). A multiple of LCD_MS so a face always gets whole refreshes;
+// 4s is long enough to read a number without the row feeling like it flickers,
+// short enough that you never wait long for the other face.
+#define LCD_ALT_MS          4000UL
 #define FB_PUSH_MS          5000UL
 #define FB_PULL_MS          2000UL     // was 10s -- arbitrary choice, no real cost reason to keep a single device this slow
 #define OVSTREAM_CHECK_MS     30UL     // how often loop() services the relayOverrides realtime stream
@@ -1130,13 +1135,45 @@ void lcdBar(float pct) {
 
 void lcdLive() {
   char l[21];
-  // Two spare columns on the right carry a stale marker once the sensor's
-  // stopped answering -- without it the display just keeps showing the
-  // last good reading forever, indistinguishable from a live one.
+
+  // Top row alternates every LCD_ALT_MS between remaining credit and the
+  // instantaneous V/I pair. Remaining credit is the number a prepaid
+  // household actually cares about, and it used to be buried behind menu
+  // item "3 Token balance" -- nobody navigates a menu to find out whether
+  // their lights are about to go off. The other three rows are all full to
+  // the last column (see below), so there was no free space to add it to;
+  // sharing this row is what pays for it, and V/I are diagnostics that stay
+  // readable four seconds out of every eight.
+  //
+  // Phase comes straight off millis() rather than a counter incremented per
+  // refresh, so the cadence stays honest even if a refresh is skipped or the
+  // live screen is left and re-entered.
+  //
+  // Both faces are padded to a full 20 columns before printing. Without that,
+  // swapping from the longer V/I face to the shorter balance face would leave
+  // that face's trailing characters stranded on the right-hand side -- the
+  // old single-face code could print 18 chars and ignore the last 2 only
+  // because the width never changed.
+  char face[21];
+  bool showBalance = ((millis() / LCD_ALT_MS) % 2) == 1;
+  if (showBalance) {
+    // Wh, matching the unit the meter itself measures and pushes (energyWh)
+    // and the "E:" figure one row down, so the two are directly comparable.
+    // 1 ENGY == 1 Wh, so this is also the raw token count.
+    if (tokenBalKnown) snprintf(face, sizeof(face), "Bal:%.0f Wh", tokenBal);
+    else               snprintf(face, sizeof(face), "Bal: --- Wh");
+  } else {
+    // Two spare columns on the right carry a stale marker once the sensor's
+    // stopped answering -- without it the display just keeps showing the
+    // last good reading forever, indistinguishable from a live one. It rides
+    // on this face rather than the balance one because it annotates these
+    // readings specifically, not the balance.
+    bool stale = (pzemFailCount >= PZEM_STALE_COUNT);
+    snprintf(face, sizeof(face), "V:%5.1f I:%5.2f %s",
+             meas.voltage, meas.current, stale ? "!!" : "  ");
+  }
   lcd.setCursor(0,0);
-  bool stale = (pzemFailCount >= PZEM_STALE_COUNT);
-  snprintf(l, sizeof(l), "V:%5.1f I:%5.2f %s",
-           meas.voltage, meas.current, stale ? "!!" : "  ");
+  snprintf(l, sizeof(l), "%-20s", face);
   lcd.print(l);
 
   lcd.setCursor(0,1);
