@@ -31,3 +31,6 @@ SECRETS.txt
 .DS_Store
 .vscode/
 *.log
+
+# PlatformIO build tree (generated; see platformio.ini)
+.pio/

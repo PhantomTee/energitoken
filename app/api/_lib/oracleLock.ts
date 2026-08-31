@@ -58,9 +58,29 @@ export async function withOracleLock<T>(fn: () => Promise<T>): Promise<{ ok: tru
     // Release only if this run still owns the lock -- a run slow enough to
     // outlast LOCK_TTL_MS may have already had the lock reclaimed by a
     // later run (a different holder id), which must not be cleared here.
+    //
+    // Every branch RETURNS A VALUE; none of them abort. That distinction is
+    // the whole reason this release used to fail. Firebase runs a
+    // transaction's update function optimistically against the locally
+    // cached value first, and in a fresh serverless invocation nothing is
+    // cached, so the first call receives `current === null`. The previous
+    // version fell through to a bare `return` on that call, and an abort is
+    // final: Firebase does not re-run the function against the real server
+    // value afterwards. The release therefore aborted on essentially every
+    // invocation and the lock was left to expire on its own, holding for the
+    // full LOCK_TTL_MS.
+    //
+    // burn-oracle.yml runs set-pending -> burn -> cycle-tick back-to-back
+    // within a second or two, so job 1 took the lock, "released" it into a
+    // no-op, and jobs 2 and 3 were refused with a 423 on every single
+    // scheduled run. Burns stopped settling entirely from 2026-08-28.
+    // Returning the unchanged value where the lock is not ours is a commit,
+    // not an abort, so Firebase retries against the server value and the
+    // correct branch runs.
     await ref.transaction((current: { holder: string; expiresAt: number } | null) => {
-      if (current && current.holder === holder) return null;
-      return; // abort -- not ours any more, leave it alone
+      if (current === null) return null;                 // already gone -- leave it gone
+      if (current.holder === holder) return null;        // ours -- clear it
+      return current;                                    // someone else's -- commit unchanged
     });
   }
 }
