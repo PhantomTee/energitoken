@@ -106,69 +106,120 @@ function watDayKey(epochMs: number): string {
   return new Date(epochMs + WAT_OFFSET_MS).toISOString().slice(0, 10).replace(/-/g, "");
 }
 
+/** Buckets and windows offered to the chart. Each range is paired with a
+ * bucket chosen so the payload stays small and the line stays readable:
+ * a full day at one-minute resolution would be 1,440 points, most of which
+ * land on the same pixel column. */
+const CONSUMPTION_RANGES: Record<string, { hours: number; bucketMin: number }> = {
+  "1h":  { hours: 1,        bucketMin: 1 },
+  "6h":  { hours: 6,        bucketMin: 2 },
+  "24h": { hours: 24,       bucketMin: 10 },
+  "7d":  { hours: 24 * 7,   bucketMin: 60 },
+  "14d": { hours: 24 * 14,  bucketMin: 180 },
+};
+
 /**
- * One WAT day of the meter's own consumption log, for the Dashboard's
- * consumption chart.
+ * A window of the meter's own consumption log, bucketed for display.
  *
- * The firmware writes a row per minute keyed HHMM (local WAT), each holding
+ * The firmware writes one row a minute under a WAT day key, each holding
  * instantaneous watts and the LIFETIME energy register. Average power across
- * an interval is derived here from the energy delta rather than trusting the
- * instantaneous sample: a once-a-minute spot reading aliases badly against
- * appliances that cycle, while the energy counter integrates everything that
- * happened between two samples and cannot miss a load that ran between them.
+ * a bucket is derived from the energy delta across it rather than by
+ * averaging the spot readings: a once-a-minute instantaneous sample aliases
+ * badly against appliances that cycle, while the energy counter integrates
+ * everything that happened in between and cannot miss a load that ran
+ * entirely between two samples.
  *
- * `w` (the spot reading) is returned alongside so the caller can show what
- * the meter was reading at that instant, but `avgW` is the honest curve.
+ * Points carry absolute epoch milliseconds rather than a minute-of-day, so a
+ * range spanning several days plots on one continuous axis.
  *
- * Gaps are left as gaps. A meter that was powered off or offline simply has
- * no rows for those minutes, and the chart must not draw a straight line
- * across the hole as though consumption were known and steady there.
+ * Gaps stay gaps. A bucket the meter was offline for is simply absent from
+ * the result, and the chart breaks its line there rather than drawing
+ * through hours nobody measured.
  */
 async function getConsumption(req: Req, res: Res, walletAddress: string): Promise<void> {
   const url = new URL(req.url ?? "", "http://localhost");
-  const day = url.searchParams.get("day") ?? watDayKey(Date.now());
-  if (!/^\d{8}$/.test(day)) {
-    res.status(400).json({ error: "day must be YYYYMMDD" });
+  const rangeKey = url.searchParams.get("range") ?? "24h";
+  const range = CONSUMPTION_RANGES[rangeKey];
+  if (!range) {
+    res.status(400).json({ error: `range must be one of ${Object.keys(CONSUMPTION_RANGES).join(", ")}` });
     return;
   }
 
   const deviceId = await deviceIdForWallet(walletAddress);
   if (!deviceId) {
-    res.status(200).json({ hasDevice: false, day, samples: [] });
+    res.status(200).json({ hasDevice: false, range: rangeKey, points: [], totalWh: 0, peakW: 0 });
     return;
   }
 
-  const snap = await adminDb().ref(`meterHistory/${deviceId}/${day}`).get();
-  const raw = snap.exists() ? (snap.val() as Record<string, { w?: number; e?: number }>) : {};
+  const now = Date.now();
+  const startMs = now - range.hours * 60 * 60 * 1000;
 
-  const rows = Object.entries(raw)
-    .filter(([hhmm]) => /^\d{4}$/.test(hhmm))
-    .map(([hhmm, v]) => ({
-      minute: parseInt(hhmm.slice(0, 2), 10) * 60 + parseInt(hhmm.slice(2), 10),
-      w: typeof v.w === "number" ? v.w : 0,
-      e: typeof v.e === "number" ? v.e : null,
-    }))
-    .filter((r) => r.minute >= 0 && r.minute < 1440)
-    .sort((a, b) => a.minute - b.minute);
+  // Every WAT day the window touches, oldest first. Reading whole day nodes
+  // and filtering in memory is cheaper than a query per bucket, and a day is
+  // at most 1,440 small rows.
+  const dayKeys: string[] = [];
+  for (let t = startMs; ; t += 24 * 60 * 60 * 1000) {
+    const k = watDayKey(Math.min(t, now));
+    if (!dayKeys.includes(k)) dayKeys.push(k);
+    if (t >= now) break;
+  }
 
-  // Derive average power per interval from the lifetime energy delta. A
-  // negative delta means the meter's counter was reset or the module
-  // replaced between samples, which is not consumption -- drop to the spot
-  // reading for that one interval rather than plotting a negative load.
-  const samples = rows.map((r, i) => {
-    let avgW = r.w;
-    if (i > 0 && r.e !== null && rows[i - 1].e !== null) {
-      const dWh = r.e - (rows[i - 1].e as number);
-      const dMin = r.minute - rows[i - 1].minute;
-      if (dMin > 0 && dWh >= 0) avgW = (dWh / dMin) * 60;
+  const db = adminDb();
+  type Row = { t: number; w: number; e: number | null };
+  const rows: Row[] = [];
+  for (const day of dayKeys) {
+    const snap = await db.ref(`meterHistory/${deviceId}/${day}`).get();
+    if (!snap.exists()) continue;
+    const raw = snap.val() as Record<string, { w?: number; e?: number }>;
+    // The key is local WAT HHMM on that WAT date; convert back to absolute ms.
+    const dayStartMs = Date.UTC(
+      Number(day.slice(0, 4)), Number(day.slice(4, 6)) - 1, Number(day.slice(6, 8))
+    ) - WAT_OFFSET_MS;
+    for (const [hhmm, v] of Object.entries(raw)) {
+      if (!/^\d{4}$/.test(hhmm)) continue;
+      const minute = parseInt(hhmm.slice(0, 2), 10) * 60 + parseInt(hhmm.slice(2), 10);
+      if (minute < 0 || minute >= 1440) continue;
+      rows.push({
+        t: dayStartMs + minute * 60_000,
+        w: typeof v.w === "number" ? v.w : 0,
+        e: typeof v.e === "number" ? v.e : null,
+      });
     }
-    return { minute: r.minute, w: Math.round(r.w * 10) / 10, avgW: Math.round(avgW * 10) / 10 };
-  });
+  }
+  rows.sort((a, b) => a.t - b.t);
 
-  // Total consumed across the day, from the first to the last energy reading
-  // that actually exists -- not a sum of the per-interval figures, which
-  // would silently count a gap as zero rather than as unknown.
-  const withEnergy = rows.filter((r) => r.e !== null);
+  const windowed = rows.filter((r) => r.t >= startMs && r.t <= now);
+
+  // Average power per bucket from the energy delta across it. A negative
+  // delta means the meter's counter was reset inside the bucket (a manual
+  // reset, or the module replaced), which is not consumption -- fall back to
+  // the mean spot reading for that bucket rather than plotting a negative.
+  const bucketMs = range.bucketMin * 60_000;
+  const buckets = new Map<number, Row[]>();
+  for (const r of windowed) {
+    const key = Math.floor(r.t / bucketMs) * bucketMs;
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key)!.push(r);
+  }
+
+  const points = [...buckets.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([t, group]) => {
+      const spotMean = group.reduce((s, g) => s + g.w, 0) / group.length;
+      let avgW = spotMean;
+      const withE = group.filter((g) => g.e !== null);
+      if (withE.length >= 2) {
+        const dWh = (withE[withE.length - 1].e as number) - (withE[0].e as number);
+        const dMin = (withE[withE.length - 1].t - withE[0].t) / 60_000;
+        if (dMin > 0 && dWh >= 0) avgW = (dWh / dMin) * 60;
+      }
+      return { t, avgW: Math.round(avgW * 10) / 10, w: Math.round(spotMean * 10) / 10 };
+    });
+
+  // Total across the window, from the first to the last energy reading that
+  // actually exists -- not a sum of the buckets, which would silently count
+  // an outage as zero rather than as unknown.
+  const withEnergy = windowed.filter((r) => r.e !== null);
   const totalWh =
     withEnergy.length >= 2
       ? Math.max(0, (withEnergy[withEnergy.length - 1].e as number) - (withEnergy[0].e as number))
@@ -176,10 +227,13 @@ async function getConsumption(req: Req, res: Res, walletAddress: string): Promis
 
   res.status(200).json({
     hasDevice: true,
-    day,
-    samples,
+    range: rangeKey,
+    bucketMin: range.bucketMin,
+    startMs,
+    endMs: now,
+    points,
     totalWh: Math.round(totalWh),
-    peakW: samples.length ? Math.max(...samples.map((s) => s.avgW)) : 0,
+    peakW: points.length ? Math.max(...points.map((p) => p.avgW)) : 0,
   });
 }
 

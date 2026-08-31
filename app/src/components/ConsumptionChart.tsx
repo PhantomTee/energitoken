@@ -3,30 +3,30 @@ import { View, Text, StyleSheet, Pressable, LayoutChangeEvent, ActivityIndicator
 import Svg, { Path, Line, Defs, LinearGradient, Stop, Text as SvgText, Circle } from "react-native-svg";
 import { colors } from "../theme/colors";
 import { typography, spacing, radius } from "../theme/typography";
-import { ConsumptionSample, describeDayKey, watDayKey } from "../hooks/useConsumptionLog";
+import {
+  ConsumptionPoint,
+  ConsumptionRange,
+  CONSUMPTION_RANGES,
+  RANGE_LABELS,
+} from "../hooks/useConsumptionLog";
 
 /**
- * The household's consumption over one West Africa Time day.
+ * The household's power draw over a chosen window.
  *
  * Replaces a live chart that plotted a ten-minute in-memory buffer against a
- * relative axis reading "-8m ... now". That axis could only ever answer "how
- * much am I drawing this instant", and the buffer emptied on leaving the
- * screen, so there was no way to ask what the morning looked like, let alone
- * yesterday. This plots the meter's own logged series against real clock
- * time, so a point on the chart corresponds to a time of day the household
- * actually recognises.
+ * relative axis reading "-8m ... now". That could only answer "how much am I
+ * drawing this instant", and the buffer emptied on leaving the screen, so
+ * there was no way to ask what the morning looked like, let alone last week.
+ * This plots the meter's own logged series against real clock time.
  *
- * Three things it deliberately does not do:
+ * Two things it deliberately does not do:
  *
  *  - It does not interpolate across gaps. A meter that was offline has no
- *    samples for those minutes, and joining the ends would draw a confident
- *    straight line through hours nobody measured. Gaps are left as breaks.
- *  - It does not scale the x axis to the data. The day is always drawn from
- *    00:00, so the shape of one day is directly comparable with another and
- *    a late start reads as a late start rather than as a full day.
- *  - It does not plot the spot readings. Once-a-minute instantaneous samples
- *    alias badly against appliances that cycle; the line is average power
- *    per interval, derived from the meter's energy counter, which cannot
+ *    samples for those buckets, and joining the ends would draw a confident
+ *    straight line through hours nobody measured.
+ *  - It does not plot the instantaneous readings. A once-a-minute spot
+ *    sample aliases badly against appliances that cycle; the line is average
+ *    power per bucket, derived from the meter's energy counter, which cannot
  *    miss a load that ran entirely between two samples.
  */
 
@@ -36,27 +36,16 @@ const PAD_RIGHT = 14;
 const PAD_TOP = 14;
 const PAD_BOTTOM = 26;
 
-/** Minutes between consecutive samples beyond which the meter is considered
- * to have been down, and the line is broken rather than joined. Samples are
- * written once a minute, so anything past a few minutes is a real outage. */
-const GAP_MINUTES = 5;
+/** A gap wider than this many buckets means the meter was down, and the line
+ * is broken rather than joined across it. */
+const GAP_BUCKETS = 3;
 
-const MINUTES_PER_DAY = 1440;
-
-/** Rounds up to a "nice" axis maximum (1/2/5 x 10^n) so gridline labels read
- * as 200 / 400 / 600 rather than as fractions of an arbitrary peak. */
 function niceCeil(v: number): number {
   if (v <= 0) return 1;
   const mag = Math.pow(10, Math.floor(Math.log10(v)));
   const norm = v / mag;
   const nice = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 2.5 ? 2.5 : norm <= 5 ? 5 : 10;
   return nice * mag;
-}
-
-function clockLabel(minute: number): string {
-  const h = Math.floor(minute / 60) % 24;
-  const m = minute % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
 function watts(w: number): string {
@@ -69,97 +58,95 @@ function energy(wh: number): string {
   return `${Math.round(wh)} Wh`;
 }
 
-/** Current minute of the day in WAT, for the "now" marker and axis extent. */
-function watMinuteNow(): number {
-  const wat = new Date(Date.now() + 60 * 60 * 1000);
-  return wat.getUTCHours() * 60 + wat.getUTCMinutes();
+const WAT_OFFSET_MS = 60 * 60 * 1000;
+
+/** Axis labels in West Africa Time, the zone the meter itself keys its log
+ * by -- so a tick reading 06:00 is the same 06:00 the household experienced,
+ * regardless of the phone's own timezone. */
+function axisLabel(t: number, range: ConsumptionRange): string {
+  const d = new Date(t + WAT_OFFSET_MS);
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const mm = String(d.getUTCMinutes()).padStart(2, "0");
+  if (range === "7d" || range === "14d") {
+    const day = d.toLocaleDateString(undefined, { weekday: "short", timeZone: "UTC" });
+    return range === "14d"
+      ? `${d.getUTCDate()}/${d.getUTCMonth() + 1}`
+      : `${day} ${hh}:00`.replace(" 00:00", "");
+  }
+  return `${hh}:${mm}`;
 }
 
 export function ConsumptionChart({
-  day,
-  samples,
+  range,
+  onRangeChange,
+  points,
   totalWh,
   peakW,
+  startMs,
+  endMs,
+  bucketMin,
   loading,
-  onPrevDay,
-  onNextDay,
 }: {
-  day: string;
-  samples: ConsumptionSample[];
+  range: ConsumptionRange;
+  onRangeChange: (r: ConsumptionRange) => void;
+  points: ConsumptionPoint[];
   totalWh: number;
   peakW: number;
+  startMs: number;
+  endMs: number;
+  bucketMin: number;
   loading: boolean;
-  onPrevDay: () => void;
-  onNextDay: () => void;
 }) {
   const [width, setWidth] = useState(0);
   const onLayout = (e: LayoutChangeEvent) => setWidth(e.nativeEvent.layout.width);
 
-  const isToday = day === watDayKey();
-  const nowMinute = watMinuteNow();
-
   const plot = useMemo(() => {
     const plotW = Math.max(0, width - PAD_LEFT - PAD_RIGHT);
     const plotH = CHART_HEIGHT - PAD_TOP - PAD_BOTTOM;
+    const span = Math.max(1, endMs - startMs);
 
-    // Today is drawn only as far as the clock has actually reached, so the
-    // line ends at the present moment instead of trailing into empty hours
-    // that have not happened yet. A past day is drawn whole.
-    const xMax = isToday ? Math.max(60, Math.min(MINUTES_PER_DAY, Math.ceil((nowMinute + 1) / 60) * 60)) : MINUTES_PER_DAY;
-
-    const peak = samples.reduce((m, s) => Math.max(m, s.avgW), 0);
+    const peak = points.reduce((m, p) => Math.max(m, p.avgW), 0);
     const yMax = niceCeil(Math.max(peak * 1.15, 50));
 
-    const xFor = (minute: number) => PAD_LEFT + (Math.min(minute, xMax) / xMax) * plotW;
+    const xFor = (t: number) => PAD_LEFT + ((t - startMs) / span) * plotW;
     const yFor = (w: number) => PAD_TOP + (1 - Math.min(w, yMax) / yMax) * plotH;
 
-    // Split into runs of contiguous samples so an outage becomes a break in
-    // the line rather than a straight line drawn through it.
-    const runs: ConsumptionSample[][] = [];
-    let current: ConsumptionSample[] = [];
-    samples.forEach((s, i) => {
-      if (i > 0 && s.minute - samples[i - 1].minute > GAP_MINUTES) {
+    // Break the line wherever the meter went quiet for more than a few
+    // buckets, so an outage reads as an outage.
+    const gapMs = bucketMin * 60_000 * GAP_BUCKETS;
+    const runs: ConsumptionPoint[][] = [];
+    let current: ConsumptionPoint[] = [];
+    points.forEach((p, i) => {
+      if (i > 0 && p.t - points[i - 1].t > gapMs) {
         if (current.length) runs.push(current);
         current = [];
       }
-      current.push(s);
+      current.push(p);
     });
     if (current.length) runs.push(current);
 
     const linePaths = runs.map((run) =>
-      run
-        .map((s, i) => `${i === 0 ? "M" : "L"} ${xFor(s.minute).toFixed(1)} ${yFor(s.avgW).toFixed(1)}`)
-        .join(" ")
+      run.map((p, i) => `${i === 0 ? "M" : "L"} ${xFor(p.t).toFixed(1)} ${yFor(p.avgW).toFixed(1)}`).join(" ")
     );
-
-    // Only runs with real width get a filled area; a lone sample would
-    // otherwise render as an invisible zero-width sliver.
     const areaPaths = runs
       .filter((run) => run.length > 1)
       .map((run) => {
         const base = yFor(0);
         const head = run
-          .map((s, i) => `${i === 0 ? "M" : "L"} ${xFor(s.minute).toFixed(1)} ${yFor(s.avgW).toFixed(1)}`)
+          .map((p, i) => `${i === 0 ? "M" : "L"} ${xFor(p.t).toFixed(1)} ${yFor(p.avgW).toFixed(1)}`)
           .join(" ");
-        const lastX = xFor(run[run.length - 1].minute).toFixed(1);
-        const firstX = xFor(run[0].minute).toFixed(1);
-        return `${head} L ${lastX} ${base} L ${firstX} ${base} Z`;
+        return `${head} L ${xFor(run[run.length - 1].t).toFixed(1)} ${base} L ${xFor(run[0].t).toFixed(1)} ${base} Z`;
       });
 
-    // Aim for four to six labelled hours, whatever the span.
-    const stepChoices = [60, 120, 180, 240, 360, 720];
-    const xStep = stepChoices.find((s) => xMax / s <= 6) ?? 720;
-    const xTicks: number[] = [];
-    for (let m = 0; m <= xMax; m += xStep) xTicks.push(m);
-
+    const TICKS = 5;
+    const xTicks = Array.from({ length: TICKS }, (_, i) => startMs + (span * i) / (TICKS - 1));
     const yTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => yMax * f);
 
-    const last = samples.length ? samples[samples.length - 1] : null;
+    return { plotW, plotH, yMax, xFor, yFor, linePaths, areaPaths, xTicks, yTicks };
+  }, [width, points, startMs, endMs, bucketMin]);
 
-    return { plotW, plotH, xMax, yMax, xFor, yFor, linePaths, areaPaths, xTicks, yTicks, last };
-  }, [width, samples, isToday, nowMinute]);
-
-  const hasData = samples.length > 1;
+  const hasData = points.length > 1;
+  const last = points.length ? points[points.length - 1] : null;
 
   return (
     <View style={styles.card} onLayout={onLayout}>
@@ -172,20 +159,20 @@ export function ConsumptionChart({
               : "Logged by the meter every minute"}
           </Text>
         </View>
-        <View style={styles.nav}>
-          <Pressable onPress={onPrevDay} style={styles.navBtn} hitSlop={8}>
-            <Text style={styles.navIcon}>{"‹"}</Text>
-          </Pressable>
-          <Text style={[typography.caption, styles.dayLabel]}>{describeDayKey(day)}</Text>
+      </View>
+
+      <View style={styles.rangeRow}>
+        {CONSUMPTION_RANGES.map((r) => (
           <Pressable
-            onPress={onNextDay}
-            disabled={isToday}
-            style={[styles.navBtn, isToday && styles.navBtnDisabled]}
-            hitSlop={8}
+            key={r}
+            onPress={() => onRangeChange(r)}
+            style={[styles.rangeChip, r === range && styles.rangeChipActive]}
           >
-            <Text style={[styles.navIcon, isToday && styles.navIconDisabled]}>{"›"}</Text>
+            <Text style={[typography.caption, r === range ? styles.rangeTextActive : styles.rangeText]}>
+              {RANGE_LABELS[r]}
+            </Text>
           </Pressable>
-        </View>
+        ))}
       </View>
 
       {loading && !hasData ? (
@@ -195,9 +182,8 @@ export function ConsumptionChart({
       ) : !hasData ? (
         <View style={styles.placeholder}>
           <Text style={[typography.caption, styles.emptyText]}>
-            {isToday
-              ? "No readings logged yet today. The meter records one sample a minute once it is powered and online."
-              : "The meter logged no readings on this day."}
+            No readings logged in this window. The meter records one sample a minute once it is
+            powered and online.
           </Text>
         </View>
       ) : (
@@ -234,16 +220,16 @@ export function ConsumptionChart({
               </SvgText>
             ))}
 
-            {plot.xTicks.map((m) => (
+            {plot.xTicks.map((t, i) => (
               <SvgText
-                key={`lx${m}`}
-                x={plot.xFor(m)}
+                key={`lx${i}`}
+                x={plot.xFor(t)}
                 y={CHART_HEIGHT - PAD_BOTTOM + 16}
                 fill={colors.textSecondary}
                 fontSize={10}
-                textAnchor={m === 0 ? "start" : m >= plot.xMax ? "end" : "middle"}
+                textAnchor={i === 0 ? "start" : i === plot.xTicks.length - 1 ? "end" : "middle"}
               >
-                {clockLabel(m)}
+                {axisLabel(t, range)}
               </SvgText>
             ))}
 
@@ -261,27 +247,8 @@ export function ConsumptionChart({
                 strokeLinecap="round"
               />
             ))}
-
-            {/* Where the present moment sits on the axis, so a partial day
-                reads as in-progress rather than as one that simply stopped. */}
-            {isToday && (
-              <Line
-                x1={plot.xFor(nowMinute)}
-                x2={plot.xFor(nowMinute)}
-                y1={PAD_TOP}
-                y2={PAD_TOP + plot.plotH}
-                stroke={colors.neutral[700]}
-                strokeWidth={1}
-                strokeDasharray="3 3"
-              />
-            )}
-            {isToday && plot.last && plot.last.minute >= nowMinute - GAP_MINUTES && (
-              <Circle
-                cx={plot.xFor(plot.last.minute)}
-                cy={plot.yFor(plot.last.avgW)}
-                r={3.5}
-                fill={colors.terracotta[500]}
-              />
+            {last && (
+              <Circle cx={plot.xFor(last.t)} cy={plot.yFor(last.avgW)} r={3.5} fill={colors.terracotta[500]} />
             )}
           </Svg>
         )
@@ -303,17 +270,16 @@ const styles = StyleSheet.create({
   headerText: { flex: 1, gap: 2 },
   title: { color: colors.textPrimary },
   subtitle: { color: colors.textSecondary },
-  nav: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
-  navBtn: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
+  rangeRow: { flexDirection: "row", gap: spacing.xs, flexWrap: "wrap" },
+  rangeChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
     borderRadius: radius.sm,
     backgroundColor: colors.neutral[100],
   },
-  navBtnDisabled: { opacity: 0.35 },
-  navIcon: { color: colors.textPrimary, fontSize: 18, lineHeight: 22 },
-  navIconDisabled: { color: colors.textSecondary },
-  dayLabel: { color: colors.textPrimary, minWidth: 78, textAlign: "center" },
+  rangeChipActive: { backgroundColor: colors.terracotta[500] },
+  rangeText: { color: colors.textSecondary },
+  rangeTextActive: { color: colors.neutral.white },
   placeholder: { height: CHART_HEIGHT, alignItems: "center", justifyContent: "center", paddingHorizontal: spacing.lg },
   emptyText: { color: colors.textSecondary, textAlign: "center" },
 });

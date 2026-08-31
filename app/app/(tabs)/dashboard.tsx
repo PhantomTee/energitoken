@@ -9,7 +9,7 @@ import { MetricTile } from "../../src/components/MetricTile";
 import { RelayIndicator } from "../../src/components/RelayIndicator";
 import { ConsumptionChart } from "../../src/components/ConsumptionChart";
 import { PendingBurnBadge } from "../../src/components/PendingBurnBadge";
-import { useConsumptionLog, watDayKey, shiftDayKey } from "../../src/hooks/useConsumptionLog";
+import { useConsumptionLog, ConsumptionRange } from "../../src/hooks/useConsumptionLog";
 import { useWallet } from "../../src/hooks/useWallet";
 import { TopUpModal } from "../../src/components/TopUpModal";
 import { getEngyBalance, getSpendableBalance } from "../../src/services/contract";
@@ -73,11 +73,11 @@ export default function DashboardScreen() {
     deviceId,
     hasDevice,
   } = useMeterData(walletAddress, getSigner);
-  const [chartDay, setChartDay] = useState(() => watDayKey());
+  const [chartRange, setChartRange] = useState<ConsumptionRange>("24h");
   const { data: consumption, loading: consumptionLoading } = useConsumptionLog(
     walletAddress,
     getSigner,
-    chartDay
+    chartRange
   );
 
   const refreshBalance = useCallback(async () => {
@@ -295,13 +295,15 @@ export default function DashboardScreen() {
           <View style={styles.desktopRow}>
             <View style={styles.dailyBudgetCard}>
               <ConsumptionChart
-                day={chartDay}
-                samples={consumption?.samples ?? []}
+                range={chartRange}
+                onRangeChange={setChartRange}
+                points={consumption?.points ?? []}
                 totalWh={consumption?.totalWh ?? 0}
                 peakW={consumption?.peakW ?? 0}
+                startMs={consumption?.startMs ?? 0}
+                endMs={consumption?.endMs ?? Date.now()}
+                bucketMin={consumption?.bucketMin ?? 1}
                 loading={consumptionLoading}
-                onPrevDay={() => setChartDay((d) => shiftDayKey(d, -1))}
-                onNextDay={() => setChartDay((d) => (d === watDayKey() ? d : shiftDayKey(d, 1)))}
               />
             </View>
 
@@ -443,13 +445,15 @@ export default function DashboardScreen() {
               </Pressable>
             </View>
             <ConsumptionChart
-              day={chartDay}
-              samples={consumption?.samples ?? []}
+              range={chartRange}
+              onRangeChange={setChartRange}
+              points={consumption?.points ?? []}
               totalWh={consumption?.totalWh ?? 0}
               peakW={consumption?.peakW ?? 0}
+              startMs={consumption?.startMs ?? 0}
+              endMs={consumption?.endMs ?? Date.now()}
+              bucketMin={consumption?.bucketMin ?? 1}
               loading={consumptionLoading}
-              onPrevDay={() => setChartDay((d) => shiftDayKey(d, -1))}
-              onNextDay={() => setChartDay((d) => (d === watDayKey() ? d : shiftDayKey(d, 1)))}
             />
           </View>
         </>
