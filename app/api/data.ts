@@ -38,7 +38,8 @@ export default async function handler(req: Req, res: Res) {
       if (resource === "directory") return await resolveDirectory(req, res);
       if (resource === "burnHistory") return await getBurnHistory(res, walletAddress);
       if (resource === "consumption") return await getConsumption(req, res, walletAddress);
-      res.status(400).json({ error: "resource must be one of meters, notifications, directory, burnHistory, consumption" });
+      if (resource === "dailyUsage") return await getDailyUsage(req, res, walletAddress);
+      res.status(400).json({ error: "resource must be one of meters, notifications, directory, burnHistory, consumption, dailyUsage" });
       return;
     }
 
@@ -235,6 +236,67 @@ async function getConsumption(req: Req, res: Res, walletAddress: string): Promis
     totalWh: Math.round(totalWh),
     peakW: points.length ? Math.max(...points.map((p) => p.avgW)) : 0,
   });
+}
+
+/**
+ * Measured consumption per WAT calendar day, for the Budget screen's usage
+ * bars and its runway projection.
+ *
+ * Both used to be built from burnHistory -- the log of settled ON-CHAIN
+ * burns. That is the wrong source for "how much did this household use".
+ * A burn entry only exists once the oracle has run AND had a positive delta
+ * to settle, so the log is sparse and lags reality by however long the cron
+ * takes; when the oracle lock wedged for three days it recorded nothing at
+ * all, and both charts simply went blank. Today's bar was almost always
+ * empty even in normal operation, because today's consumption had not been
+ * settled yet.
+ *
+ * meterHistory is what the meter actually measured, written every minute
+ * whether or not anything has been burned, so a day's usage is available the
+ * moment it happens rather than hours later.
+ *
+ * A day's total is the sum of POSITIVE deltas between consecutive samples,
+ * not simply last minus first. The lifetime counter can be reset mid-day
+ * (see performEnergyReset in the firmware) or the module replaced, and
+ * last-minus-first across such a day would report a large negative and clamp
+ * to zero, silently discarding everything used before the reset.
+ */
+async function getDailyUsage(req: Req, res: Res, walletAddress: string): Promise<void> {
+  const url = new URL(req.url ?? "", "http://localhost");
+  const days = Math.min(30, Math.max(1, Number(url.searchParams.get("days") ?? 7) || 7));
+
+  const deviceId = await deviceIdForWallet(walletAddress);
+  if (!deviceId) {
+    res.status(200).json({ hasDevice: false, days: [] });
+    return;
+  }
+
+  const db = adminDb();
+  const out: { day: string; wh: number }[] = [];
+  const now = Date.now();
+
+  for (let i = days - 1; i >= 0; i--) {
+    const key = watDayKey(now - i * 24 * 60 * 60 * 1000);
+    const snap = await db.ref(`meterHistory/${deviceId}/${key}`).get();
+    let wh = 0;
+    if (snap.exists()) {
+      const raw = snap.val() as Record<string, { e?: number }>;
+      const energies = Object.entries(raw)
+        .filter(([hhmm, v]) => /^\d{4}$/.test(hhmm) && typeof v.e === "number")
+        .map(([hhmm, v]) => ({
+          minute: parseInt(hhmm.slice(0, 2), 10) * 60 + parseInt(hhmm.slice(2), 10),
+          e: v.e as number,
+        }))
+        .sort((a, b) => a.minute - b.minute);
+      for (let k = 1; k < energies.length; k++) {
+        const d = energies[k].e - energies[k - 1].e;
+        if (d > 0) wh += d;
+      }
+    }
+    out.push({ day: key, wh: Math.round(wh) });
+  }
+
+  res.status(200).json({ hasDevice: true, days: out });
 }
 
 async function setBudget(res: Res, walletAddress: string, body: unknown): Promise<void> {

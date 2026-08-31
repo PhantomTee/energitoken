@@ -23,9 +23,14 @@ import { whToUnits } from "../services/units";
  *    much. There's now an actual dashed line at the allowance to read against.
  *  - No axis labels, so no way to know what any height meant in units.
  *
- * Renders nothing but an explanatory line when there's no budget set yet:
- * without an allowance there's no reference to compare against, and a bare
- * bar chart of past usage isn't what this card is for.
+ * Bars draw whether or not a budget is set. The card used to render nothing
+ * but a line of explanatory text without one, on the reasoning that there was
+ * no reference to compare against -- but a household's own consumption is
+ * worth seeing on its own terms, and hiding it meant an unbudgeted meter
+ * showed a blank card even while measuring perfectly well. The ALLOWANCE is
+ * what needs a budget, so that is what is now conditional: the dashed line
+ * and the over/under colouring appear once one is set, and the bars are drawn
+ * in a single neutral colour until then.
  */
 
 const CHART_HEIGHT = 190;
@@ -97,14 +102,9 @@ export function DailyUsageChart({
         )}
       </View>
 
-      {!hasBudget ? (
+      {!anyUsage ? (
         <Text style={[typography.caption, styles.empty]}>
-          Set a budget to compare your daily use against an allowance.
-        </Text>
-      ) : !anyUsage ? (
-        <Text style={[typography.caption, styles.empty]}>
-          No settled consumption logged yet. Bars appear once the meter reports usage and the
-          consumption oracle settles it.
+          No consumption measured in this period yet. Bars appear as the meter records usage.
         </Text>
       ) : (
         width > 0 && (
@@ -139,7 +139,7 @@ export function DailyUsageChart({
 
             {days.map((day, i) => {
               const units = dayUnits[i];
-              const over = units > budgetUnitsPerDay!;
+              const over = hasBudget && units > budgetUnitsPerDay!;
               const x = PAD_LEFT + i * slot + (slot - barW) / 2;
               // A day with real-but-tiny usage still gets a visible sliver --
               // otherwise "used a little" and "used nothing" look the same.
@@ -158,8 +158,9 @@ export function DailyUsageChart({
             })}
 
             {/* The allowance itself -- drawn after the bars so it stays
-                readable where a bar crosses it. */}
-            <Line
+                readable where a bar crosses it. Absent entirely without a
+                budget, since there is then nothing to reference against. */}
+            {hasBudget && <Line
               x1={PAD_LEFT}
               y1={yFor(budgetUnitsPerDay!)}
               x2={PAD_LEFT + plotW}
@@ -167,16 +168,18 @@ export function DailyUsageChart({
               stroke={colors.neutral[700]}
               strokeWidth={1.5}
               strokeDasharray="6 4"
-            />
-            <SvgText
-              x={PAD_LEFT + plotW}
-              y={yFor(budgetUnitsPerDay!) - 5}
-              fill={colors.neutral[700]}
-              fontSize={10}
-              textAnchor="end"
-            >
-              allowance
-            </SvgText>
+            />}
+            {hasBudget && (
+              <SvgText
+                x={PAD_LEFT + plotW}
+                y={yFor(budgetUnitsPerDay!) - 5}
+                fill={colors.neutral[700]}
+                fontSize={10}
+                textAnchor="end"
+              >
+                allowance
+              </SvgText>
+            )}
 
             {days.map((day, i) =>
               i % labelEvery === 0 || i === days.length - 1 ? (

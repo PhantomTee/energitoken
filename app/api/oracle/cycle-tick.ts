@@ -58,9 +58,9 @@ function watDayKey(epochMs: number): string {
 }
 
 /** How many days of minute-resolution consumption log to keep. The chart
- * offers day-by-day browsing, not long-range analysis, and a device writes
- * 1440 rows a day, so keeping a fortnight bounds a meter at ~20k rows. */
-const HISTORY_RETENTION_DAYS = 14;
+ * offers ranges up to 14 days and the Budget screen up to 30, and a device
+ * writes 1440 rows a day, so a month bounds a meter at ~43k small rows. */
+const HISTORY_RETENTION_DAYS = 30;
 
 /**
  * Drops consumption-log days that have aged out. Deletes by computed key

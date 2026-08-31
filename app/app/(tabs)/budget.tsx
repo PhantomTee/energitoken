@@ -10,7 +10,7 @@ import { BalanceRunwayChart } from "../../src/components/BalanceRunwayChart";
 import { DailyUsageChart } from "../../src/components/DailyUsageChart";
 import { useWallet } from "../../src/hooks/useWallet";
 import { useMeterData } from "../../src/hooks/useMeterData";
-import { useBurnHistory } from "../../src/hooks/useBurnHistory";
+import { useDailyConsumption, dayKeyLabel } from "../../src/hooks/useDailyConsumption";
 import { getEngyBalance, getSpendableBalance } from "../../src/services/contract";
 import { setBudgetWh, resetBudget, setMeterTokenBalance } from "../../src/services/budget";
 import { whToUnits, unitsToWh, tokensToUnits } from "../../src/services/units";
@@ -33,52 +33,6 @@ function formatUnits(units: number): string {
   return units.toLocaleString(undefined, { maximumFractionDigits: 3 });
 }
 type PeriodDays = (typeof PERIOD_OPTIONS)[number];
-
-function dayKey(ts: number) {
-  const d = new Date(ts);
-  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-}
-
-/** Buckets the durable burn-history log (see useBurnHistory) into calendar
- * days over the trailing `periodDays` window, so it can be compared against
- * the daily budget as a rough over/under trend. Used to be built from
- * scanning on-chain burn events directly, but that scan only ever sees the
- * last ~100 minutes of blocks (contractEvents.ts's MAX_LOOKBACK_BLOCKS) --
- * nowhere near enough for a multi-day chart given how infrequently the burn
- * oracle actually runs, which is why every bar came up empty. */
-function useDailyUsage(
-  walletAddress: string | null,
-  getSigner: () => Promise<ethers.Signer>,
-  periodDays: PeriodDays
-) {
-  const { entries, loading, error } = useBurnHistory(walletAddress, getSigner);
-
-  const days = useMemo(() => {
-    const now = Date.now();
-    const cutoff = now - periodDays * 24 * 60 * 60 * 1000;
-    const byDay = new Map<string, number>();
-    for (const entry of entries) {
-      if (entry.timestamp < cutoff) continue;
-      const key = dayKey(entry.timestamp);
-      byDay.set(key, (byDay.get(key) ?? 0) + entry.deltaWh);
-    }
-
-    const result: { key: string; label: string; wh: number }[] = [];
-    for (let i = periodDays - 1; i >= 0; i--) {
-      const d = new Date(now - i * 24 * 60 * 60 * 1000);
-      const key = dayKey(d.getTime());
-      result.push({
-        key,
-        label: d.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
-        wh: byDay.get(key) ?? 0,
-      });
-    }
-    return result;
-  }, [entries, periodDays]);
-
-  return { days, loading, error };
-}
-
 
 /** Sanity ceiling: 100 kWh/day is several times a heavy Nigerian household. */
 const MAX_BUDGET_UNITS = 100;
@@ -148,7 +102,12 @@ export default function BudgetScreen() {
   const [periodDays, setPeriodDays] = useState<PeriodDays>(7);
 
   const { reading, loading, error, deviceId, hasDevice } = useMeterData(walletAddress, getSigner);
-  const { days: dailyUsage } = useDailyUsage(walletAddress, getSigner, periodDays);
+  const { days: dailyUsageRaw } = useDailyConsumption(walletAddress, getSigner, periodDays);
+  // The chart wants a display label per bar; the hook returns WAT day keys.
+  const dailyUsage = useMemo(
+    () => dailyUsageRaw.map((d) => ({ key: d.day, label: dayKeyLabel(d.day), wh: d.wh })),
+    [dailyUsageRaw]
+  );
   const cycleClock = useCycleClock(reading?.cycleStartedAt);
   const [durationInput, setDurationInput] = useState("");
 
