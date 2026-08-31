@@ -1460,7 +1460,13 @@ void lcdLive() {
   } else if (sensorFailSafe) {
     lcd.print("SENSOR FAULT: safe  ");
   } else if (!budget.budgetSet) {
-    lcd.print("Budget: OFF no limit");
+    // Nothing at all until a budget exists. A budget row is only meaningful
+    // once there is a budget to report against: the bar was misleading
+    // (an empty bar reads as "nothing spent yet", not "no limit is being
+    // enforced"), and spelling that out in words was still a row spent
+    // saying that the row has nothing to say. Blanked to the full width so
+    // no characters survive from whichever state was drawn here before.
+    lcd.print("                    ");
   } else if (budgetGated) {
     lcd.print("Budget SPENT: 100%  ");
   } else {
