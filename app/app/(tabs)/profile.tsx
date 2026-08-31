@@ -16,8 +16,8 @@ import { useIsDesktopWeb } from "../../src/hooks/useIsDesktopWeb";
 import { Ionicons } from "@expo/vector-icons";
 import { CONTRACT_ADDRESS } from "../../src/services/contract";
 
-const APP_VERSION = "EnergiToken v1.0 · Polygon Amoy";
-const EXPLORER_URL = `https://amoy.polygonscan.com/address/${CONTRACT_ADDRESS}`;
+const APP_VERSION = "EnergiToken v1.0 · Sepolia";
+const EXPLORER_URL = `https://sepolia.etherscan.io/address/${CONTRACT_ADDRESS}`;
 const GITHUB_URL = "https://github.com/PhantomTee/energitoken";
 
 const LANGUAGES = [{ code: "en", label: "English", available: true }] as const;

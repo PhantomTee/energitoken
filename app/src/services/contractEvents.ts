@@ -14,7 +14,7 @@ export type TxRecord = {
 };
 
 /**
- * The public Amoy RPC caps eth_getLogs at a 100-block range per call (most
+ * The public RPC caps eth_getLogs at a 100-block range per call (most
  * public RPCs cap somewhere; this one is unusually strict) -- querying from
  * block 0 throws "block range exceeds configured limit" regardless of how
  * young the contract is. MAX_LOOKBACK_BLOCKS bounds how far back a single

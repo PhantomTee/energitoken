@@ -7,7 +7,7 @@ import { typography, spacing, radius } from "../src/theme/typography";
 import { AdinkraAccent } from "../src/theme/motifs/AdinkraAccent";
 import { CONTRACT_ADDRESS } from "../src/services/contract";
 
-const EXPLORER_URL = `https://amoy.polygonscan.com/address/${CONTRACT_ADDRESS}`;
+const EXPLORER_URL = `https://sepolia.etherscan.io/address/${CONTRACT_ADDRESS}`;
 const GITHUB_URL = "https://github.com/PhantomTee/energitoken";
 
 const FEATURES = [

@@ -1,4 +1,4 @@
-import { polygonAmoy } from "@privy-io/chains";
+import { sepolia } from "@privy-io/chains";
 
 /**
  * Read from EXPO_PUBLIC_PRIVY_APP_ID at build time (Expo inlines any env var
@@ -17,7 +17,12 @@ export const PRIVY_APP_ID = process.env.EXPO_PUBLIC_PRIVY_APP_ID ?? "";
 export const PRIVY_MOBILE_CLIENT_ID = process.env.EXPO_PUBLIC_PRIVY_MOBILE_CLIENT_ID ?? "";
 
 /**
- * Polygon Amoy (chainId 80002) is the only chain this app uses. Privy ships
- * this definition out of the box (@privy-io/chains), so we don't redefine it.
+ * Ethereum Sepolia (chainId 11155111) is the only chain this app uses. Privy
+ * ships this definition out of the box (@privy-io/chains), so we don't
+ * redefine it.
+ *
+ * Migrated from Polygon Amoy on 2026-08-31: Amoy's faucets had become
+ * unobtainable without an existing mainnet balance, leaving the oracle
+ * wallet with about nine transactions of gas and no way to refill it.
  */
-export const privySupportedChains: [typeof polygonAmoy] = [polygonAmoy];
+export const privySupportedChains: [typeof sepolia] = [sepolia];

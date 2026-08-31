@@ -12,10 +12,10 @@ let readProvider: ethers.JsonRpcProvider | null = null;
  * write-side oracle helpers (burnEngy.ts, setPendingBurn.ts) -- kept
  * separate from app/src/services/contract.ts's client-side provider, which
  * is built for the Expo bundler (EXPO_PUBLIC_ env prefix, batching disabled
- * for the public Amoy RPC) and isn't meant to run in this runtime. */
+ * for the public RPC) and isn't meant to run in this runtime. */
 function getServerReadProvider(): ethers.JsonRpcProvider {
   if (!readProvider) {
-    const rpcUrl = process.env.AMOY_RPC_URL ?? "https://polygon-amoy-bor-rpc.publicnode.com";
+    const rpcUrl = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com";
     readProvider = new ethers.JsonRpcProvider(rpcUrl);
   }
   return readProvider;

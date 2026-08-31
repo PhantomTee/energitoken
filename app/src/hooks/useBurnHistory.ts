@@ -8,8 +8,8 @@ export type BurnHistoryEntry = { deltaWh: number; timestamp: number };
  * Polls /api/data?resource=burnHistory for this wallet's device's durable
  * per-burn log, written by oracle/burn.ts on every real burn. Exists
  * because on-chain event scanning (contractEvents.ts's getTransactionHistory)
- * is capped to the last ~3,000 blocks -- on Amoy's ~2s block time, roughly
- * 100 minutes -- nowhere near enough to support a 7/14/30-day consumption
+ * is capped to the last ~3,000 blocks -- on Sepolia's ~12s block time, about
+ * ten hours -- nowhere near enough to support a 7/14/30-day consumption
  * chart given how infrequently the burn oracle actually runs.
  */
 export function useBurnHistory(walletAddress: string | null, getSigner: () => Promise<ethers.Signer>) {

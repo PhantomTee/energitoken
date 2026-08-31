@@ -14,9 +14,9 @@ const contractInfo: { address: string; abi: unknown } = require("../../src/confi
 export async function burnEngy(fromAddress: string, whAmount: number): Promise<string> {
   if (whAmount <= 0) throw new Error("whAmount must be positive");
 
-  // rpc-amoy.polygon.technology (old default) is confirmed dead -- doesn't
+  // Sepolia's public RPC. The chain moved off Polygon Amoy on 2026-08-31;
   // even resolve via DNS anymore, not just flaky.
-  const rpcUrl = process.env.AMOY_RPC_URL ?? "https://polygon-amoy-bor-rpc.publicnode.com";
+  const rpcUrl = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com";
   const oraclePrivateKey = process.env.ORACLE_PRIVATE_KEY;
   if (!oraclePrivateKey) throw new Error("Missing ORACLE_PRIVATE_KEY env var");
 

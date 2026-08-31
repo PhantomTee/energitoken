@@ -13,27 +13,30 @@ const contractInfo: { address: string; abi: unknown } = require("../config/contr
 export const CONTRACT_ADDRESS: string = contractInfo.address;
 export const CONTRACT_ABI = contractInfo.abi as ethers.InterfaceAbi;
 
-// rpc-amoy.polygon.technology (the old default) stopped resolving entirely --
-// confirmed dead via direct DNS lookup, not just flaky. publicnode.com
-// worked but rate-limits per IP hard enough under real use to surface as
-// visible 429s (see contract.ts's withRetry and contractEvents.ts's own
-// comment on the same endpoint) -- drpc.org is Polygon's own docs-listed
-// free public RPC for Amoy and has held up better in practice.
-const AMOY_RPC_URL = process.env.EXPO_PUBLIC_AMOY_RPC_URL ?? "https://polygon-amoy.drpc.org";
-export const AMOY_CHAIN_ID = 80002n;
+// Ethereum Sepolia replaced Polygon Amoy on 2026-08-31. Amoy's faucets had
+// become effectively unobtainable without an existing mainnet balance, and
+// the oracle wallet was down to roughly nine transactions of gas with no way
+// to refill it. Sepolia's faucets are reachable, and its gas price at the
+// time of the switch was 1.0 gwei against Amoy's 37.5, so a single faucet
+// drip goes about thirty times further.
+const SEPOLIA_RPC_URL = process.env.EXPO_PUBLIC_SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com";
+export const CHAIN_ID = 11155111n;
+export const CHAIN_NAME = "Sepolia";
+/** The chain's own gas token, for wording in the errors below. */
+export const GAS_TOKEN = "SepoliaETH";
 
 let readProvider: ethers.JsonRpcProvider | null = null;
 
 /**
- * Read-only provider against the public Amoy RPC -- no wallet/signer needed.
+ * Read-only provider against the public Sepolia RPC -- no wallet/signer needed.
  * batchMaxCount: 1 disables ethers' default JSON-RPC batching: the public
- * Amoy endpoint doesn't reliably support batched requests, and sending the
+ * public endpoint doesn't reliably support batched requests, and sending the
  * 4 concurrent getLogs calls in getTransactionHistory as one batch produces
  * a "could not coalesce error" (code -32000) instead of real results.
  */
 export function getReadProvider(): ethers.JsonRpcProvider {
   if (!readProvider) {
-    readProvider = new ethers.JsonRpcProvider(AMOY_RPC_URL, undefined, { batchMaxCount: 1 });
+    readProvider = new ethers.JsonRpcProvider(SEPOLIA_RPC_URL, undefined, { batchMaxCount: 1 });
   }
   return readProvider;
 }
@@ -50,7 +53,7 @@ const BALANCE_READ_MAX_RETRIES = 3;
 const BALANCE_READ_BASE_DELAY_MS = 500;
 
 /**
- * The public Amoy RPC rate-limits per IP under real load (see
+ * The public RPC rate-limits per IP under real load (see
  * contractEvents.ts's MAX_LOOKBACK_BLOCKS comment) -- a balance read hitting
  * that 429 shouldn't just surface as a stuck "···" on Dashboard. Back off
  * exponentially and retry a few times before giving up, same idea as
@@ -134,7 +137,7 @@ export async function checkNetworkAndGas(
     if (!provider) return { networkOk: false, gasOk: false };
 
     const network = await provider.getNetwork();
-    const networkOk = network.chainId === AMOY_CHAIN_ID;
+    const networkOk = network.chainId === CHAIN_ID;
 
     const address = await signer.getAddress();
     const gasBalance = await provider.getBalance(address);
@@ -166,14 +169,14 @@ export async function runTransferPreflight(
   if (!provider) return "No network connection available from your wallet.";
 
   const network = await provider.getNetwork();
-  if (network.chainId !== AMOY_CHAIN_ID) {
-    return `Your wallet is on the wrong network (chain ${network.chainId}). Switch to Polygon Amoy.`;
+  if (network.chainId !== CHAIN_ID) {
+    return `Your wallet is on the wrong network (chain ${network.chainId}). Switch to ${CHAIN_NAME}.`;
   }
 
   const address = await signer.getAddress();
   const gasBalance = await provider.getBalance(address);
   if (gasBalance === 0n) {
-    return "Your wallet has no POL for gas. Fund it from the Polygon Amoy faucet first.";
+    return `Your wallet has no ${GAS_TOKEN} for gas. Fund it from a ${CHAIN_NAME} faucet first.`;
   }
 
   return null;

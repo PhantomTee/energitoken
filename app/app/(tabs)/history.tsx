@@ -13,7 +13,7 @@ import { whToUnits } from "../../src/services/units";
 import { useIsDesktopWeb } from "../../src/hooks/useIsDesktopWeb";
 import { MobileTopBar } from "../../src/components/MobileTopBar";
 
-const AMOY_EXPLORER_TX = "https://amoy.polygonscan.com/tx/";
+const EXPLORER_TX = "https://sepolia.etherscan.io/tx/";
 
 const DIRECTION_META: Record<
   TxDirection,
@@ -46,7 +46,7 @@ function TransactionRow({ tx }: { tx: TxRecord }) {
         <Text style={[typography.caption, styles.rowCounterparty]}>
           {formatCounterparty(tx.counterparty)} · {formatTimestamp(tx.timestamp)}
         </Text>
-        <Pressable onPress={() => Linking.openURL(`${AMOY_EXPLORER_TX}${tx.hash}`)}>
+        <Pressable onPress={() => Linking.openURL(`${EXPLORER_TX}${tx.hash}`)}>
           <Text style={[typography.dataXs, styles.rowLink]}>{tx.hash.slice(0, 10)}…{tx.hash.slice(-6)} ↗</Text>
         </Pressable>
       </View>
@@ -63,7 +63,7 @@ function TransactionRow({ tx }: { tx: TxRecord }) {
   );
 }
 
-/** Reads real Transfer/Minted/Consumed event logs for this wallet from Polygon Amoy. */
+/** Reads real Transfer/Minted/Consumed event logs for this wallet from Sepolia. */
 /**
  * Reached from Profile's "Transaction History" row, not a tab -- this is a
  * wallet ledger (mint/burn/transfer events with hashes), which fits next to

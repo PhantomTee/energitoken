@@ -10,13 +10,13 @@ import { typography, spacing, radius } from "../theme/typography";
  */
 export type TxState = "idle" | "signing" | "submitted" | "confirmed" | "failed";
 
-const AMOY_EXPLORER_TX = "https://amoy.polygonscan.com/tx/";
+const EXPLORER_TX = "https://sepolia.etherscan.io/tx/";
 
 function TxLink({ hash }: { hash: string }) {
   return (
-    <Pressable onPress={() => Linking.openURL(`${AMOY_EXPLORER_TX}${hash}`)}>
+    <Pressable onPress={() => Linking.openURL(`${EXPLORER_TX}${hash}`)}>
       <Text style={[typography.dataXs, styles.link]}>
-        {hash.slice(0, 10)}…{hash.slice(-6)} · view on PolygonScan ↗
+        {hash.slice(0, 10)}…{hash.slice(-6)} · view on Etherscan ↗
       </Text>
     </Pressable>
   );

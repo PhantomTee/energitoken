@@ -16,7 +16,7 @@ const contractInfo: { address: string; abi: unknown } = require("../../src/confi
 export async function setPendingBurnEngy(walletAddress: string, whAmount: number): Promise<string> {
   if (whAmount < 0) throw new Error("whAmount must not be negative");
 
-  const rpcUrl = process.env.AMOY_RPC_URL ?? "https://polygon-amoy-bor-rpc.publicnode.com";
+  const rpcUrl = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com";
   const oraclePrivateKey = process.env.ORACLE_PRIVATE_KEY;
   if (!oraclePrivateKey) throw new Error("Missing ORACLE_PRIVATE_KEY env var");
 

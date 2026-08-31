@@ -498,7 +498,7 @@ export default function TransferScreen() {
           <PreflightRow label="Recipient wallet found" state={isValidRecipient} />
           <PreflightRow label="You have enough credit" state={isValidAmount} />
           <PreflightRow
-            label="Connected to Polygon Amoy"
+            label="Connected to Sepolia"
             state={networkOk}
             loading={checkingChain && networkOk === null}
           />
