@@ -604,6 +604,13 @@ uint32_t budgetNoticeUntil   = 0;
 float    noticeBudgetWh      = 0;
 bool     noticeBudgetCleared = false;
 
+// Last resetEnergyAt seen from the database, unix ms. Edge-triggered exactly
+// like cycleStartedAt and budgetClearedAt: the meter acts when the value
+// DIFFERS from the one it last saw, not on its presence, so the signal
+// survives a reboot without re-firing. Persisted for that reason.
+uint64_t lastEnergyResetAt   = 0;
+uint32_t energyResetNoticeUntil = 0;
+
 // True whenever applyBalanceGate() has the relays forced off for zero
 // credit. Authoritative, not just informational: runAlgorithm() and
 // applyOverrides() both check it and stand down while it's set, so the
@@ -789,6 +796,7 @@ void loadNVS() {
   tokenBal      = prefs.getFloat("tBal", 0.0f);
   tokenBalKnown = prefs.getBool("tKnown", false);
   voltageCal    = prefs.getFloat("vcal", VOLTAGE_CAL_DEFAULT);
+  lastEnergyResetAt = prefs.getULong64("eRst", 0ULL);
   prefs.end();
 
   // A value persisted by an older build (or a corrupted read) must not be
@@ -815,6 +823,7 @@ void saveNVS() {
   prefs.putFloat("tBal", tokenBal);
   prefs.putBool("tKnown", tokenBalKnown);
   prefs.putFloat("vcal", voltageCal);
+  prefs.putULong64("eRst", lastEnergyResetAt);
   prefs.end();
 }
 
@@ -1204,6 +1213,52 @@ void startNewCycle(uint64_t stamp, const char* reason) {
 }
 
 /* ---------------------------------------------------------------------------
+ *  Zeroes the module's own lifetime energy register.
+ *
+ *  That register is non-volatile and lives inside the PZEM, not the ESP32,
+ *  so it survives reboots, power cycles and reflashing -- there was no way
+ *  to start a deployment from a genuine zero, and a meter fresh out of a
+ *  drawer typically carries a couple of hundred watt-hours of bench testing.
+ *
+ *  The baseline MUST move with it. cycleWh is lifetime minus baseline, so
+ *  zeroing the register while leaving a baseline of, say, 186 Wh makes that
+ *  difference negative; it clamps to zero and then STAYS at zero until real
+ *  consumption climbs back past 186 Wh, silently under-reporting a whole
+ *  186 Wh of a household's usage. The two are only ever correct together.
+ *
+ *  Which is also why the baseline is only touched if the module actually
+ *  acknowledged the reset. A failed reset with a zeroed baseline would do
+ *  the opposite and jump the day's total straight to the full lifetime
+ *  figure. On failure the stamp is still recorded, so a signal that cannot
+ *  succeed is not retried against the module every two seconds forever.
+ *
+ *  The oracle needs no special handling: a lifetime counter going backwards
+ *  is exactly the negative-delta case burn.ts already rebaselines on, so
+ *  nothing is burned twice.
+ * -------------------------------------------------------------------------*/
+void performEnergyReset(uint64_t stamp) {
+  bool ok = pzem.resetEnergy();
+  lastEnergyResetAt = stamp;
+
+  if (!ok) {
+    Serial.println("[RESET] pzem.resetEnergy() failed -- baseline deliberately left alone");
+    saveNVS();
+    return;
+  }
+
+  meas.energy        = 0;
+  budget.baselineWh  = 0;
+  budget.baselineSet = true;
+  budget.cycleWh     = 0;
+  budget.percent     = 0;
+  saveNVS();
+
+  energyResetNoticeUntil = millis() + 4000UL;
+  beepBudgetSet();
+  Serial.println("[RESET] energy counter zeroed, baseline re-taken at 0 Wh");
+}
+
+/* ---------------------------------------------------------------------------
  *  Local fallback. If no cycle signal has arrived from the app/cron for
  *  longer than the grace period, roll the cycle on this device instead.
  *  budgetWh is a daily allowance, so rolling locally grants exactly one
@@ -1589,6 +1644,16 @@ void lcdBudgetNotice() {
   lcdRow(3, "  resets at 00:00");
 }
 
+// Shown over the live screen for a few seconds after the energy counter is
+// zeroed, so the reset is visibly acknowledged on the meter itself rather
+// than only inferable from E dropping to 0.
+void lcdEnergyResetNotice() {
+  lcdRow(0, "   ENERGY RESET");
+  lcdRow(1, "");
+  lcdRow(2, "  Counter zeroed");
+  lcdRow(3, "  Now measuring from 0");
+}
+
 void lcdDeviceId() {
   lcd.clear();
   lcd.setCursor(0,0); lcd.print("Device ID:");
@@ -1930,6 +1995,22 @@ void pushState() {
     // without it the first run after flashing would read the jump from a
     // cycle-scale checkpoint to a lifetime reading as one enormous burn.
     j.set("energyScale",   "lifetime");
+  } else {
+    // Explicitly NULL these rather than simply omitting them. updateNode
+    // merges, so omitting a field leaves whatever was written last time --
+    // and after a reflash that is a value from the previous firmware, which
+    // the oracle then reads as a current reading. That is not theoretical:
+    // a board flashed before its sensor was connected kept publishing a
+    // stale energyWhInt of 0, the oracle read 0 against a checkpoint of 125,
+    // took it for a counter reset and rebaselined to zero. The moment the
+    // sensor came up reporting its true 208 Wh lifetime, the whole 208
+    // looked unsettled. Nulling deletes the keys, so a meter that has
+    // measured nothing reads as ABSENT -- which burn.ts already refuses to
+    // act on -- rather than as having measured zero.
+    j.set("energyTotalWh");
+    j.set("energyWhInt");
+    j.set("sig");
+    j.set("energyScale");
   }
   j.set("percentUsed", budget.percent);    // 0..100
   j.set("relays/r1",   relayState[0]);
@@ -2044,6 +2125,15 @@ void pullConfig() {
         else       beepBudgetSet();
       }
     }
+  }
+
+  // resetEnergyAt -- READ ONLY, unix ms, edge-triggered like cycleStartedAt
+  // and budgetClearedAt above. Zeroes the module's own lifetime register so
+  // a deployment can start from a true zero rather than from whatever the
+  // sensor accumulated on the bench. See performEnergyReset().
+  if (json.get(result, "resetEnergyAt") && result.success) {
+    uint64_t v = (uint64_t)result.doubleValue;
+    if (v > 0 && v != lastEnergyResetAt) performEnergyReset(v);
   }
 
   // voltageCal -- READ ONLY, optional. Lets this board's voltage trim be
@@ -2396,8 +2486,9 @@ void loop() {
     tLcd = now;
     // Top-up wins a tie: money arriving is the more consequential of the
     // two, and both overlays clear within seconds anyway.
-    if      (ui == UI_LIVE && now < topUpNoticeUntil)  lcdTopUpNotice();
-    else if (ui == UI_LIVE && now < budgetNoticeUntil) lcdBudgetNotice();
+    if      (ui == UI_LIVE && now < topUpNoticeUntil)       lcdTopUpNotice();
+    else if (ui == UI_LIVE && now < budgetNoticeUntil)      lcdBudgetNotice();
+    else if (ui == UI_LIVE && now < energyResetNoticeUntil) lcdEnergyResetNotice();
     else lcdRefresh();
   }
 
