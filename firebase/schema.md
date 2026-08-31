@@ -88,7 +88,7 @@ Append-only, written by `api/oracle/burn.ts` every time it actually burns
 consumption on-chain (never on a no-op run). Exists because the Budget
 page's consumption chart used to be built by scanning on-chain burn events
 directly (`src/services/contractEvents.ts`), which only ever sees the last
-~3,000 blocks -- on Amoy's ~2s block time, roughly 100 minutes -- nowhere
+~3,000 blocks -- on Sepolia's ~12s block time, about ten hours -- nowhere
 near enough for a 7/14/30-day trend given how infrequently the burn oracle
 actually runs (see `.github/workflows/burn-oracle.yml`'s own comment on how
 irregular GitHub Actions' schedule is in practice). This log has no such

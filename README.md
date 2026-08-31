@@ -2,13 +2,13 @@
 
 **IoT-based Secured Smart Energy Budgeting System with Priority Load Shedding** — a final-year engineering project.
 
-An ESP32 + PZEM-004T V4 hardware meter measures household electricity, enforces a prepaid energy budget by shedding loads in priority order, and represents prepaid electricity credit as ERC-20 tokens (1 token = 1 watt-hour) on the **Polygon Amoy testnet**. Households can transfer surplus credit to one another, the way mobile airtime is shared.
+An ESP32 + PZEM-004T V4 hardware meter measures household electricity, enforces a prepaid energy budget by shedding loads in priority order, and represents prepaid electricity credit as ERC-20 tokens (1 token = 1 watt-hour) on the **Ethereum Sepolia testnet**. Households can transfer surplus credit to one another, the way mobile airtime is shared.
 
 This repository contains the four software components of the system:
 
 | Component | What it is | Status |
 |---|---|---|
-| [`/contract`](contract) | ERC-20 token contract (`EnergiToken` / `ENGY`) + Hardhat deploy tooling | ✅ Deployed to Polygon Amoy |
+| [`/contract`](contract) | ERC-20 token contract (`EnergiToken` / `ENGY`) + Hardhat deploy tooling | ✅ Deployed to Ethereum Sepolia |
 | [`/firebase`](firebase) | Realtime Database schema, security rules, mock-data seed script | ✅ Live |
 | [`/app`](app) | Expo Router app — login, onboarding, dashboard, budget, P2P transfer, history, profile (mobile + web) | ✅ Functional, verified end to end against real hardware |
 | [`/app/api`](app/api) | Vercel serverless functions — Flutterwave top-up flow, consumption oracle, device pairing, meter reset | ✅ Deployed |
@@ -43,7 +43,7 @@ This repository contains the four software components of the system:
                                                         ▼         │ balanceOf / transfer / events
                                               ┌──────────────────────────┐
                                               │  EnergiToken (ENGY)       │
-                                              │  ERC-20, Polygon Amoy     │
+                                              │  ERC-20, Ethereum Sepolia     │
                                               │  oracle-gated mint/burn   │
                                               └──────────────────────────┘
                                                           ▲
@@ -73,10 +73,10 @@ Meters are keyed by `/meters/{deviceId}` (a 6-hex-character code derived from th
 
 ## Live deployment
 
-- **Contract:** `EnergiToken` (ENGY) at [`0xC1583007087F596f37396E38D949C3EacfaC58c5`](https://amoy.polygonscan.com/address/0xC1583007087F596f37396E38D949C3EacfaC58c5) on Polygon Amoy (chain ID `80002`) — redeployed to add the on-chain `pendingBurn`/spendable-balance guard (double-spend fix, see Security notes below)
+- **Contract:** `EnergiToken` (ENGY) at [`0x8493324De9578BF390092ed6c4a5b1033fBF8048`](https://sepolia.etherscan.io/address/0x8493324De9578BF390092ed6c4a5b1033fBF8048) on Ethereum Sepolia (chain ID `11155111`) — redeployed to add the on-chain `pendingBurn`/spendable-balance guard (double-spend fix, see Security notes below)
 - **Oracle/deployer wallet (testnet only):** `0xDC86E1E8A5C72cce432E99483A20B19802A47ccD`
 - **Web app + API:** [energitoken.vercel.app](https://energitoken.vercel.app) (auto-deploys from `main` via the Vercel GitHub integration)
-- **Network:** Polygon Amoy testnet exclusively. **Never Mumbai** — it was shut down in 2024.
+- **Network:** Ethereum Sepolia testnet (chain ID `11155111`) exclusively. Migrated from Polygon Amoy on 2026-08-31, because Amoy's faucets had become unobtainable without an existing mainnet balance and the oracle wallet could no longer be refuelled.
 
 ---
 
@@ -88,7 +88,7 @@ energitoken/
 │   ├── contracts/EnergiToken.sol
 │   ├── scripts/deploy.ts       # deploys + writes address/ABI into app/src/config/contract.json
 │   ├── test/EnergiToken.test.ts
-│   └── hardhat.config.ts       # configured for Polygon Amoy
+│   └── hardhat.config.ts       # configured for Ethereum Sepolia
 │
 ├── firebase/          # Realtime Database schema, rules, and seed tooling
 │   ├── schema.md               # full data model documentation
@@ -122,7 +122,7 @@ energitoken/
 ### Prerequisites
 
 - Node.js 18+
-- A Polygon Amoy RPC endpoint (the public one works fine for testnet use)
+- A Sepolia RPC endpoint (the public one works fine for testnet use)
 - A Firebase project with Realtime Database enabled
 - A [Privy](https://dashboard.privy.io) app, with **two app clients** configured (Web and Mobile) — see below
 - For native builds: an [Expo](https://expo.dev) account and the EAS CLI (`npx eas-cli`)
@@ -134,9 +134,9 @@ energitoken/
 ```bash
 cd contract
 npm install
-cp .env.example .env   # fill in AMOY_RPC_URL, DEPLOYER_PRIVATE_KEY, ORACLE_ADDRESS
+cp .env.example .env   # fill in SEPOLIA_RPC_URL, DEPLOYER_PRIVATE_KEY, ORACLE_ADDRESS
 npm test                # run the test suite
-npm run deploy:amoy     # deploy to Polygon Amoy; writes app/src/config/contract.json
+npm run deploy:sepolia     # deploy to Ethereum Sepolia; writes app/src/config/contract.json
 ```
 
 ### 2. Firebase
@@ -208,7 +208,7 @@ See [`app/src/theme`](app/src/theme) for the full palette, typography scale, and
 ## Build order
 
 1. ✅ Scaffold the three sub-projects
-2. ✅ `EnergiToken.sol` written, tested, and deployed to Polygon Amoy
+2. ✅ `EnergiToken.sol` written, tested, and deployed to Ethereum Sepolia
 3. ✅ Firebase schema, security rules, and seed script — live and verified
 4. ✅ All app screens built against mock data with the design system
 5. ✅ Real Privy email-OTP login wired, with the embedded wallet auto-created on first login
@@ -226,7 +226,7 @@ See [`app/src/theme`](app/src/theme) for the full palette, typography scale, and
 ## Security notes
 
 - All secrets (private keys, API keys, service account credentials) live in `.env` files or `serviceAccountKey.json`, all gitignored. `.env.example` files document every variable that needs to be supplied.
-- The deployer/oracle wallet committed to this README is a **freshly generated, testnet-only key** with no real-world funds ever associated with it — safe to disclose for an academic demo, but not reused for anything beyond Amoy testing.
+- The deployer/oracle wallet committed to this README is a **freshly generated, testnet-only key** with no real-world funds ever associated with it — safe to disclose for an academic demo, but not reused for anything beyond Sepolia testing.
 - Firebase Realtime Database denies all public client access; the app only ever reaches it through this project's own `/api` endpoints, which use the Admin SDK and bypass `database.rules.json` by design (the ESP32 meters bypass it too, via their own legacy database secret). `database.rules.json` still encodes a real per-household ACL as defense-in-depth for if a client path is ever reintroduced.
 - Wallet identity is proven by a signed message, not trusted from a request body: `app/api/session/create.ts` recovers the signer from a signature over `buildSessionMessage()` and checks it matches the claimed wallet address before issuing this app's own session token (see "Why does the app never talk to Firebase directly?" above). `app/api/devices.ts`'s `claim`/`unbind` actions derive the caller's wallet the same way.
 - Each meter's `energyWh` is additionally signed with a per-device HMAC key (`app/api/_lib/meterHmac.ts`), derived server-side from one master secret and baked into that device's firmware at flash time. The shared legacy database secret alone can't forge a reading the oracle will actually burn tokens against -- see the doc comment at the top of that file.

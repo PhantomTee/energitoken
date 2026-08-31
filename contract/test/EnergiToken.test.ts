@@ -101,7 +101,7 @@ describe("EnergiToken", () => {
 
     it("cannot be bypassed by calling transfer() directly on the contract", async () => {
       // There is no app layer in this test -- this *is* the direct call a
-      // user could make from Polygonscan's Write tab or a raw ethers script,
+      // user could make from Etherscan's Write tab or a raw ethers script,
       // proving the guard lives on-chain and not just in app-side UI logic.
       await token.connect(oracle).mint(alice.address, 500);
       await token.connect(oracle).setPendingBurn(alice.address, 500);

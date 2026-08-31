@@ -2,7 +2,7 @@
 
 This is my final-year engineering project, and this document is my attempt to write down everything about it in one place: why I built it, how every piece works, and where things actually stand right now rather than where I'd like them to stand.
 
-The short version, if you only read one paragraph: EnergiToken is a prepaid electricity system for Nigerian households. A physical meter (ESP32 plus a PZEM-004T sensor) measures real power draw, a smart contract on Polygon represents the household's remaining electricity credit as an ERC-20 token, and a mobile and web app lets people top up that credit with real money, watch their usage in real time, and send surplus credit to a neighbour the same way people share mobile airtime. When a household is close to running out, the meter itself starts shedding non-critical loads in a priority order instead of just cutting the power entirely.
+The short version, if you only read one paragraph: EnergiToken is a prepaid electricity system for Nigerian households. A physical meter (ESP32 plus a PZEM-004T sensor) measures real power draw, a smart contract on Ethereum Sepolia represents the household's remaining electricity credit as an ERC-20 token, and a mobile and web app lets people top up that credit with real money, watch their usage in real time, and send surplus credit to a neighbour the same way people share mobile airtime. When a household is close to running out, the meter itself starts shedding non-critical loads in a priority order instead of just cutting the power entirely.
 
 ## Why I built this
 
@@ -14,7 +14,7 @@ Putting the credit on a blockchain wasn't a requirement from day one. It became 
 
 The repository is split into four parts that map to four different concerns: the smart contract, the Firebase backend, the app, and a small set of serverless API functions that sit between them.
 
-The contract lives on Polygon's Amoy testnet and only knows about token balances. It doesn't know what a meter is, it doesn't know about Naira or Flutterwave, and it doesn't know who owns which wallet in the real world. Its entire job is minting tokens when a payment is confirmed, burning tokens when the meter reports consumption, and letting people transfer tokens to each other.
+The contract lives on Ethereum's Sepolia testnet and only knows about token balances. It doesn't know what a meter is, it doesn't know about Naira or Flutterwave, and it doesn't know who owns which wallet in the real world. Its entire job is minting tokens when a payment is confirmed, burning tokens when the meter reports consumption, and letting people transfer tokens to each other.
 
 Firebase Realtime Database is the layer that actually knows about physical meters. It stores live voltage, current, and power readings, which relay is on or off, what budget a household has set, and the pairing between a wallet address and a physical device.
 
@@ -32,9 +32,9 @@ Two functions do the real work: `mint(address to, uint256 wh)` runs after a conf
 
 The interesting part I added later in the project is `pendingBurn`. Here's the problem it solves: a household uses electricity continuously, but burns only happen in batches (an oracle job runs every so often, not on every single watt-hour). In the gap between "electricity actually used" and "tokens actually burned," the household's on-chain balance is technically higher than what they've really got left. Without a fix, someone could watch their meter tick down, then quickly transfer their full on-chain balance to a friend right before the burn catches up, and effectively get free electricity. It's the same idea as a bank's posted balance versus available balance: a card swipe drops your available balance immediately even though the transaction hasn't settled.
 
-`pendingBurn[address]` tracks how much a household has used but not yet had burned. The oracle updates it every five minutes with `setPendingBurn`, and the contract's transfer logic (I override OpenZeppelin v5's `_update` hook) checks that a transfer never leaves the sender with less than their pending amount. There's a public `spendableBalanceOf` view that just returns balance minus pending, which is the number the app actually shows and lets people send. I wrote Hardhat tests specifically for the case where someone tries to bypass the app entirely and call `transfer()` straight from Polygonscan's Write tab, because an app-side check alone would have been worthless against that.
+`pendingBurn[address]` tracks how much a household has used but not yet had burned. The oracle updates it every five minutes with `setPendingBurn`, and the contract's transfer logic (I override OpenZeppelin v5's `_update` hook) checks that a transfer never leaves the sender with less than their pending amount. There's a public `spendableBalanceOf` view that just returns balance minus pending, which is the number the app actually shows and lets people send. I wrote Hardhat tests specifically for the case where someone tries to bypass the app entirely and call `transfer()` straight from Etherscan's Write tab, because an app-side check alone would have been worthless against that.
 
-The contract is currently deployed at `0xC1583007087F596f37396E38D949C3EacfaC58c5` on Amoy (chain ID 80002). There's an earlier address in the git history from before the `pendingBurn` fix; that one's superseded now.
+The contract is currently deployed at `0x8493324De9578BF390092ed6c4a5b1033fBF8048` on Sepolia (chain ID 11155111). There's an earlier address in the git history from before the `pendingBurn` fix; that one's superseded now.
 
 ## Firebase: the data model
 
@@ -56,7 +56,7 @@ Budget works on a duration model rather than a flat daily number. A household pi
 
 Transfer lets a household send credit by email, wallet address, or QR code. Typing an email triggers a debounced lookup against the directory, and a resolved contact shows up as a small card with a name and address rather than a raw hex string. Before the transaction actually sends, there's a checklist confirming the recipient resolved, the amount is within the spendable balance, the wallet is on the right network, and there's enough gas, because blockchain transactions fail in ways that are confusing if you don't see them coming. Sending shows a real signing, submitted, and confirmed lifecycle rather than a spinner that just disappears.
 
-History pulls actual on-chain events (mints, burns, and transfers) rather than keeping its own log, so what a household sees is independently verifiable on Polygonscan. There's a separate view of daily consumption as a bar chart for anyone who wants to see their usage pattern over time.
+History pulls actual on-chain events (mints, burns, and transfers) rather than keeping its own log, so what a household sees is independently verifiable on Etherscan. There's a separate view of daily consumption as a bar chart for anyone who wants to see their usage pattern over time.
 
 Profile has account details, the linked meter's code with an option to unlink it, notification preferences, and a language setting that's currently a stub (only English is implemented; I made a deliberate call early on to finish everything else before spending time on translations).
 
