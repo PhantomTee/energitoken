@@ -48,7 +48,7 @@ export default async function handler(req: Req, res: Res) {
 }
 
 /**
- * Server-side device pairing — replaces the insecure direct Firebase write.
+ * Server-side device pairing -- replaces the insecure direct Firebase write.
  *
  * Security improvements over the old client-side flow:
  *  - The caller's wallet is derived from a verified session token, not
@@ -59,7 +59,7 @@ export default async function handler(req: Req, res: Res) {
  *    written by the ESP32 firmware during setup, expires after 1 hour).
  *  - Pairing codes are enforced to be unclaimed and within the window.
  *  - Both bindings (deviceToWallet and walletToDevice) are written by the
- *    Admin SDK — the client has no direct Firebase write access to these paths.
+ *    Admin SDK -- the client has no direct Firebase write access to these paths.
  *  - A wallet can only pair to one device (write-once walletToDevice).
  *  - The claim itself (pendingDevices/{id}/claimed: false -> true) runs as
  *    a Firebase transaction, not a separate read-then-write -- two devices

@@ -4,8 +4,8 @@ import Svg, { Circle } from "react-native-svg";
 /**
  * A small, abstracted nod to Adinkrahene (concentric circles, symbolizing
  * leadership/greatness). Two jobs, one shape:
- * - decorative corner accent (low opacity, single color) — the original use
- * - the literal brand mark in header bars (full opacity, two-tone) — pass
+ * - decorative corner accent (low opacity, single color) -- the original use
+ * - the literal brand mark in header bars (full opacity, two-tone) -- pass
  *   `dotColor` to split the rings from the center dot
  * The same proportions also drive BudgetRing, so the logo and the budget
  * gauge read as the same family of shape.

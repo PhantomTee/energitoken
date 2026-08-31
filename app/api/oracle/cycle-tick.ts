@@ -50,6 +50,34 @@ const WAT_OFFSET_MS = 60 * 60 * 1000; // UTC+1, no DST -- Nigeria's zone, the de
 function watDateString(epochMs: number): string {
   return new Date(epochMs + WAT_OFFSET_MS).toISOString().slice(0, 10); // YYYY-MM-DD in WAT
 }
+
+/** YYYYMMDD, the day-key format the firmware writes consumption samples
+ * under (see pushHistory() in the .ino). */
+function watDayKey(epochMs: number): string {
+  return watDateString(epochMs).replace(/-/g, "");
+}
+
+/** How many days of minute-resolution consumption log to keep. The chart
+ * offers day-by-day browsing, not long-range analysis, and a device writes
+ * 1440 rows a day, so keeping a fortnight bounds a meter at ~20k rows. */
+const HISTORY_RETENTION_DAYS = 14;
+
+/**
+ * Drops consumption-log days that have aged out. Deletes by computed key
+ * rather than listing the node first: listing would pull every sample the
+ * device has ever written just to learn which day-keys exist, which is a
+ * large read to perform on every tick. Sweeping a window of older days
+ * rather than exactly one covers ticks that were skipped entirely (the
+ * GitHub Actions schedule is documented above as unreliable), at the cost
+ * of a handful of deletes that are no-ops.
+ */
+async function pruneHistory(db: ReturnType<typeof adminDb>, deviceId: string): Promise<void> {
+  const now = Date.now();
+  for (let age = HISTORY_RETENTION_DAYS; age < HISTORY_RETENTION_DAYS + 7; age++) {
+    const key = watDayKey(now - age * 24 * 60 * 60 * 1000);
+    await db.ref(`meterHistory/${deviceId}/${key}`).remove();
+  }
+}
 export default async function handler(req: Req, res: Res) {
   if (req.method !== "POST") {
     res.status(405).json({ error: "Method not allowed" });
@@ -107,6 +135,11 @@ async function tickDevice(db: ReturnType<typeof adminDb>, deviceId: string): Pro
     if (!walletSnap.exists()) {
       return { deviceId, ok: false, error: "Device not paired to any wallet" };
     }
+
+    // Housekeeping, deliberately before the budget check below: an
+    // unbudgeted meter still writes a consumption log every minute, so its
+    // old days need ageing out just the same as a budgeted one's.
+    await pruneHistory(db, deviceId);
 
     // No point rolling a cycle for a device that has no budget yet -- there's
     // nothing for the firmware to enforce until the household sets one, and

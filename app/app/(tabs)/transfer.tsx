@@ -81,7 +81,7 @@ function PreflightRow({
   state: boolean | null;
   loading?: boolean;
 }) {
-  const icon = loading ? "…" : state === true ? "✓" : state === false ? "✗" : "—";
+  const icon = loading ? "…" : state === true ? "✓" : state === false ? "✗" : "--";
   const color = loading ? colors.textSecondary : state === true ? colors.success : state === false ? colors.danger : colors.textSecondary;
   return (
     <View style={styles.preflightRow}>
@@ -105,7 +105,7 @@ function describeTransferError(err: unknown): string {
     (anyErr?.shortMessage ?? anyErr?.reason ?? "").includes("SpendableBalanceExceeded");
 
   if (looksLikeSpendableRevert) {
-    return "That amount exceeds your spendable balance — some of your on-chain balance is energy you've already used that hasn't settled yet. Try a smaller amount.";
+    return "That amount exceeds your spendable balance. Some of your on-chain balance is energy you've already used that hasn't settled yet. Try a smaller amount.";
   }
   return err instanceof Error ? err.message : "Something went wrong.";
 }
@@ -350,13 +350,13 @@ export default function TransferScreen() {
       </View>
       {spendableWh !== null && unbudgetedWh !== null && spendableWh !== unbudgetedWh && (
         <Text style={[typography.caption, styles.spendableHint]}>
-          {spendableWh.toLocaleString()} ENGY spendable — the rest is today's remaining budget
+          {spendableWh.toLocaleString()} ENGY spendable. The rest is today's remaining budget
           allowance, set aside so sending it wouldn't leave you short before your next top-up.
         </Text>
       )}
       {balanceWh !== null && spendableWh !== null && balanceWh !== spendableWh && (
         <Text style={[typography.caption, styles.spendableHint]}>
-          On-chain balance is {balanceWh.toLocaleString()} ENGY — the difference is energy you've
+          On-chain balance is {balanceWh.toLocaleString()} ENGY. The difference is energy you've
           already used that hasn't settled on-chain yet, so it can't be sent.
         </Text>
       )}

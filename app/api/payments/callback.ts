@@ -65,7 +65,7 @@ export default async function handler(req: Req, res: Res) {
         res.status(404).json({ error: "Unknown reference" });
         return;
       }
-      // Already processed — idempotent 200 so Flutterwave stops retrying.
+      // Already processed -- idempotent 200 so Flutterwave stops retrying.
       if (claim.order.status === "minted") {
         res.status(200).json({ ok: true, alreadyMinted: true });
         return;
@@ -105,7 +105,7 @@ export default async function handler(req: Req, res: Res) {
     if (verified.amount < order.amountNgn || verified.currency !== "NGN") {
       console.error("payments callback: amount mismatch", { expected: order.amountNgn, got: verified.amount });
       await releaseOrder(txRef, "initial");
-      res.status(400).json({ error: "Amount mismatch — possible tampering" });
+      res.status(400).json({ error: "Amount mismatch -- possible tampering" });
       return;
     }
 
@@ -125,7 +125,7 @@ export default async function handler(req: Req, res: Res) {
       return;
     }
 
-    // Mark as "minting" before we hit the chain — crash-safe intermediate state.
+    // Mark as "minting" before we hit the chain -- crash-safe intermediate state.
     await releaseOrder(txRef, "minting", { flwTransactionId: transactionId, verifiedAt: Date.now() });
 
     let txHash: string;
@@ -152,7 +152,7 @@ export default async function handler(req: Req, res: Res) {
     await sendNotification(order.walletAddress, {
       type: "topup",
       title: "Top-up complete",
-      body: `₦${Number(order.amountNgn).toLocaleString()} payment confirmed — ${units} unit${order.whAmount === 1000 ? "" : "s"} added to your balance.`,
+      body: `₦${Number(order.amountNgn).toLocaleString()} payment confirmed -- ${units} unit${order.whAmount === 1000 ? "" : "s"} added to your balance.`,
     });
 
     res.status(200).json({ ok: true, minted: true, txHash });

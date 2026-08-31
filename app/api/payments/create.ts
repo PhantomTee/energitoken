@@ -15,7 +15,7 @@ type Res = ServerResponse & { status: (code: number) => Res; json: (body: unknow
 // loop -- for negligible extra Firebase read cost.
 const MIN_INTERVAL_BETWEEN_ORDERS_MS = 3_000;
 
-// Tariff — kept in one place server-side so callback.ts and create.ts always
+// Tariff -- kept in one place server-side so callback.ts and create.ts always
 // agree. Exposed via /api/tariff so the app can render it dynamically.
 export const TARIFF = {
   version: process.env.TARIFF_VERSION ?? "1",

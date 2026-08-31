@@ -21,18 +21,18 @@ export default function LoginScreen() {
   // was stuck on a bare spinner with no way out except a manual reload.
   const [recoveryFailed, setRecoveryFailed] = useState(false);
 
-  // Set to true once sendCode() succeeds — prevents a transient
+  // Set to true once sendCode() succeeds -- prevents a transient
   // isAuthenticated=true (Privy v3 partial hydration) from hiding the form.
   const otpSent = useRef(false);
   const didNavigate = useRef(false);
 
   const { isReady, isAuthenticated, walletAddress } = useWallet();
   const { ready, logout } = usePrivy();
-  // NB: the v3 hook exposes `createWallet`, NOT `create` — destructuring the
+  // NB: the v3 hook exposes `createWallet`, NOT `create` -- destructuring the
   // wrong name made this undefined and silently broke wallet creation.
   const { createWallet } = useCreateWallet();
 
-  // No callbacks passed to useLoginWithEmail — inline arrow functions create
+  // No callbacks passed to useLoginWithEmail -- inline arrow functions create
   // new references on every render, which can cause Privy's hook to reset its
   // internal email session state, producing "invalid email and code combination".
   // Drive everything from state.status instead.
@@ -54,7 +54,7 @@ export default function LoginScreen() {
   }, [state.status, state]);
 
   // ── Redirect once wallet is confirmed ────────────────────────────────────
-  // Hand control back to "/" (index.tsx) — it decides onboarding vs dashboard.
+  // Hand control back to "/" (index.tsx) -- it decides onboarding vs dashboard.
   // If this was a fresh OTP login (not a returning session), mark it so index
   // skips any cold-start detours.
   useEffect(() => {
@@ -122,7 +122,7 @@ export default function LoginScreen() {
 
   // Show full-screen spinner only while SDK initialises or a returning user's
   // wallet address is resolving (redirect is imminent). Never show it once the
-  // OTP has been sent — that would hide the code-entry field. Excludes
+  // OTP has been sent -- that would hide the code-entry field. Excludes
   // recoveryFailed so a failed bail-out logout doesn't spin forever.
   const isLoading = !ready || (!otpSent.current && isAuthenticated && !walletAddress && !recoveryFailed);
 

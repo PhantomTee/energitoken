@@ -314,16 +314,27 @@
 #define THRESH_R1       100.0f    // critical now sheds too, once the household's own budget is fully used
 #define HYSTERESIS      3.0f
 
-// This board's PZEM reads voltage low by a small, consistent amount --
-// measured 228-229V against a multimeter reading 234-235V on the same
-// line, roughly a 2.5% offset, typical for these modules without factory
-// calibration. Corrected here in software rather than touching the PZEM's
-// own internal calibration, which carries real risk of permanently
-// miscalibrating the unit for a fix this size. Only voltage is corrected --
-// current/power/energy weren't independently verified against a reference,
-// so they're left as the sensor reports them rather than assuming the same
-// offset applies. Re-measure and adjust this if the board or sensor changes.
-#define VOLTAGE_CAL_FACTOR  1.026f   // 234.5 / 228.5, from the reference readings above
+// Voltage trim, measured against a multimeter on the same line. Corrected
+// in software rather than by touching the PZEM's own internal calibration,
+// which carries real risk of permanently miscalibrating the unit for a fix
+// this size. Only voltage is corrected -- current/power/energy were never
+// independently verified against a reference, so applying the same offset
+// to them would be an assumption rather than a measurement.
+//
+// No longer a compile-time constant, because it has already had to change
+// twice. It was 1.026 (from 228-229V raw against a multimeter reading
+// 234-235V). On 2026-08-31 the meter displayed 230-232V against the same
+// multimeter reading 224V -- backing the 1.026 out gives a raw sensor value
+// of 224-226V, i.e. the sensor was reading correctly and the old factor had
+// become the source of the error rather than the correction for it. The
+// resulting 0.995 is a trim of half a percent, inside the PZEM's own +/-0.5%
+// rated accuracy class for voltage.
+//
+// Now persisted in NVS and overridable at runtime from
+// /meters/{id}/voltageCal, so a re-trim never costs another reflash.
+#define VOLTAGE_CAL_DEFAULT  0.995f   // 224.0 / 225.1, from the 2026-08-31 reference readings
+#define VOLTAGE_CAL_MIN      0.90f    // clamped: a bad remote write must not silently skew billing
+#define VOLTAGE_CAL_MAX      1.10f
 
 #define POLL_MS             2000UL
 #define LCD_MS              1000UL
@@ -333,10 +344,28 @@
 // short enough that you never wait long for the other face.
 #define LCD_ALT_MS          4000UL
 #define FB_PUSH_MS          5000UL
+// How often a durable consumption sample is written to /meterHistory. The
+// live node at /meters/{id} is overwritten on every push and keeps no
+// series at all, so nothing in the system could plot consumption over time
+// or show yesterday. One sample a minute is fine detail for a household
+// load curve, caps a device at 1440 rows a day, and -- because the sample
+// is keyed by its own local HHMM rather than pushed under a generated key
+// -- a retry or a clock re-sync overwrites the same row instead of
+// duplicating it.
+#define HISTORY_PUSH_MS    60000UL
 #define FB_PULL_MS          2000UL     // was 10s -- arbitrary choice, no real cost reason to keep a single device this slow
 #define OVSTREAM_CHECK_MS     30UL     // how often loop() services the relayOverrides realtime stream
 #define KEY_DEBOUNCE_MS      200UL
-#define MENU_TIMEOUT_MS    15000UL
+// Idle timeout for every non-live screen. Was 15s, which fired while the
+// household was still plainly using the menu: the timer only ever restarted
+// on a fresh PRESSED edge (see handleKeys()), so time spent reading a screen
+// rather than pressing anything counted as idle. Fifteen seconds is not
+// enough to read a six-character device ID off the LCD and type it into the
+// app, nor to sit on the relay/balance screens and take in what they say --
+// both are screens whose entire purpose is being read, not operated. The
+// timeout exists so a menu left open on a wall-mounted meter eventually
+// returns to the live reading, which one minute serves just as well.
+#define MENU_TIMEOUT_MS    60000UL
 // Boot-time budget only. The meter is built to run offline and shed
 // correctly without a network at all, so blocking half a minute here for a
 // connection it doesn't strictly need was wasted time -- worst case in the
@@ -360,6 +389,16 @@
 
 // Consecutive failed PZEM reads before the display marks the reading stale.
 #define PZEM_STALE_COUNT        5
+
+// Consecutive failed reads before the meter stops trusting the relay
+// positions a dead sensor left behind and moves to a defined safe state
+// (see applySensorFailSafe()). At POLL_MS this is about two minutes, long
+// enough that a brief bus glitch or a single dropped Modbus frame never
+// trips it, short enough that a genuinely disconnected sensor doesn't leave
+// unmetered load running all day. Deliberately far above PZEM_STALE_COUNT:
+// marking the display stale is cosmetic and should happen quickly, moving
+// the relays is not and should not.
+#define PZEM_FAILSAFE_COUNT    60
 
 // How often manual overrides and the zero-balance gate are reconciled.
 // Independent of POLL_MS/PZEM entirely -- see the comment on the loop()
@@ -439,6 +478,15 @@ struct Meas {
   float energy  = 0;                 // Wh, cumulative from the module
   float freq    = 0, pf = 0;
   bool  valid   = false;
+  // Latched true by the first successful read of this boot and never
+  // cleared. pushState() refuses to publish or sign an energy figure before
+  // this is set: until the sensor has answered once, meas.energy is still
+  // the struct's zero default, and publishing a signed zero would read to
+  // the oracle as the meter's lifetime counter having reset. It would
+  // rebaseline its checkpoint to zero, and the first genuine reading
+  // afterwards would then look like the entire lifetime total had been
+  // consumed since the last burn.
+  bool  everValid = false;
 } meas;
 
 struct Budget {
@@ -485,6 +533,16 @@ int lastSeenYday = -1;
 // Consecutive PZEM read failures. Reset to zero on any successful read.
 uint16_t pzemFailCount = 0;
 
+// True once the sensor has been unresponsive long enough to stop trusting
+// the relay positions it left behind -- see applySensorFailSafe(). Same
+// authoritative-flag pattern as balanceGated/budgetGated below.
+bool sensorFailSafe = false;
+
+// Live voltage trim (see VOLTAGE_CAL_DEFAULT). Loaded from NVS at boot and
+// overridable from /meters/{id}/voltageCal, so re-trimming this board never
+// requires rebuilding and reflashing the firmware.
+float voltageCal = VOLTAGE_CAL_DEFAULT;
+
 // true = CLOSED = load powered
 bool  relayState[4] = { true, true, true, true };
 
@@ -511,10 +569,16 @@ bool     fbReady       = false;
 bool     pairingActive = false;
 uint32_t pairingStart  = 0;
 
-uint32_t tPoll = 0, tLcd = 0, tPush = 0, tPull = 0, tPairCheck = 0, tPairBeep = 0, tCycle = 0, tOverride = 0, tOvStream = 0;
+uint32_t tPoll = 0, tLcd = 0, tPush = 0, tPull = 0, tPairCheck = 0, tPairBeep = 0, tCycle = 0, tOverride = 0, tOvStream = 0, tHistory = 0;
 
 enum Ui { UI_LIVE, UI_MENU, UI_DAYS, UI_RELAYS, UI_BAL, UI_ID, UI_PAIR };
 Ui       ui         = UI_LIVE;
+// Where BACK should land from the read-only screens (relays, balance,
+// device ID). They are reachable two ways -- through the menu, or by the
+// '3'/'0' shortcuts straight from the live screen -- and used to exit
+// unconditionally into the menu, so a shortcut pressed from the live screen
+// dumped the household somewhere they had never been.
+Ui       uiReturn   = UI_LIVE;
 int      menuIdx    = 0;
 uint32_t menuTouch  = 0;
 uint32_t inputDays  = DEFAULT_PERIOD_DAYS;
@@ -528,6 +592,17 @@ float    tokenBal   = 0;
 bool     tokenBalKnown     = false;
 uint32_t topUpNoticeUntil  = 0;      // millis() deadline; live screen shows the top-up notice until then
 float    lastTopUpAmount   = 0;
+
+// Same transient-overlay mechanism as the top-up notice above, for the
+// moment a budget arrives from the app or is cleared. Setting a budget used
+// to change the live screen's third row and nothing else -- a household
+// that pressed Set Budget on their phone and glanced at the meter had no
+// confirmation the meter had actually received it, only a row that looked
+// slightly different from the one before. Doesn't touch `ui`, so whatever
+// screen was open resumes by itself once the deadline passes.
+uint32_t budgetNoticeUntil   = 0;
+float    noticeBudgetWh      = 0;
+bool     noticeBudgetCleared = false;
 
 // True whenever applyBalanceGate() has the relays forced off for zero
 // credit. Authoritative, not just informational: runAlgorithm() and
@@ -580,6 +655,10 @@ void beepCutoff(uint8_t tierIdx) {
   }
 }
 void beepTopUp()  { beep(600, 0, 1); }
+// Three short chirps -- deliberately unlike the single long top-up tone and
+// the two-tone pairing pattern, so "the meter took my budget" is audibly
+// distinct from "money arrived" without having to look at the screen.
+void beepBudgetSet() { beep(120, 80, 3); }
 void beepKey()    { beep( 25, 0, 1); }
 void beepPair()   { beep(200, 120, 2); }
 
@@ -678,6 +757,23 @@ uint64_t unixMillis() {
   return (uint64_t)now * 1000ULL;
 }
 
+// Do two unix-ms timestamps fall on the same WAT calendar day? The process
+// timezone is fixed to WAT-1 by initClock(), so localtime_r() already gives
+// West Africa Time and this is the same "compare calendar dates, not elapsed
+// time" test api/oracle/cycle-tick.ts applies server-side with its
+// watDateString(). Used by pullConfig() to tell a genuine new-day roll from
+// a cron tick that is merely restating a day this meter has already rolled
+// itself. Returns false if either stamp is zero (nothing to compare).
+bool sameLocalDay(uint64_t aMs, uint64_t bMs) {
+  if (aMs == 0 || bMs == 0) return false;
+  time_t a = (time_t)(aMs / 1000ULL);
+  time_t b = (time_t)(bMs / 1000ULL);
+  struct tm ta, tb;
+  localtime_r(&a, &ta);
+  localtime_r(&b, &tb);
+  return ta.tm_yday == tb.tm_yday && ta.tm_year == tb.tm_year;
+}
+
 /* ===========================================================================
  *  SECTION 7 — NON-VOLATILE STORAGE
  * ===========================================================================*/
@@ -692,7 +788,14 @@ void loadNVS() {
   budget.budgetClearedAt = prefs.getULong64("bclr", 0ULL);
   tokenBal      = prefs.getFloat("tBal", 0.0f);
   tokenBalKnown = prefs.getBool("tKnown", false);
+  voltageCal    = prefs.getFloat("vcal", VOLTAGE_CAL_DEFAULT);
   prefs.end();
+
+  // A value persisted by an older build (or a corrupted read) must not be
+  // able to put the trim somewhere billing-relevant and implausible.
+  if (!(voltageCal >= VOLTAGE_CAL_MIN && voltageCal <= VOLTAGE_CAL_MAX))
+    voltageCal = VOLTAGE_CAL_DEFAULT;
+  Serial.printf("[NVS] voltageCal=%.4f\n", voltageCal);
 
   Serial.printf("[NVS] budgetWh=%.0f baseline=%.0f budgetSet=%d baselineSet=%d\n",
                 budget.totalWh, budget.baselineWh,
@@ -711,6 +814,7 @@ void saveNVS() {
   prefs.putULong64("bclr", budget.budgetClearedAt);
   prefs.putFloat("tBal", tokenBal);
   prefs.putBool("tKnown", tokenBalKnown);
+  prefs.putFloat("vcal", voltageCal);
   prefs.end();
 }
 
@@ -780,13 +884,14 @@ bool readPZEM() {
     meas.valid = false;
     return false;
   }
-  meas.voltage = v * VOLTAGE_CAL_FACTOR;   // corrected against a multimeter reference, see the #define above
+  meas.voltage = v * voltageCal;           // trimmed against a multimeter reference, see VOLTAGE_CAL_DEFAULT
   meas.current = i;
   meas.power   = p;
   meas.energy  = e * 1000.0f;                       // kWh -> Wh
   meas.freq    = isnan(f)  ? 0 : f;
   meas.pf      = isnan(pf) ? 0 : pf;
   meas.valid   = true;
+  meas.everValid = true;
   return true;
 }
 
@@ -833,6 +938,11 @@ void applyOverrides() {
   // the daily allowance.
   if (balanceGated) return;
   if (budgetGated) return;
+  // Same reasoning for the sensor safe state: with no working sensor there
+  // is no consumption accounting, so letting a stale "force on" override
+  // re-close a tier this meter just shed would put unmetered load straight
+  // back on and start the two writers fighting again.
+  if (sensorFailSafe) return;
   for (uint8_t i = 0; i < 4; i++) {
     if (!overridePresent[i]) continue;          // no key means auto
     bool want = overrideValue[i];
@@ -953,10 +1063,70 @@ void applyBudgetGate() {
   }
 }
 
+/* ---------------------------------------------------------------------------
+ *  Defined safe state for a sensor that has stopped answering.
+ *
+ *  Previously a dead PZEM simply froze the relays: readPZEM() returned
+ *  false, meas.valid went false, runAlgorithm() returned at its first line,
+ *  and whatever positions the relays happened to be in stayed that way
+ *  indefinitely. The only sign was a "!!" marker on the live screen. A meter
+ *  with a pulled sensor lead would therefore keep every tier energised for
+ *  as long as it was left alone, with no consumption accounting behind it at
+ *  all -- the budget silently stops being enforced while the household keeps
+ *  drawing power.
+ *
+ *  The safe state is deliberately NOT "open everything". Cutting a
+ *  household's fridge and lights because a Modbus lead worked loose is a
+ *  worse outcome than the unmetered draw of the critical tier alone. So
+ *  critical is held ON and every discretionary tier above it is opened:
+ *  consumption drops to what the household genuinely cannot do without,
+ *  and the condition is audible and visible rather than silent.
+ *
+ *  Sits below both absolute gates in the precedence order -- if the
+ *  household has no credit, or has spent their whole allowance, those
+ *  decisions still stand and this must not reopen critical against them.
+ *  Self-releases the same way the budget gate does: pzemFailCount returns to
+ *  zero on the first successful read, so this simply recomputes as false.
+ * -------------------------------------------------------------------------*/
+void applySensorFailSafe() {
+  bool wasSafe   = sensorFailSafe;
+  sensorFailSafe = (pzemFailCount >= PZEM_FAILSAFE_COUNT);
+
+  if (sensorFailSafe && !wasSafe)
+    Serial.printf("[SAFE] sensor unresponsive for %u reads -- shedding discretionary tiers, holding critical\n",
+                  pzemFailCount);
+  if (!sensorFailSafe && wasSafe)
+    Serial.println("[SAFE] sensor recovered -- normal control resumed");
+
+  // The absolute gates own the relays outright while they're set; standing
+  // down here keeps this from becoming a third writer fighting them.
+  if (balanceGated || budgetGated) return;
+  if (!sensorFailSafe) return;
+
+  if (!relayState[0]) setRelay(0, true);
+  for (uint8_t i = 1; i < 4; i++) {
+    if (relayState[i]) setRelay(i, false);
+  }
+}
+
 void runAlgorithm() {
   if (!meas.valid) return;
-  if (balanceGated) return;   // no purchased credit: the gate owns the relays, not this
-  if (budgetGated) return;    // daily allowance fully used: same treatment, see applyBudgetGate()
+
+  // MEASUREMENT first, CONTROL second, with the gate checks between them.
+  //
+  // The gate checks used to sit at the very top of this function, which
+  // meant they skipped the accounting below as well as the switching. Once
+  // budgetGated latched at 100%, cycleWh and percent both froze: the "E:"
+  // figure on the live screen stopped climbing and stayed at whatever it
+  // read the moment the cap was hit, so it was no longer the day's total.
+  // percent freezing was worse than cosmetic -- applyBudgetGate() derives
+  // budgetGated FROM percent, so a frozen percent could only ever be
+  // cleared by a cycle roll, never by the household raising their budget.
+  //
+  // Measuring is not the same act as switching, and nothing about a gate
+  // being set makes the meter's own arithmetic wrong. The gates exist to
+  // decide who owns the relays, so they now guard only the evalChannel()
+  // calls at the bottom.
 
   // Capture a baseline only when none exists. A baseline restored from
   // flash by loadNVS() is authoritative and must survive a power cut,
@@ -980,6 +1150,14 @@ void runAlgorithm() {
   budget.percent = (budget.totalWh > 0)
                  ? (budget.cycleWh / budget.totalWh) * 100.0f
                  : 0.0f;
+
+  // ---- control below this line; measurement above it is unconditional ----
+  // Whichever gate is set owns the relays outright, so the threshold
+  // evaluation below must stand down -- but only the evaluation. Returning
+  // any earlier than this would take the accounting above down with it,
+  // which is exactly the bug described at the top of this function.
+  if (balanceGated) return;   // no purchased credit: the gate owns the relays, not this
+  if (budgetGated) return;    // daily allowance fully used: same treatment, see applyBudgetGate()
 
   evalChannel(3, THRESH_R4);      // luxury first
   evalChannel(2, THRESH_R3);
@@ -1006,6 +1184,16 @@ void startNewCycle(uint64_t stamp, const char* reason) {
   if (meas.valid) {
     budget.baselineWh  = meas.energy;
     budget.baselineSet = true;
+  } else {
+    // No usable reading at the moment of the roll (sensor mid-failure, or a
+    // midnight that landed before the first successful read of this boot).
+    // Clearing baselineSet hands the capture to runAlgorithm(), which takes
+    // a fresh baseline on the next valid read. Leaving the OLD baseline in
+    // place instead silently undid the roll: cycleWh was zeroed here, then
+    // immediately recomputed as meas.energy minus a baseline belonging to
+    // the previous day, so the counter jumped straight back to yesterday's
+    // total on the very next poll.
+    budget.baselineSet = false;
   }
   budget.cycleWh  = 0;
   budget.percent  = 0;
@@ -1023,7 +1211,12 @@ void startNewCycle(uint64_t stamp, const char* reason) {
  *  failed cron from stranding the household at critical-only indefinitely.
  * -------------------------------------------------------------------------*/
 bool cycleOverdue() {
-  if (!budget.budgetSet) return false;          // nothing to roll yet
+  // No budgetSet check here either, for the same reason as
+  // checkLocalMidnight(): this fallback is what rolls the day on a meter
+  // that never gets NTP, and an unbudgeted meter needs its E figure reset
+  // just as much as a budgeted one. A device that has not established a
+  // cycle at all has nothing to measure elapsed time against yet.
+  if (budget.cycleStartedAt == 0 && cycleLocalStart == 0) return false;
 
   uint64_t now = unixMillis();
   if (now > 0 && budget.cycleStartedAt > 0)
@@ -1090,7 +1283,17 @@ void checkLocalMidnight() {
     // this board was off, so roll it now. Same day -> genuinely mid-cycle,
     // leave it alone (the original no-spurious-mid-day-reset intent).
     lastSeenYday = tmNow.tm_yday;
-    if (!budget.budgetSet || budget.cycleStartedAt == 0) return;
+
+    // A board with no cycle recorded yet establishes one now, so "this
+    // cycle" is always a well-defined span. Without it, cycleStartedAt sat
+    // at zero until the household first set a budget, and the E figure on
+    // the live screen had no defined start.
+    if (budget.cycleStartedAt == 0) {
+      uint64_t startStamp = (uint64_t)now * 1000ULL;
+      startNewCycle(startStamp, "first cycle established at clock sync");
+      publishCycleStartedAt(startStamp);
+      return;
+    }
 
     time_t storedSec = (time_t)(budget.cycleStartedAt / 1000ULL);
     struct tm tmStored;
@@ -1105,7 +1308,16 @@ void checkLocalMidnight() {
   if (tmNow.tm_yday == lastSeenYday) return;
 
   lastSeenYday = tmNow.tm_yday;
-  if (!budget.budgetSet) return;     // nothing to roll if no budget is set yet
+
+  // Rolls regardless of whether a budget is set. This used to return here
+  // on !budgetSet, on the reasoning that there was no allowance to refill --
+  // true, but the cycle is also what defines the "E:" figure the live screen
+  // reports, and an unbudgeted meter therefore never reset it. Consumption
+  // accumulated from whenever the baseline was first captured and grew
+  // without bound, so a household running unrestricted saw a number that
+  // looked like a daily total and was not one. Rolling with no budget set
+  // costs nothing -- percent stays 0 while totalWh is 0, so no relay
+  // decision changes -- and makes E mean the same thing in both cases.
 
   uint64_t stamp = (uint64_t)now * 1000ULL;
   startNewCycle(stamp, "local midnight (NTP)");
@@ -1123,13 +1335,65 @@ void lcdBoot() {
   lcd.setCursor(0,3); lcd.print("Please wait");
 }
 
+// Prints s on `row` padded to the full width, so a shorter line never
+// leaves the previous screen's trailing characters stranded on the right.
+// Screens redrawn on a timer use this instead of lcd.clear(): clearing on
+// every refresh makes the whole display visibly flicker once a second.
+void lcdRow(uint8_t row, const char* s) {
+  char pad[LCD_COLS + 1];
+  snprintf(pad, sizeof(pad), "%-*s", LCD_COLS, s);
+  lcd.setCursor(0, row);
+  lcd.print(pad);
+}
+
+/* ---------------------------------------------------------------------------
+ *  Budget bar.
+ *
+ *  The old version drew eight whole blocks, one per 12.5% of the budget, so
+ *  the bar was blind to anything finer than an eighth: a household could
+ *  spend a tenth of their day's allowance and watch a completely empty bar,
+ *  then see it jump a whole cell at once. On the figure people actually
+ *  watch to decide whether to switch something off, that is too coarse to
+ *  act on.
+ *
+ *  An HD44780 character cell is five pixel columns wide, and the controller
+ *  has eight CGRAM slots for user-defined glyphs. Defining five glyphs --
+ *  one to five columns filled -- lets a cell be drawn partially full, so the
+ *  same eight cells resolve 5x finer: 40 steps of 2.5% each instead of 8 of
+ *  12.5%. Same width, same row layout, no extra hardware.
+ * -------------------------------------------------------------------------*/
+#define BAR_CELLS 8
+#define BAR_SUB   5     // pixel columns per character cell
+
+// Bits are the cell's five columns, bit 4 leftmost, so these fill from the
+// left. Full height (all eight pixel rows) reads as a solid bar at a glance.
+uint8_t BAR_GLYPH[BAR_SUB][8] = {
+  { 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10 },   // 1 column
+  { 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18 },   // 2
+  { 0x1C, 0x1C, 0x1C, 0x1C, 0x1C, 0x1C, 0x1C, 0x1C },   // 3
+  { 0x1E, 0x1E, 0x1E, 0x1E, 0x1E, 0x1E, 0x1E, 0x1E },   // 4
+  { 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F },   // 5 = full cell
+};
+
 void lcdBar(float pct) {
   // 8 cells + 2 brackets = 10 chars; label is 10 chars; row totals 20.
-  int n = (int)((pct / 100.0f) * 8.0f);
-  if (n < 0) n = 0;
-  if (n > 8) n = 8;
+  if (pct < 0)   pct = 0;
+  if (pct > 100) pct = 100;
+
+  uint16_t steps = (uint16_t)((pct / 100.0f) * (BAR_CELLS * BAR_SUB) + 0.5f);
+
+  // A budget that has been touched at all shows at least one column, rather
+  // than rounding down into an empty bar that looks like nothing was spent.
+  if (steps == 0 && pct > 0) steps = 1;
+
   lcd.print('[');
-  for (int i = 0; i < 8; i++) lcd.print(i < n ? (char)255 : ' ');
+  for (uint8_t c = 0; c < BAR_CELLS; c++) {
+    uint16_t base   = (uint16_t)c * BAR_SUB;
+    uint16_t filled = (steps > base) ? (steps - base) : 0;
+    if (filled == 0)            lcd.print(' ');
+    else if (filled >= BAR_SUB) lcd.write((uint8_t)(BAR_SUB - 1));   // full cell
+    else                        lcd.write((uint8_t)(filled - 1));    // partial
+  }
   lcd.print(']');
 }
 
@@ -1180,10 +1444,30 @@ void lcdLive() {
   snprintf(l, sizeof(l), "P:%5.0fW E:%6.0fWh", meas.power, budget.cycleWh);
   lcd.print(l);
 
+  // Row 2 now says WHETHER a budget is in force before it says how much of
+  // one has been used. With no budget set, budget.percent sits at a hard 0
+  // (runAlgorithm() leaves it there whenever totalWh is zero), so the old
+  // unconditional "Bud:  0.0% [        ]" rendered identically to a freshly
+  // rolled budget with nothing spent yet -- there was no way to tell "no
+  // limit is being enforced" from "brand new day, nothing used". The two
+  // gated states get their own text for the same reason: at zero credit or
+  // a fully spent allowance every relay is open, and a bar pinned at either
+  // end doesn't say which of the two put it there. Each string is padded to
+  // exactly 20 columns so a longer previous state leaves nothing stranded.
   lcd.setCursor(0,2);
-  snprintf(l, sizeof(l), "Bud:%5.1f%%", budget.percent);
-  lcd.print(l);
-  lcdBar(budget.percent);
+  if (balanceGated) {
+    lcd.print("NO CREDIT: all off  ");
+  } else if (sensorFailSafe) {
+    lcd.print("SENSOR FAULT: safe  ");
+  } else if (!budget.budgetSet) {
+    lcd.print("Budget: OFF no limit");
+  } else if (budgetGated) {
+    lcd.print("Budget SPENT: 100%  ");
+  } else {
+    snprintf(l, sizeof(l), "Bud:%5.1f%%", budget.percent);
+    lcd.print(l);
+    lcdBar(budget.percent);
+  }
 
   lcd.setCursor(0,3);
   for (uint8_t i = 0; i < 4; i++) {
@@ -1210,33 +1494,56 @@ void lcdDays() {
   lcd.setCursor(0,0); lcd.print("Set budget days");
   lcd.setCursor(0,1); lcd.print("Days: "); lcd.print(inputDays);
   lcd.setCursor(0,2);
-  if (budget.totalWh > 0 && inputDays > 0) {
+  // budgetWh arriving from the app is ALREADY a daily allowance -- the
+  // Budget screen divides the household's available credit by their chosen
+  // duration before writing it (see setBudgetWh in app/src/services). The
+  // old line divided that daily figure by the day count a second time and
+  // printed the result as "Daily:", which was a number with no meaning:
+  // a 5,000 Wh/day allowance over 30 days displayed as 166.7 Wh. Show the
+  // allowance as it actually stands instead.
+  if (budget.budgetSet && budget.totalWh > 0) {
     lcd.print("Daily: ");
-    lcd.print(budget.totalWh / (float)inputDays, 1);
+    lcd.print(budget.totalWh, 0);
     lcd.print("Wh");
+  } else {
+    lcd.print("No budget set yet");
   }
   lcd.setCursor(0,3); lcd.print("UP/DN   ENT=save");
 }
 
+// All four tiers, one per row. The old version spent row 0 on a "Relay
+// states" title and then had room for only three tiers, silently omitting
+// Luxury -- the tier most likely to actually be shed, and so the one a
+// household checking this screen most wants to see. The screen is reached
+// from a menu entry already labelled "Relay states", so the title was
+// paying a whole row for a word the user had just read.
 void lcdRelays() {
-  lcd.clear();
-  lcd.setCursor(0,0); lcd.print("Relay states");
-  for (uint8_t i = 0; i < 3; i++) {
-    lcd.setCursor(0, i+1);
-    lcd.print((char)('1'+i)); lcd.print(' ');
-    lcd.print(TIER_NAME[i]);
-    lcd.setCursor(15, i+1);
-    lcd.print(relayState[i] ? "ON " : "OFF");
-    if (overridePresent[i]) { lcd.setCursor(19, i+1); lcd.print('*'); }
+  char l[32];
+  for (uint8_t i = 0; i < 4; i++) {
+    snprintf(l, sizeof(l), "%c %-12s %-3s %c",
+             (char)('1' + i), TIER_NAME[i],
+             relayState[i] ? "ON" : "OFF",
+             overridePresent[i] ? '*' : ' ');
+    lcdRow(i, l);
   }
 }
 
 void lcdBalance() {
-  lcd.clear();
-  lcd.setCursor(0,0); lcd.print("Token balance");
-  lcd.setCursor(0,1); lcd.print(tokenBal, 0); lcd.print(" ENGY");
-  lcd.setCursor(0,2); lcd.print("= "); lcd.print(tokenBal, 0); lcd.print(" Wh");
-  lcd.setCursor(0,3); lcd.print(wifiUp ? "Synced" : "Offline - cached");
+  char l[32];
+  lcdRow(0, "Token balance");
+  if (tokenBalKnown) {
+    snprintf(l, sizeof(l), "%.0f ENGY", tokenBal);
+    lcdRow(1, l);
+    snprintf(l, sizeof(l), "= %.0f Wh", tokenBal);
+    lcdRow(2, l);
+  } else {
+    // Distinguishes "this board has never been told a balance" from a
+    // genuine zero -- the two drive completely different relay behaviour
+    // (see applyBalanceGate) but both used to print "0 ENGY".
+    lcdRow(1, "--- ENGY");
+    lcdRow(2, "not synced yet");
+  }
+  lcdRow(3, wifiUp ? "Synced" : "Offline - cached");
 }
 
 // Shown in place of the live screen for a few seconds after a top-up is
@@ -1255,6 +1562,27 @@ void lcdTopUpNotice() {
   lcd.print(l);
 }
 
+// Shown over the live screen for a few seconds when a budget is set,
+// changed, or cleared. States the figure the meter actually received, in
+// both the unit it measures (Wh) and the unit the app talks in (units), so
+// a household can confirm at a glance that the two agree.
+void lcdBudgetNotice() {
+  char l[32];
+  if (noticeBudgetCleared) {
+    lcdRow(0, "  BUDGET CLEARED");
+    lcdRow(1, "");
+    lcdRow(2, "  No limit enforced");
+    lcdRow(3, "  All loads restored");
+    return;
+  }
+  lcdRow(0, "    BUDGET SET");
+  snprintf(l, sizeof(l), "  %.0f Wh/day", noticeBudgetWh);
+  lcdRow(1, l);
+  snprintf(l, sizeof(l), "  = %.1f units/day", noticeBudgetWh / 1000.0f);
+  lcdRow(2, l);
+  lcdRow(3, "  resets at 00:00");
+}
+
 void lcdDeviceId() {
   lcd.clear();
   lcd.setCursor(0,0); lcd.print("Device ID:");
@@ -1264,12 +1592,16 @@ void lcdDeviceId() {
 }
 
 void lcdPairing() {
-  lcd.clear();
-  lcd.setCursor(0,0); lcd.print("PAIRING MODE");
-  lcd.setCursor(0,1); lcd.print("ID: "); lcd.print(deviceID);
+  // Redrawn every LCD_MS while pairing is active, so it pads rather than
+  // clears for the same anti-flicker reason as the screens above.
+  char l[32];
+  lcdRow(0, "PAIRING MODE");
+  snprintf(l, sizeof(l), "ID: %s", deviceID.c_str());
+  lcdRow(1, l);
   uint32_t leftMin = (PAIR_WINDOW_MS - (millis() - pairingStart)) / 60000UL;
-  lcd.setCursor(0,2); lcd.print("Open in "); lcd.print(leftMin); lcd.print(" min");
-  lcd.setCursor(0,3); lcd.print("BACK = cancel");
+  snprintf(l, sizeof(l), "Open in %lu min", (unsigned long)leftMin);
+  lcdRow(2, l);
+  lcdRow(3, "BACK = cancel");
 }
 
 void lcdRefresh() {
@@ -1379,6 +1711,15 @@ void handleKeys() {
 
   if (key == NO_KEY || state == IDLE) return;
 
+  // Any key activity at all -- PRESSED, HOLD or RELEASED -- counts as the
+  // household still interacting, so loop()'s idle timeout measures genuine
+  // inactivity. This used to sit further down, below the "act only on a
+  // fresh PRESSED" filter, which meant holding a key to scroll (state goes
+  // PRESSED once, then HOLD for as long as it's down) stopped refreshing
+  // the timer, and a long hold could return to the live screen with the key
+  // still physically pressed.
+  menuTouch = millis();
+
   // '#' on the live screen is ambiguous on purpose: a short tap means enter
   // the menu, a 3 s hold means start pairing, and there's no way to know
   // which one it'll be at the moment it's first pressed. So it can't be
@@ -1416,7 +1757,6 @@ void handleKeys() {
   // its manual debounce timer, now handled by the library instead.
   if (state != PRESSED || !changed) return;
 
-  menuTouch = millis();
   beepKey();
 
   bool up  = (key == '1');
@@ -1427,8 +1767,10 @@ void handleKeys() {
   switch (ui) {
     case UI_LIVE:
       if (ent) { ui = UI_MENU; menuIdx = 0; }
-      if (key == '3') { ui = UI_ID; }    // shortcut: straight to Device ID
-      if (key == '0') { ui = UI_BAL; }   // shortcut: straight to balance
+      // Shortcuts remember they came from the live screen, so BACK returns
+      // there rather than into a menu the household never opened.
+      if (key == '3') { uiReturn = UI_LIVE; ui = UI_ID; }    // shortcut: straight to Device ID
+      if (key == '0') { uiReturn = UI_LIVE; ui = UI_BAL; }   // shortcut: straight to balance
       break;
 
     case UI_MENU:
@@ -1438,9 +1780,9 @@ void handleKeys() {
       if (ent) {
         switch (menuIdx) {
           case 0: inputDays = budget.days; ui = UI_DAYS; break;
-          case 1: ui = UI_RELAYS; break;
-          case 2: ui = UI_BAL;    break;
-          case 3: ui = UI_ID;     break;
+          case 1: uiReturn = UI_MENU; ui = UI_RELAYS; break;
+          case 2: uiReturn = UI_MENU; ui = UI_BAL;    break;
+          case 3: uiReturn = UI_MENU; ui = UI_ID;     break;
         }
       }
       break;
@@ -1457,7 +1799,7 @@ void handleKeys() {
       break;
 
     default:                       // UI_RELAYS, UI_BAL, UI_ID
-      if (bk || ent) ui = UI_MENU;
+      if (bk || ent) ui = uiReturn;
       break;
   }
 
@@ -1540,7 +1882,27 @@ void pushState() {
 
   // Exactly the fields the firmware owns. budgetWh and relayOverrides are
   // read-only here and must never appear in this payload.
-  uint32_t energyWhInt = (uint32_t)(budget.cycleWh > 0 ? budget.cycleWh : 0);
+  //
+  // energyWhInt is the module's LIFETIME cumulative total, not this cycle's
+  // consumption. api/oracle/burn.ts burns
+  //   energyWhInt - burnCheckpoints/{id}/lastBurnedWh
+  // which only settles correctly against a MONOTONIC counter. This used to
+  // push budget.cycleWh, which resets to zero at every midnight roll: the
+  // oracle then saw a negative delta, logged "meter counter reset --
+  // rebaselining checkpoint" and burned NOTHING, so everything consumed
+  // between the last successful burn and midnight went permanently
+  // unsettled. With the burn cron firing irregularly (burn-oracle.yml's own
+  // comment documents 3-7h gaps) that was hours of unbilled consumption
+  // every single day. meas.energy is the PZEM's own lifetime register,
+  // which only goes backwards if the module is reset or replaced -- exactly
+  // the case burn.ts's rebaseline path was actually written for.
+  //
+  // energyWh stays cycle-scoped: the app's budget maths (usedUnits,
+  // percentUsed, getUnbudgetedWh) is all built on "this cycle", so moving
+  // that field would break the Budget and Transfer screens. The lifetime
+  // figure gets its own field for the Dashboard's pending/settled badge,
+  // which has to compare like with like against lastBurnedWh.
+  uint32_t energyWhInt = (uint32_t)(meas.energy > 0 ? meas.energy : 0);
 
   FirebaseJson j;
   j.set("voltage",     meas.voltage);      // V
@@ -1548,9 +1910,21 @@ void pushState() {
   j.set("power",       meas.power);        // W
   j.set("frequency",   meas.freq);         // Hz
   j.set("powerFactor", meas.pf);           // 0..1
-  j.set("energyWh",    budget.cycleWh);    // Wh, current budget cycle only (display)
-  j.set("energyWhInt", energyWhInt);       // Wh, same value floored -- what's actually signed
-  j.set("sig",         signEnergyReading(energyWhInt));
+  j.set("energyWh",    budget.cycleWh);    // Wh, current budget cycle only (app budget maths)
+  // Held back until the sensor has answered at least once this boot -- see
+  // Meas::everValid. updateNode() merges, so omitting these three simply
+  // leaves the last published values in place rather than zeroing them.
+  if (meas.everValid) {
+    j.set("energyTotalWh", meas.energy);   // Wh lifetime, float -- pairs with lastBurnedWh
+    j.set("energyWhInt",   energyWhInt);   // Wh lifetime, floored -- what's actually signed
+    j.set("sig",           signEnergyReading(energyWhInt));
+    // Tells the oracle what energyWhInt counts. burn.ts refuses to settle
+    // across a change in this marker and rebaselines instead, which is what
+    // makes the cycle-scale -> lifetime-scale switch above safe to deploy:
+    // without it the first run after flashing would read the jump from a
+    // cycle-scale checkpoint to a lifetime reading as one enormous burn.
+    j.set("energyScale",   "lifetime");
+  }
   j.set("percentUsed", budget.percent);    // 0..100
   j.set("relays/r1",   relayState[0]);
   j.set("relays/r2",   relayState[1]);
@@ -1561,6 +1935,50 @@ void pushState() {
   String path = "/meters/" + deviceID;
   if (!Firebase.RTDB.updateNode(&fbdo, path.c_str(), &j))
     Serial.println("Push failed: " + fbdo.errorReason());
+}
+
+/* ---------------------------------------------------------------------------
+ *  Durable consumption log.
+ *
+ *  /meters/{id} is a single live snapshot, overwritten on every push, so
+ *  nothing in the system could plot consumption over time or answer "what
+ *  did yesterday look like". The app's own live chart was a ten-minute
+ *  in-memory buffer that emptied whenever the screen was left, and it only
+ *  ever filled while somebody had the app open. This writes the series the
+ *  meter is uniquely placed to record: it is the thing that is always on.
+ *
+ *  Keyed by the sample's own local date and HH:MM rather than pushed under a
+ *  generated key. That makes a write idempotent -- a retry, or two samples
+ *  landing in the same minute after an NTP correction, overwrite one row
+ *  instead of appending a duplicate -- caps a device at 1440 rows per day,
+ *  and lets the server read or delete a whole day as one node.
+ *
+ *  `e` is the LIFETIME register, not cycleWh: consumption between two
+ *  samples is their difference, and cycleWh resets at midnight, which would
+ *  make that difference negative across the roll. Lifetime energy is
+ *  monotonic, so a delta is always real consumption. `w` is the
+ *  instantaneous reading, kept for a live feel; the honest consumption
+ *  curve is derived from the energy deltas server-side.
+ * -------------------------------------------------------------------------*/
+void pushHistory() {
+  if (!(wifiUp && fbReady && Firebase.ready())) return;
+  if (!meas.everValid) return;     // nothing measured yet this boot
+
+  time_t now = time(nullptr);
+  if (now < 1700000000UL) return;  // a sample that cannot be placed in time is worthless
+
+  struct tm tmNow;
+  localtime_r(&now, &tmNow);
+  char day[9], hhmm[5];
+  strftime(day,  sizeof(day),  "%Y%m%d", &tmNow);
+  strftime(hhmm, sizeof(hhmm), "%H%M",   &tmNow);
+
+  String path = "/meterHistory/" + deviceID + "/" + String(day) + "/" + String(hhmm);
+  FirebaseJson j;
+  j.set("w", meas.power);     // W, instantaneous
+  j.set("e", meas.energy);    // Wh, lifetime cumulative -- deltas give real consumption
+  if (!Firebase.RTDB.setJSON(&fbdo, path.c_str(), &j))
+    Serial.println("History push failed: " + fbdo.errorReason());
 }
 
 void pullConfig() {
@@ -1594,9 +2012,45 @@ void pullConfig() {
         bool topUp       = changed && (v > budget.totalWh);
         budget.totalWh   = v;
         budget.budgetSet = true;
+        // Recompute beta against the new allowance immediately. Without
+        // this, a household already at 100% stayed gated: applyBudgetGate()
+        // derives budgetGated from budget.percent, but percent is only ever
+        // recalculated inside runAlgorithm(), which returns early while
+        // budgetGated is set. Raising the budget therefore could not release
+        // the gate on its own -- the household sat in the dark until the
+        // next cycle roll, despite now being under their new cap. Normally
+        // masked because the app writes cycleStartedAt alongside budgetWh
+        // and the roll resets percent anyway, but a bare budgetWh write
+        // (Firebase console, a future partial update) deadlocked.
+        if (budget.totalWh > 0) {
+          budget.percent = (budget.cycleWh / budget.totalWh) * 100.0f;
+          if (budget.percent < 0) budget.percent = 0;
+        }
         saveNVS();
+        // Confirm receipt on the meter itself, audibly and on screen. Fires
+        // for any real change including the first budget ever set, not just
+        // an increase -- `topUp` alone left a household lowering their
+        // budget with no feedback at all.
+        noticeBudgetWh      = v;
+        noticeBudgetCleared = false;
+        budgetNoticeUntil   = millis() + 4000UL;
         if (topUp) beepTopUp();
+        else       beepBudgetSet();
       }
+    }
+  }
+
+  // voltageCal -- READ ONLY, optional. Lets this board's voltage trim be
+  // re-measured and corrected without a rebuild and reflash (see
+  // VOLTAGE_CAL_DEFAULT for why that stopped being acceptable). Clamped and
+  // only persisted on a real change, so a poll reading the same value back
+  // every 2s doesn't write flash every 2s.
+  if (json.get(result, "voltageCal") && result.success) {
+    float v = result.floatValue;
+    if (v >= VOLTAGE_CAL_MIN && v <= VOLTAGE_CAL_MAX && fabs(v - voltageCal) > 0.0005f) {
+      Serial.printf("[CAL] voltage trim %.4f -> %.4f (from database)\n", voltageCal, v);
+      voltageCal = v;
+      saveNVS();
     }
   }
 
@@ -1605,9 +2059,46 @@ void pullConfig() {
   // new budget cycle (see startNewCycle). Read as a double, not a float --
   // a unix-ms timestamp exceeds a 32-bit float's exact-integer range, and
   // FirebaseJsonData.doubleValue holds it exactly.
+  //
+  // Guarded so this meter's own local-midnight roll stays authoritative for
+  // the day it covers. checkLocalMidnight() rolls within a second or two of
+  // 00:00 WAT and mirrors the stamp back via publishCycleStartedAt(); if
+  // that mirror write fails (offline at midnight, which is exactly when a
+  // meter is most likely to be), the server still holds yesterday's stamp,
+  // so the next cycle-tick sees a stale WAT date and rolls again -- hours
+  // late, at whatever irregular time GitHub Actions happens to fire. The
+  // firmware would then take that as a fresh signal and re-roll a day it
+  // had already rolled, handing the household a second full allowance and
+  // clearing their overrides mid-afternoon. Comparing WAT calendar days
+  // (the same test cycle-tick.ts makes server-side) accepts a genuine new
+  // day and ignores a restatement of the current one.
+  //
+  // A budget the household sets or changes mid-day is deliberately NOT an
+  // exception. setBudgetWh() writes a fresh cycleStartedAt alongside
+  // budgetWh, and honouring that as a roll re-baselined the meter mid-
+  // afternoon, so the day's consumption figure restarted from zero and the
+  // allowance covered only the hours that happened to remain. Adopting the
+  // stamp without re-baselining keeps the daily total meaning one calendar
+  // day, and makes the allowance apply to that whole day -- including the
+  // part already spent before the budget existed.
+  //
+  // Escape hatches remain for the cases with no better information: no
+  // local stamp yet, or no synced clock to compare dates with.
   if (json.get(result, "cycleStartedAt") && result.success) {
     uint64_t v = (uint64_t)result.doubleValue;
-    if (v > 0 && v != budget.cycleStartedAt) startNewCycle(v, "signal from database");
+    if (v > 0 && v != budget.cycleStartedAt) {
+      if (budget.cycleStartedAt == 0 || unixMillis() == 0
+          || !sameLocalDay(v, budget.cycleStartedAt)) {
+        startNewCycle(v, "signal from database");
+      } else {
+        // Same WAT day as the cycle already running: adopt the server's
+        // stamp so the two agree and this comparison stays stable, but do
+        // not restart the cycle or touch the baseline.
+        budget.cycleStartedAt = v;
+        saveNVS();
+        Serial.println("[CYCLE] same-day server stamp adopted, not re-rolled");
+      }
+    }
   }
 
   // budgetClearedAt — READ ONLY, unix ms, edge-triggered exactly like
@@ -1627,6 +2118,9 @@ void pullConfig() {
       budget.percent   = 0;
       saveNVS();
       clearAllOverrides();
+      noticeBudgetCleared = true;
+      budgetNoticeUntil   = millis() + 4000UL;
+      beepBudgetSet();
       Serial.println("[BUDGET] cleared -- back to unrestricted");
     }
   }
@@ -1762,6 +2256,11 @@ void setup() {
   lcd.init();
   lcd.backlight();
 
+  // Load the partial-fill glyphs the budget bar draws with. Must happen
+  // after lcd.init(), which clears CGRAM, and before anything calls
+  // lcdBar() -- an uninitialised CGRAM slot renders as garbage, not blank.
+  for (uint8_t i = 0; i < BAR_SUB; i++) lcd.createChar(i, BAR_GLYPH[i]);
+
   // Serial2 is opened by the PZEM004Tv30 constructor; do not begin it again.
 
   deviceID = makeDeviceID();
@@ -1787,7 +2286,7 @@ void setup() {
   lcd.clear();
   lcdRefresh();
 
-  tPoll = tLcd = tPush = tPull = tCycle = tOverride = tOvStream = millis();
+  tPoll = tLcd = tPush = tPull = tCycle = tOverride = tOvStream = tHistory = millis();
 }
 
 /* ===========================================================================
@@ -1825,8 +2324,9 @@ void loop() {
   // validity -- a loose sensor lead must not freeze any of them.
   if (now - tOverride >= OVERRIDE_APPLY_MS) {
     tOverride = now;
-    applyBalanceGate();   // must run first -- sets balanceGated, which applyOverrides() below checks
-    applyBudgetGate();    // same reasoning -- sets budgetGated, which applyOverrides() below also checks
+    applyBalanceGate();     // must run first -- sets balanceGated, which everything below checks
+    applyBudgetGate();      // same reasoning -- sets budgetGated
+    applySensorFailSafe();  // third in precedence: yields to both gates, overrides yield to it
     applyOverrides();
   }
 
@@ -1877,16 +2377,28 @@ void loop() {
     beep(40, 0, 1);
   }
 
-  // Display
-  if ((ui == UI_LIVE || ui == UI_PAIR) && now - tLcd >= LCD_MS) {
+  // Display. The relay and balance screens are refreshed on this timer too:
+  // both show live state (relay positions, synced token balance) but used to
+  // be drawn once on entry and then left frozen, so a relay shedding while
+  // the household watched that very screen changed nothing on it. Both now
+  // redraw in place via lcdRow() rather than clearing, so adding them here
+  // costs no flicker. The screens left out are the ones showing static text
+  // or text being edited (menu, day entry, device ID), where a periodic
+  // redraw would buy nothing.
+  bool liveScreen = (ui == UI_LIVE || ui == UI_PAIR || ui == UI_RELAYS || ui == UI_BAL);
+  if (liveScreen && now - tLcd >= LCD_MS) {
     tLcd = now;
-    if (ui == UI_LIVE && now < topUpNoticeUntil) lcdTopUpNotice();
+    // Top-up wins a tie: money arriving is the more consequential of the
+    // two, and both overlays clear within seconds anyway.
+    if      (ui == UI_LIVE && now < topUpNoticeUntil)  lcdTopUpNotice();
+    else if (ui == UI_LIVE && now < budgetNoticeUntil) lcdBudgetNotice();
     else lcdRefresh();
   }
 
   // Cloud sync
   if (wifiUp && now - tPush >= FB_PUSH_MS) { tPush = now; pushState();  }
   if (wifiUp && now - tPull >= FB_PULL_MS) { tPull = now; pullConfig(); }
+  if (wifiUp && now - tHistory >= HISTORY_PUSH_MS) { tHistory = now; pushHistory(); }
 
   // Connection state tracking
   bool linkNow = (WiFi.status() == WL_CONNECTED);

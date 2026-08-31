@@ -7,9 +7,9 @@ import { typography, spacing, radius } from "../../src/theme/typography";
 import { AdinkraAccent } from "../../src/theme/motifs/AdinkraAccent";
 import { MetricTile } from "../../src/components/MetricTile";
 import { RelayIndicator } from "../../src/components/RelayIndicator";
-import { LiveConsumptionChart } from "../../src/components/LiveConsumptionChart";
+import { ConsumptionChart } from "../../src/components/ConsumptionChart";
 import { PendingBurnBadge } from "../../src/components/PendingBurnBadge";
-import { useConsumptionHistory } from "../../src/hooks/useConsumptionHistory";
+import { useConsumptionLog, watDayKey, shiftDayKey } from "../../src/hooks/useConsumptionLog";
 import { useWallet } from "../../src/hooks/useWallet";
 import { TopUpModal } from "../../src/components/TopUpModal";
 import { getEngyBalance, getSpendableBalance } from "../../src/services/contract";
@@ -32,11 +32,14 @@ const SHED_THRESHOLD_PCT: Record<RelayTier, number> = { r1: Infinity, r2: 95, r3
 
 type MeterStatus = "live" | "no-signal" | "fault";
 
-/** Full precision, thousands-separated -- no toFixed() rounding. The meter
- * reports whatever precision the PZEM gives it; showing anything less than
- * that is an approximation the reading itself never claimed to have. */
+/** Two decimal places, thousands-separated. The PZEM's own accuracy class is
+ * +/-0.5% on voltage and +/-1% on current, so a reading of 228.60000000000002 V
+ * was printing sixteen digits of float noise past the point where the sensor
+ * has anything real to say -- and a tile that wide wraps or truncates on a
+ * phone. Two places is finer than the module's stated accuracy and reads as a
+ * measurement rather than a dump. */
 function exact(n: number): string {
-  return n.toLocaleString(undefined, { maximumFractionDigits: 20 });
+  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function formatSecondsAgo(updatedAt: number, nowMs: number): string {
@@ -70,8 +73,12 @@ export default function DashboardScreen() {
     deviceId,
     hasDevice,
   } = useMeterData(walletAddress, getSigner);
-  const consumptionHistory = useConsumptionHistory(reading);
-  const [chartWidth, setChartWidth] = useState(0);
+  const [chartDay, setChartDay] = useState(() => watDayKey());
+  const { data: consumption, loading: consumptionLoading } = useConsumptionLog(
+    walletAddress,
+    getSigner,
+    chartDay
+  );
 
   const refreshBalance = useCallback(async () => {
     if (!walletAddress) return;
@@ -256,12 +263,12 @@ export default function DashboardScreen() {
         <>
           {/* ── Desktop: 4-metric row ── */}
           <View style={styles.metricRow}>
-            <MetricTile label="Voltage" value={reading ? exact(reading.voltage) : "—"} unit="V" />
-            <MetricTile label="Current" value={reading ? exact(reading.current) : "—"} unit="A" />
-            <MetricTile label="Power" value={reading ? exact(reading.power) : "—"} unit="W" />
+            <MetricTile label="Voltage" value={reading ? exact(reading.voltage) : "--"} unit="V" />
+            <MetricTile label="Current" value={reading ? exact(reading.current) : "--"} unit="A" />
+            <MetricTile label="Power" value={reading ? exact(reading.power) : "--"} unit="W" />
             <MetricTile
               label="Energy"
-              value={reading?.energyWh != null ? exact(reading.energyWh) : "—"}
+              value={reading?.energyWh != null ? exact(reading.energyWh) : "--"}
               unit="Wh"
             />
           </View>
@@ -286,13 +293,16 @@ export default function DashboardScreen() {
 
           {/* ── Desktop: Live Consumption + Wallet ── */}
           <View style={styles.desktopRow}>
-            <View
-              style={styles.dailyBudgetCard}
-              onLayout={(e) => setChartWidth(e.nativeEvent.layout.width)}
-            >
-              <Text style={[typography.h2, styles.cardTitle]}>Live Consumption</Text>
-              <Text style={[typography.caption, styles.chartSubtitle]}>Power draw, as the meter reports it</Text>
-              {chartWidth > 0 && <LiveConsumptionChart points={consumptionHistory} width={chartWidth} />}
+            <View style={styles.dailyBudgetCard}>
+              <ConsumptionChart
+                day={chartDay}
+                samples={consumption?.samples ?? []}
+                totalWh={consumption?.totalWh ?? 0}
+                peakW={consumption?.peakW ?? 0}
+                loading={consumptionLoading}
+                onPrevDay={() => setChartDay((d) => shiftDayKey(d, -1))}
+                onNextDay={() => setChartDay((d) => (d === watDayKey() ? d : shiftDayKey(d, 1)))}
+              />
             </View>
 
             <View style={styles.walletCard}>
@@ -382,14 +392,14 @@ export default function DashboardScreen() {
             </View>
             <View style={styles.tileGrid}>
               <View style={styles.tileRow}>
-                <MetricTile label="Voltage" value={reading ? exact(reading.voltage) : "—"} unit="V" />
-                <MetricTile label="Current" value={reading ? exact(reading.current) : "—"} unit="A" />
+                <MetricTile label="Voltage" value={reading ? exact(reading.voltage) : "--"} unit="V" />
+                <MetricTile label="Current" value={reading ? exact(reading.current) : "--"} unit="A" />
               </View>
               <View style={styles.tileRow}>
-                <MetricTile label="Power" value={reading ? exact(reading.power) : "—"} unit="W" />
+                <MetricTile label="Power" value={reading ? exact(reading.power) : "--"} unit="W" />
                 <MetricTile
                   label="Frequency"
-                  value={reading?.frequency != null ? exact(reading.frequency) : "—"}
+                  value={reading?.frequency != null ? exact(reading.frequency) : "--"}
                   unit="Hz"
                 />
               </View>
@@ -404,7 +414,7 @@ export default function DashboardScreen() {
               <View style={styles.tileRow}>
                 <MetricTile
                   label="Power factor"
-                  value={reading?.powerFactor != null ? exact(reading.powerFactor) : "—"}
+                  value={reading?.powerFactor != null ? exact(reading.powerFactor) : "--"}
                   unit=""
                 />
               </View>
@@ -425,18 +435,22 @@ export default function DashboardScreen() {
           </View>
 
           {/* ── Live Consumption ── */}
-          <View
-            style={styles.budgetStatusCard}
-            onLayout={(e) => setChartWidth(e.nativeEvent.layout.width)}
-          >
+          <View style={styles.budgetStatusCard}>
             <View style={styles.budgetStatusHeader}>
               <Text style={[typography.bodyStrong, styles.readingsCardTitle]}>Live Consumption</Text>
               <Pressable onPress={() => router.push("/(tabs)/budget")}>
                 <Text style={[typography.dataXs, styles.pairLinkText]}>Budget →</Text>
               </Pressable>
             </View>
-            <Text style={[typography.caption, styles.chartSubtitle]}>Power draw, as the meter reports it</Text>
-            {chartWidth > 0 && <LiveConsumptionChart points={consumptionHistory} width={chartWidth} />}
+            <ConsumptionChart
+              day={chartDay}
+              samples={consumption?.samples ?? []}
+              totalWh={consumption?.totalWh ?? 0}
+              peakW={consumption?.peakW ?? 0}
+              loading={consumptionLoading}
+              onPrevDay={() => setChartDay((d) => shiftDayKey(d, -1))}
+              onNextDay={() => setChartDay((d) => (d === watDayKey() ? d : shiftDayKey(d, 1)))}
+            />
           </View>
         </>
       )}

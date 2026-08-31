@@ -6,7 +6,7 @@ export function useWallet() {
   const { user, ready, logout } = usePrivy();
   const { wallets } = useWallets();
 
-  // Derive wallet address from user.linkedAccounts — available immediately once
+  // Derive wallet address from user.linkedAccounts -- available immediately once
   // Privy is ready, without waiting for useWallets() to connect the wallet.
   // useWallets() only lists actively-connected wallets which requires async
   // initialization and is always empty for returning users on first render.

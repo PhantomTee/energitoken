@@ -42,7 +42,7 @@ async function pollOrderStatus(
       // a terminal state distinct from "still processing".
       if (json.status === "mint_failed") return "mint_failed";
     } catch {
-      // network glitch — keep polling
+      // network glitch -- keep polling
     }
   }
   return "timeout";
@@ -110,7 +110,7 @@ export function TopUpModal({ visible, onClose, walletAddress, getSigner, onMinte
       } else {
         setLoading(false);
         await WebBrowser.openBrowserAsync(json.checkoutUrl);
-        // Browser closed — start polling to see if mint happened
+        // Browser closed -- start polling to see if mint happened
         setPolling(true);
         const result = await pollOrderStatus(json.reference);
         setPolling(false);
@@ -124,7 +124,7 @@ export function TopUpModal({ visible, onClose, walletAddress, getSigner, onMinte
             "Your payment went through, but we hit a hiccup crediting your balance. This is on our side, not yours. It's being retried and should resolve shortly."
           );
         } else {
-          // timeout — payment may still be processing
+          // timeout -- payment may still be processing
           setError("Payment is still being confirmed. Check your balance in a few minutes.");
         }
       }

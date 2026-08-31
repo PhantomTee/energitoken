@@ -10,7 +10,7 @@ import { withOracleLock } from "../_lib/oracleLock";
 const SHED_THRESHOLDS = [
   { pct: 70, label: "Luxury loads switched off" },
   { pct: 85, label: "Optional loads switched off" },
-  { pct: 95, label: "Essential loads switched off — critical loads only" },
+  { pct: 95, label: "Essential loads switched off -- critical loads only" },
 ];
 
 type Req = IncomingMessage & { method?: string; body?: unknown; headers: Record<string, string | string[] | undefined> };
@@ -21,7 +21,7 @@ type DeviceBurnResult =
   | { deviceId: string; ok: false; error: string };
 
 /**
- * Consumption oracle — the bridge between meter readings and token burns.
+ * Consumption oracle -- the bridge between meter readings and token burns.
  * Called on a schedule (see .github/workflows/burn-oracle.yml) with no
  * deviceId in the body, which processes every paired device in one pass;
  * a specific deviceId can still be passed for manual/one-off use.
@@ -168,7 +168,7 @@ export async function processDevice(db: ReturnType<typeof adminDb>, deviceId: st
         rebaselinedAt: Date.now(),
       });
       await db.ref(`meters/${deviceId}/lastBurnedWh`).set(currentEnergyWh);
-      return { deviceId, ok: true, burned: false, reason: `Meter energy scale changed (${checkpointScale} -> ${meterScale}) — checkpoint rebaselined` };
+      return { deviceId, ok: true, burned: false, reason: `Meter energy scale changed (${checkpointScale} -> ${meterScale}) -- checkpoint rebaselined` };
     }
 
     const rawDelta = currentEnergyWh - lastBurnedWh;
@@ -194,7 +194,7 @@ export async function processDevice(db: ReturnType<typeof adminDb>, deviceId: st
       // would leave the Dashboard badge showing a huge stale "pending"
       // amount computed against the old, now-meaningless baseline.
       await db.ref(`meters/${deviceId}/lastBurnedWh`).set(currentEnergyWh);
-      return { deviceId, ok: true, burned: false, reason: "Meter counter reset — checkpoint rebaselined" };
+      return { deviceId, ok: true, burned: false, reason: "Meter counter reset -- checkpoint rebaselined" };
     }
 
     const deltaWh = Math.floor(rawDelta);

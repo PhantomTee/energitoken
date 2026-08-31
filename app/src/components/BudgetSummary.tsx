@@ -64,7 +64,7 @@ export function BudgetSummary({
           <View style={styles.statBlock}>
             <Text style={[typography.label, styles.label]}>Budget</Text>
             <Text style={[typography.dataMd, styles.value]}>
-              {currentBudgetUnits === null ? "—" : currentBudgetUnits.toLocaleString()}
+              {currentBudgetUnits === null ? "--" : currentBudgetUnits.toLocaleString()}
               <Text style={[typography.dataXs, styles.unit]}> units/day</Text>
             </Text>
             {currentBudgetUnits === null && (
@@ -74,7 +74,7 @@ export function BudgetSummary({
           <View style={styles.statBlock}>
             <Text style={[typography.label, styles.label]}>Used this cycle</Text>
             <Text style={[typography.dataMd, styles.value]}>
-              {usedUnits === null ? "—" : usedUnits.toLocaleString()}
+              {usedUnits === null ? "--" : usedUnits.toLocaleString()}
               <Text style={[typography.dataXs, styles.unit]}> units</Text>
             </Text>
           </View>

@@ -44,7 +44,7 @@ export default function UnlockScreen() {
 
   // Wait for walletAddress to be available before triggering biometrics.
   // index.tsx only sends us here when walletAddress is already set, but Privy's
-  // state can settle slightly after mount — guard against the edge case.
+  // state can settle slightly after mount -- guard against the edge case.
   useEffect(() => {
     if (walletAddress) {
       attemptUnlock();

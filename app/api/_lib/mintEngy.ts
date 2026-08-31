@@ -17,7 +17,7 @@ const RECEIPT_POLL_DELAY_MS = 2000;
 
 /**
  * Signs and sends the mint() transaction as the contract's oracle. This is
- * the one place the oracle's private key is ever loaded — server-side only,
+ * the one place the oracle's private key is ever loaded -- server-side only,
  * never shipped to the mobile app.
  *
  * Retry safety: only the SEND step (contract.mint()) is retried with a fresh

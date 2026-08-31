@@ -18,6 +18,20 @@ import { useIsDesktopWeb } from "../../src/hooks/useIsDesktopWeb";
 import { MobileTopBar } from "../../src/components/MobileTopBar";
 
 const PERIOD_OPTIONS = [7, 14, 30] as const;
+
+/** The daily allowance, shown to the watt-hour.
+ *
+ * A budget is stored and enforced in whole watt-hours (setBudgetWh rounds to
+ * one), and 1 unit is exactly 1000 Wh, so three decimal places on a unit
+ * figure is not extra precision -- it is the full precision the system holds,
+ * with nothing hidden. Rounding to one place, as this used to, displayed a
+ * 3.333 units/day allowance as "3.3" while the meter enforced 3333 Wh, so the
+ * number the household read and the number their loads were shed against
+ * disagreed. Trailing zeros are dropped, so a clean 5 units/day still shows
+ * as "5" rather than "5.000". */
+function formatUnits(units: number): string {
+  return units.toLocaleString(undefined, { maximumFractionDigits: 3 });
+}
 type PeriodDays = (typeof PERIOD_OPTIONS)[number];
 
 function dayKey(ts: number) {
@@ -396,7 +410,7 @@ export default function BudgetScreen() {
                 <View style={styles.dailyAllowanceBox}>
                   <Text style={[typography.caption, styles.dailyAllowanceLabel]}>Daily Allowance</Text>
                   <Text style={[typography.dataMd, styles.dailyAllowanceValue]}>
-                    {computedDailyUnits.toFixed(1)} <Text style={typography.dataXs}>units/day</Text>
+                    {formatUnits(computedDailyUnits)} <Text style={typography.dataXs}>units/day</Text>
                   </Text>
                   <Text style={[typography.dataXs, styles.dailyAllowanceWh]}>
                     ≈ {unitsToWh(computedDailyUnits).toLocaleString()} Wh/day
@@ -515,7 +529,7 @@ export default function BudgetScreen() {
                 <Text style={[typography.caption, styles.durationInfoText]}>
                   Your <Text style={styles.durationInfoStrong}>{availableUnits.toLocaleString()} units</Text> will
                   last <Text style={styles.durationInfoStrong}>{durationDays} days</Text> at{" "}
-                  {computedDailyUnits!.toFixed(1)} units/day (≈ {unitsToWh(computedDailyUnits!).toLocaleString()} Wh/day).
+                  {formatUnits(computedDailyUnits!)} units/day (≈ {unitsToWh(computedDailyUnits!).toLocaleString()} Wh/day).
                 </Text>
               </View>
             ) : (
@@ -533,7 +547,7 @@ export default function BudgetScreen() {
             )}
             {durationValid && computedDailyUnits !== null && !computedDailyValid && (
               <Text style={[typography.caption, styles.warnText]}>
-                That's {computedDailyUnits.toFixed(1)} units/day -- more than the {MAX_BUDGET_UNITS}/day maximum.
+                That's {formatUnits(computedDailyUnits)} units/day -- more than the {MAX_BUDGET_UNITS}/day maximum.
                 Try a longer duration.
               </Text>
             )}

@@ -2,12 +2,12 @@
  * Adire indigo as the primary brand color (the deep blue of hand-dyed cloth),
  * laterite terracotta as the accent (the red-brown clay common across West
  * African soil and pottery). Main app screens (Dashboard, Budget, Transfer,
- * History, Settings) sit on a soft "Paper" canvas with white cards — indigo
+ * History, Settings) sit on a soft "Paper" canvas with white cards -- indigo
  * is reserved for hero moments (Splash, Login, Welcome, onboarding, the Top
  * Up backdrop), which build their own dark backgrounds directly from
  * `colors.indigo[900]` rather than these shared tokens. `panelInset` is the
  * one dark accent card per screen that should pull focus (e.g. the ENGY
- * balance card) — navy surface, light text, the inverse of everything
+ * balance card) -- navy surface, light text, the inverse of everything
  * around it.
  */
 export const colors = {

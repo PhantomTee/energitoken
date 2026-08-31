@@ -5,7 +5,7 @@
  * (native detours through /unlock for biometrics).
  *
  * Deliberately NOT persisted: a page refresh or app restart clears it, which
- * is exactly the behavior we want — those are cold starts.
+ * is exactly the behavior we want -- those are cold starts.
  */
 let justLoggedIn = false;
 
@@ -13,7 +13,7 @@ export function markJustLoggedIn(): void {
   justLoggedIn = true;
 }
 
-/** Reads and clears the flag — one navigation decision per login. */
+/** Reads and clears the flag -- one navigation decision per login. */
 export function consumeJustLoggedIn(): boolean {
   const value = justLoggedIn;
   justLoggedIn = false;

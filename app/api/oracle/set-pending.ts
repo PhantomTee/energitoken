@@ -126,7 +126,7 @@ async function processDevice(db: ReturnType<typeof adminDb>, deviceId: string): 
           ok: true,
           pendingWh: 0,
           skipped: true,
-          reason: `Meter energy scale changed (${checkpointScale} -> ${meterScale}) — deferring to oracle/burn to rebaseline`,
+          reason: `Meter energy scale changed (${checkpointScale} -> ${meterScale}) -- deferring to oracle/burn to rebaseline`,
         };
       }
 

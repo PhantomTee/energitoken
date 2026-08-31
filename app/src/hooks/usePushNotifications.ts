@@ -19,7 +19,7 @@ Notifications.setNotificationHandler({
  * Requests notification permission and registers this device's Expo push
  * token against the wallet (see app/api/_lib/notify.ts, which reads
  * /pushTokens/{wallet} to send pushes for top-ups, consumption, and
- * budget-threshold alerts). Native only — web push uses a different,
+ * budget-threshold alerts). Native only -- web push uses a different,
  * unimplemented standard.
  *
  * Safe to call on every dashboard mount; re-registers if the token rotates.

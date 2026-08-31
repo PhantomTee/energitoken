@@ -2,7 +2,7 @@ import { polygonAmoy } from "@privy-io/chains";
 
 /**
  * Read from EXPO_PUBLIC_PRIVY_APP_ID at build time (Expo inlines any env var
- * prefixed EXPO_PUBLIC_ into the JS bundle automatically — no extra config).
+ * prefixed EXPO_PUBLIC_ into the JS bundle automatically -- no extra config).
  */
 export const PRIVY_APP_ID = process.env.EXPO_PUBLIC_PRIVY_APP_ID ?? "";
 
@@ -10,7 +10,7 @@ export const PRIVY_APP_ID = process.env.EXPO_PUBLIC_PRIVY_APP_ID ?? "";
  * Privy apps can have multiple "clients" (Web, Mobile), each with their own
  * allowed origins / app identifiers. The native SDK has to be told which
  * client to validate against via clientId, or it checks against the
- * default client — which is why adding the native app identifier under the
+ * default client -- which is why adding the native app identifier under the
  * Mobile client alone doesn't fix the "not an allowed app identifier" error
  * without this.
  */

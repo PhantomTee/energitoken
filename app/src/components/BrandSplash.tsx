@@ -6,7 +6,7 @@ import { typography, spacing } from "../theme/typography";
 
 /**
  * Shown while the app is starting up (fonts loading, Privy initializing).
- * The ring pulses outward and fades — the same shape used as the logo and
+ * The ring pulses outward and fades -- the same shape used as the logo and
  * the budget gauge, here standing in for "the household's account is
  * waking up."
  */

@@ -1,7 +1,7 @@
 import { ethers } from "ethers";
 
 /**
- * Loaded via require, not `import ... from ".../contract.json"` — a static
+ * Loaded via require, not `import ... from ".../contract.json"` -- a static
  * ES import lets TS infer the full ABI JSON's literal type at compile time,
  * and feeding that huge literal into ethers.Contract's overload resolution
  * overflows the type checker's call stack (a known issue with large inline
@@ -25,7 +25,7 @@ export const AMOY_CHAIN_ID = 80002n;
 let readProvider: ethers.JsonRpcProvider | null = null;
 
 /**
- * Read-only provider against the public Amoy RPC — no wallet/signer needed.
+ * Read-only provider against the public Amoy RPC -- no wallet/signer needed.
  * batchMaxCount: 1 disables ethers' default JSON-RPC batching: the public
  * Amoy endpoint doesn't reliably support batched requests, and sending the
  * 4 concurrent getLogs calls in getTransactionHistory as one batch produces

@@ -34,14 +34,14 @@ export type PaymentOrder = {
   amountNgn: number;
   whAmount: number;
   status: PaymentOrderStatus;
-  /** Flutterwave's own transaction id, assigned once payment completes (from the webhook or a verify call) — not known at order creation. */
+  /** Flutterwave's own transaction id, assigned once payment completes (from the webhook or a verify call) -- not known at order creation. */
   flwTransactionId?: number;
   mintTxHash?: string;
   createdAt: number;
   updatedAt: number;
 };
 
-/** Raw Admin database reference — use for paths not exposed via a named helper. */
+/** Raw Admin database reference -- use for paths not exposed via a named helper. */
 export function adminDb() {
   return getDatabase(getAdminApp());
 }

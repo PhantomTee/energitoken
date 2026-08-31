@@ -95,7 +95,7 @@ export default function Index() {
         if (!cancelled) setDestination(dest);
       } catch {
         if (cancelled) return;
-        // Don't strand the user on a blank splash if a check above throws —
+        // Don't strand the user on a blank splash if a check above throws --
         // the dashboard can surface the real error on the next user action.
         setDestination("/(tabs)/dashboard");
       }

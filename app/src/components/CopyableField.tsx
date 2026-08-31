@@ -6,8 +6,8 @@ import { typography, spacing, radius } from "../theme/typography";
 
 /**
  * A labeled value with a tap-to-copy affordance. Used on the profile screen
- * for anything a household might need to hand to someone else verbatim —
- * email, wallet address, meter MAC — where retyping it correctly by hand
+ * for anything a household might need to hand to someone else verbatim --
+ * email, wallet address, meter MAC -- where retyping it correctly by hand
  * isn't realistic.
  */
 export function CopyableField({ label, value, mono = true }: { label: string; value: string; mono?: boolean }) {

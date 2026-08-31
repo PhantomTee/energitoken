@@ -2,11 +2,11 @@ import { TextStyle } from "react-native";
 
 /**
  * Three faces, each with one job:
- * - Space Grotesk carries the brand voice (headers, labels) — geometric,
+ * - Space Grotesk carries the brand voice (headers, labels) -- geometric,
  *   ties to the ring motif used as the logo mark.
- * - Inter carries the household's voice (body copy, instructions) — plain
+ * - Inter carries the household's voice (body copy, instructions) -- plain
  *   and legible for non-technical readers at a glance.
- * - Space Mono carries the ledger's truth — it's used only for numbers that
+ * - Space Mono carries the ledger's truth -- it's used only for numbers that
  *   come off the chain or the meter: balances, V/A/W readings, addresses,
  *   tx hashes, timestamps. Never used for prose.
  */
@@ -27,7 +27,7 @@ export const typography: Record<string, TextStyle> = {
   bodyStrong: { fontFamily: fonts.bodyStrong, fontSize: 15 },
   caption: { fontFamily: fonts.body, fontSize: 13 },
   label: { fontFamily: fonts.displayMedium, fontSize: 12, letterSpacing: 1, textTransform: "uppercase" },
-  // Data/mono — balances, meter readings, addresses, hashes, timestamps.
+  // Data/mono -- balances, meter readings, addresses, hashes, timestamps.
   data: { fontFamily: fonts.monoBold, fontSize: 34, letterSpacing: -0.5 },
   dataMd: { fontFamily: fonts.monoBold, fontSize: 22 },
   dataSm: { fontFamily: fonts.mono, fontSize: 15 },

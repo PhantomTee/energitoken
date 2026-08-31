@@ -47,7 +47,7 @@ function SettingsRow({
 }
 
 /**
- * Settings — account, meter pairing, notification preferences, language,
+ * Settings -- account, meter pairing, notification preferences, language,
  * about, and share-my-QR. Notification toggles are local-only for now (no
  * backend preference store or push-filtering exists yet); the language
  * selector is functionally English-only, the rest are visibly disabled
@@ -125,7 +125,7 @@ export default function ProfileScreen() {
               <Text style={[typography.h2, styles.desktopCardTitle]}>Account Details</Text>
               <CopyableField label="Email address" value={email ?? "Not linked"} mono={false} />
               <View style={{ height: spacing.md }} />
-              <CopyableField label="Wallet address" value={walletAddress ?? "—"} />
+              <CopyableField label="Wallet address" value={walletAddress ?? "--"} />
               <View style={styles.divider} />
               <SettingsRow
                 label="Active Session"
@@ -254,7 +254,7 @@ export default function ProfileScreen() {
           <View style={styles.card}>
             <CopyableField label="Email" value={email ?? "Not linked"} mono={false} />
             <View style={{ height: spacing.md }} />
-            <CopyableField label="Wallet address" value={walletAddress ?? "—"} />
+            <CopyableField label="Wallet address" value={walletAddress ?? "--"} />
             <View style={styles.divider} />
             <SettingsRow
               label="Active session"

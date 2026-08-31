@@ -52,7 +52,7 @@ export default async function handler(req: Req, res: Res) {
         res.status(404).json({ error: "Unknown reference" });
         return;
       }
-      res.status(400).json({ error: `Order is in '${claim.order.status}' state, not 'mint_failed' — refusing to retry` });
+      res.status(400).json({ error: `Order is in '${claim.order.status}' state, not 'mint_failed' -- refusing to retry` });
       return;
     }
     const order = claim.order;
@@ -77,7 +77,7 @@ export default async function handler(req: Req, res: Res) {
     await sendNotification(order.walletAddress, {
       type: "topup",
       title: "Top-up complete",
-      body: `₦${Number(order.amountNgn).toLocaleString()} payment confirmed — ${units} unit${order.whAmount === 1000 ? "" : "s"} added to your balance.`,
+      body: `₦${Number(order.amountNgn).toLocaleString()} payment confirmed -- ${units} unit${order.whAmount === 1000 ? "" : "s"} added to your balance.`,
     });
 
     res.status(200).json({ ok: true, minted: true, txHash });

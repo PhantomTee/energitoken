@@ -9,7 +9,7 @@ import { typography, spacing } from "../theme/typography";
  * (running low) so the household gets a glanceable read without needing
  * to parse the number. Type scales with `size` instead of using a fixed
  * typography style, so the percentage never overruns the ring at small
- * sizes (e.g. the 96px inset used in the dashboard hero card) — and the
+ * sizes (e.g. the 96px inset used in the dashboard hero card) -- and the
  * "budget used" caption only shows when there's room for it.
  */
 export function BudgetRing({ percentUsed, size = 160 }: { percentUsed: number; size?: number }) {

@@ -13,7 +13,7 @@ import { useAppFonts } from "../theme/useAppFonts";
 import { BrandSplash } from "../components/BrandSplash";
 
 // Keep the native splash (a flat #121022 fill, configured in app.json) up
-// until fonts are ready, then hand off to BrandSplash — same color, so the
+// until fonts are ready, then hand off to BrandSplash -- same color, so the
 // cold-start screen and the JS splash read as one continuous screen rather
 // than a white flash followed by a dark one.
 SplashScreen.preventAutoHideAsync().catch(() => {});

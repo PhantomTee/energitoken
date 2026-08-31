@@ -60,7 +60,7 @@ function formatDayLabel(daysFromNow: number): string {
 /** Whole days, then hours below a day -- "runs out in 0 days" is useless to
  * somebody whose power is about to cut, and "in 18h" is actionable. */
 function formatRunway(days: number): string {
-  if (!Number.isFinite(days)) return "—";
+  if (!Number.isFinite(days)) return "--";
   if (days >= 2) return `${Math.floor(days)} days`;
   const hours = Math.round(days * 24);
   if (hours >= 24) return "1 day";
@@ -97,7 +97,7 @@ export function BalanceRunwayChart({
       <View style={styles.card} onLayout={onLayout}>
         <Text style={[typography.h2, styles.title]}>Credit runway</Text>
         <Text style={[typography.caption, styles.empty]}>
-          No spendable credit yet — top up to see how long it lasts.
+          No spendable credit yet. Top up to see how long it lasts.
         </Text>
       </View>
     );

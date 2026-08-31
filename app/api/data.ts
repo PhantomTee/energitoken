@@ -37,7 +37,8 @@ export default async function handler(req: Req, res: Res) {
       if (resource === "notifications") return await listNotifications(res, walletAddress);
       if (resource === "directory") return await resolveDirectory(req, res);
       if (resource === "burnHistory") return await getBurnHistory(res, walletAddress);
-      res.status(400).json({ error: "resource must be one of meters, notifications, directory, burnHistory" });
+      if (resource === "consumption") return await getConsumption(req, res, walletAddress);
+      res.status(400).json({ error: "resource must be one of meters, notifications, directory, burnHistory, consumption" });
       return;
     }
 
@@ -94,6 +95,92 @@ async function getBurnHistory(res: Res, walletAddress: string): Promise<void> {
     ? Object.values(snap.val() as Record<string, { deltaWh: number; timestamp: number }>)
     : [];
   res.status(200).json({ entries });
+}
+
+const WAT_OFFSET_MS = 60 * 60 * 1000; // UTC+1, no DST -- the deployment's zone
+
+/** YYYYMMDD in West Africa Time, matching the day keys the firmware writes
+ * under /meterHistory/{deviceId} (see pushHistory() in the .ino, which keys
+ * samples by its own localtime with TZ fixed to WAT-1). */
+function watDayKey(epochMs: number): string {
+  return new Date(epochMs + WAT_OFFSET_MS).toISOString().slice(0, 10).replace(/-/g, "");
+}
+
+/**
+ * One WAT day of the meter's own consumption log, for the Dashboard's
+ * consumption chart.
+ *
+ * The firmware writes a row per minute keyed HHMM (local WAT), each holding
+ * instantaneous watts and the LIFETIME energy register. Average power across
+ * an interval is derived here from the energy delta rather than trusting the
+ * instantaneous sample: a once-a-minute spot reading aliases badly against
+ * appliances that cycle, while the energy counter integrates everything that
+ * happened between two samples and cannot miss a load that ran between them.
+ *
+ * `w` (the spot reading) is returned alongside so the caller can show what
+ * the meter was reading at that instant, but `avgW` is the honest curve.
+ *
+ * Gaps are left as gaps. A meter that was powered off or offline simply has
+ * no rows for those minutes, and the chart must not draw a straight line
+ * across the hole as though consumption were known and steady there.
+ */
+async function getConsumption(req: Req, res: Res, walletAddress: string): Promise<void> {
+  const url = new URL(req.url ?? "", "http://localhost");
+  const day = url.searchParams.get("day") ?? watDayKey(Date.now());
+  if (!/^\d{8}$/.test(day)) {
+    res.status(400).json({ error: "day must be YYYYMMDD" });
+    return;
+  }
+
+  const deviceId = await deviceIdForWallet(walletAddress);
+  if (!deviceId) {
+    res.status(200).json({ hasDevice: false, day, samples: [] });
+    return;
+  }
+
+  const snap = await adminDb().ref(`meterHistory/${deviceId}/${day}`).get();
+  const raw = snap.exists() ? (snap.val() as Record<string, { w?: number; e?: number }>) : {};
+
+  const rows = Object.entries(raw)
+    .filter(([hhmm]) => /^\d{4}$/.test(hhmm))
+    .map(([hhmm, v]) => ({
+      minute: parseInt(hhmm.slice(0, 2), 10) * 60 + parseInt(hhmm.slice(2), 10),
+      w: typeof v.w === "number" ? v.w : 0,
+      e: typeof v.e === "number" ? v.e : null,
+    }))
+    .filter((r) => r.minute >= 0 && r.minute < 1440)
+    .sort((a, b) => a.minute - b.minute);
+
+  // Derive average power per interval from the lifetime energy delta. A
+  // negative delta means the meter's counter was reset or the module
+  // replaced between samples, which is not consumption -- drop to the spot
+  // reading for that one interval rather than plotting a negative load.
+  const samples = rows.map((r, i) => {
+    let avgW = r.w;
+    if (i > 0 && r.e !== null && rows[i - 1].e !== null) {
+      const dWh = r.e - (rows[i - 1].e as number);
+      const dMin = r.minute - rows[i - 1].minute;
+      if (dMin > 0 && dWh >= 0) avgW = (dWh / dMin) * 60;
+    }
+    return { minute: r.minute, w: Math.round(r.w * 10) / 10, avgW: Math.round(avgW * 10) / 10 };
+  });
+
+  // Total consumed across the day, from the first to the last energy reading
+  // that actually exists -- not a sum of the per-interval figures, which
+  // would silently count a gap as zero rather than as unknown.
+  const withEnergy = rows.filter((r) => r.e !== null);
+  const totalWh =
+    withEnergy.length >= 2
+      ? Math.max(0, (withEnergy[withEnergy.length - 1].e as number) - (withEnergy[0].e as number))
+      : 0;
+
+  res.status(200).json({
+    hasDevice: true,
+    day,
+    samples,
+    totalWh: Math.round(totalWh),
+    peakW: samples.length ? Math.max(...samples.map((s) => s.avgW)) : 0,
+  });
 }
 
 async function setBudget(res: Res, walletAddress: string, body: unknown): Promise<void> {

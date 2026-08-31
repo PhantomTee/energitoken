@@ -13,7 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 /**
  * Privy's mobile SDK authenticates by emailing a one-time 6-digit code
- * (not a clickable magic link — that's the web flow; codes are what work
+ * (not a clickable magic link -- that's the web flow; codes are what work
  * reliably inside a native app). On a successful first login Privy creates
  * the embedded wallet automatically (config in src/screens/RootLayout.tsx).
  */
@@ -51,11 +51,11 @@ export default function LoginScreen() {
         try {
           await createEthereumWallet();
         } catch {
-          // wallet likely already exists — fine to ignore
+          // wallet likely already exists -- fine to ignore
         }
         // Starts this device's 12h quick-unlock window (src/services/quickAuth.ts).
         await recordFullLogin();
-        // Hand off to "/" (index.tsx) — it checks device pairing and sends
+        // Hand off to "/" (index.tsx) -- it checks device pairing and sends
         // new users to onboarding instead of an unpaired dashboard. The flag
         // skips the biometric detour that cold starts get.
         markJustLoggedIn();
