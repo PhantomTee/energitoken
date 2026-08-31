@@ -3,6 +3,7 @@ import { View, Text, StyleSheet } from "react-native";
 import { colors } from "../theme/colors";
 import { typography, spacing, radius } from "../theme/typography";
 import { BudgetRing } from "./BudgetRing";
+import { unitsToWh } from "../services/units";
 
 /**
  * The Budget screen's "where do I stand" block: budget-used ring, the three
@@ -67,8 +68,12 @@ export function BudgetSummary({
               {currentBudgetUnits === null ? "--" : currentBudgetUnits.toLocaleString()}
               <Text style={[typography.dataXs, styles.unit]}> units/day</Text>
             </Text>
-            {currentBudgetUnits === null && (
+            {currentBudgetUnits === null ? (
               <Text style={[typography.dataXs, styles.wh]}>not set yet</Text>
+            ) : (
+              <Text style={[typography.dataXs, styles.wh]}>
+                ≈ {unitsToWh(currentBudgetUnits).toLocaleString()} Wh/day
+              </Text>
             )}
           </View>
           <View style={styles.statBlock}>
@@ -77,6 +82,11 @@ export function BudgetSummary({
               {usedUnits === null ? "--" : usedUnits.toLocaleString()}
               <Text style={[typography.dataXs, styles.unit]}> units</Text>
             </Text>
+            {usedUnits !== null && (
+              <Text style={[typography.dataXs, styles.wh]}>
+                ≈ {unitsToWh(usedUnits).toLocaleString()} Wh
+              </Text>
+            )}
           </View>
         </View>
       </View>
