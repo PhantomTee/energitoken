@@ -18,7 +18,19 @@ export type MeterReading = {
    * writes from older/incomplete firmware). Always guard with `!= null`. */
   frequency?: number;
   powerFactor?: number;
+  /** Watt-hours consumed in the CURRENT budget cycle only -- reset by the
+   * meter at every cycle roll. This is what the budget maths is built on
+   * (percentUsed, "used this cycle", getUnbudgetedWh). It is deliberately
+   * NOT the figure the burn oracle settles against; see energyTotalWh. */
   energyWh: number;
+  /** Watt-hours on the meter's lifetime cumulative register, which only
+   * goes backwards if the PZEM module is reset or replaced. Optional: absent
+   * until the device runs firmware from 2026-08-31 or later, and absent on a
+   * board that has not completed a sensor read since boot. This is the scale
+   * lastBurnedWh is expressed in, so "consumed but not yet settled" is
+   * energyTotalWh - lastBurnedWh -- never energyWh, which resets daily and
+   * would make that difference meaningless after the first midnight. */
+  energyTotalWh?: number;
   budgetWh: number;
   percentUsed: number;
   relays: RelayState;

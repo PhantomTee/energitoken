@@ -10,6 +10,7 @@ type Res = ServerResponse & { status: (code: number) => Res; json: (body: unknow
 
 type DevicePendingResult =
   | { deviceId: string; ok: true; pendingWh: number; txHash: string }
+  | { deviceId: string; ok: true; pendingWh: number; skipped: true; reason: string }
   | { deviceId: string; ok: false; error: string };
 
 /**
@@ -94,7 +95,7 @@ async function processDevice(db: ReturnType<typeof adminDb>, deviceId: string): 
       if (!meterSnap.exists()) {
         return { deviceId, ok: false, error: "No meter reading found for device" };
       }
-      const meter = meterSnap.val() as { energyWhInt?: number; sig?: string };
+      const meter = meterSnap.val() as { energyWhInt?: number; sig?: string; energyScale?: string };
       if (meter.energyWhInt === undefined) {
         return { deviceId, ok: false, error: "Meter reading missing signed energyWhInt (firmware needs updating)" };
       }
@@ -103,8 +104,31 @@ async function processDevice(db: ReturnType<typeof adminDb>, deviceId: string): 
       }
       const currentEnergyWh: number = meter.energyWhInt;
 
-      const checkpointSnap = await db.ref(`burnCheckpoints/${deviceId}/lastBurnedWh`).get();
-      const lastBurnedWh: number = checkpointSnap.exists() ? checkpointSnap.val() : 0;
+      // The whole checkpoint node, not just lastBurnedWh, so the energy
+      // scale can be compared -- see the matching guard in oracle/burn.ts.
+      const checkpointSnap = await db.ref(`burnCheckpoints/${deviceId}`).get();
+      const checkpoint = (checkpointSnap.val() ?? {}) as { lastBurnedWh?: number; energyScale?: string };
+      const lastBurnedWh: number = checkpoint.lastBurnedWh ?? 0;
+
+      // Same scale guard burn.ts applies, and it matters more here because
+      // this job runs FIRST in the workflow. A checkpoint still carrying the
+      // old cycle-scale meaning (or no checkpoint at all) against a meter
+      // now reporting its lifetime total would make that entire lifetime
+      // figure look pending -- and pendingBurn is exactly what gates
+      // transfers, so the household would find their whole balance
+      // unspendable until the burn step rebaselined moments later. Leave
+      // pendingBurn untouched for the single run that takes.
+      const meterScale: string = meter.energyScale ?? "cycle";
+      const checkpointScale: string = checkpoint.energyScale ?? "cycle";
+      if (meterScale !== checkpointScale) {
+        return {
+          deviceId,
+          ok: true,
+          pendingWh: 0,
+          skipped: true,
+          reason: `Meter energy scale changed (${checkpointScale} -> ${meterScale}) — deferring to oracle/burn to rebaseline`,
+        };
+      }
 
       // Clamp to 0 rather than sending a negative amount on-chain -- a meter
       // reset between burns will show up here as a negative raw delta; the

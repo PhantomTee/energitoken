@@ -123,7 +123,7 @@ export async function processDevice(db: ReturnType<typeof adminDb>, deviceId: st
     if (!meterSnap.exists()) {
       return { deviceId, ok: false, error: "No meter reading found for device" };
     }
-    const meter = meterSnap.val() as { energyWhInt?: number; sig?: string };
+    const meter = meterSnap.val() as { energyWhInt?: number; sig?: string; energyScale?: string };
     if (meter.energyWhInt === undefined) {
       return { deviceId, ok: false, error: "Meter reading missing signed energyWhInt (firmware needs updating)" };
     }
@@ -137,6 +137,39 @@ export async function processDevice(db: ReturnType<typeof adminDb>, deviceId: st
     const checkpointSnap = await checkpointRef.get();
     const checkpoint = checkpointSnap.val() ?? { lastBurnedWh: 0 };
     const lastBurnedWh: number = checkpoint.lastBurnedWh ?? 0;
+
+    // What energyWhInt actually counts. Firmware before 2026-08-31 published
+    // the CURRENT CYCLE's consumption here, which reset to zero every
+    // midnight and so could never be settled correctly against a checkpoint
+    // (see pushState() in the .ino for the full account). Firmware from that
+    // build on publishes the module's lifetime register and tags it
+    // "lifetime". A checkpoint written under the old meaning is numerically
+    // meaningless under the new one -- typically a few hundred Wh against a
+    // lifetime total of tens of thousands -- so settling across the change
+    // would burn the entire difference in one go and wipe the household's
+    // balance. Rebaseline instead, exactly as for a physical counter reset,
+    // and record the scale so this happens once and never again.
+    const meterScale: string = meter.energyScale ?? "cycle";
+    const checkpointScale: string = checkpoint.energyScale ?? "cycle";
+    if (meterScale !== checkpointScale) {
+      console.warn("oracle/burn: meter energy scale changed -- rebaselining checkpoint", {
+        deviceId,
+        from: checkpointScale,
+        to: meterScale,
+        lastBurnedWh,
+        currentEnergyWh,
+      });
+      await checkpointRef.set({
+        lastBurnedWh: currentEnergyWh,
+        lastBurnAt: Date.now(),
+        walletAddress,
+        deviceId,
+        energyScale: meterScale,
+        rebaselinedAt: Date.now(),
+      });
+      await db.ref(`meters/${deviceId}/lastBurnedWh`).set(currentEnergyWh);
+      return { deviceId, ok: true, burned: false, reason: `Meter energy scale changed (${checkpointScale} -> ${meterScale}) — checkpoint rebaselined` };
+    }
 
     const rawDelta = currentEnergyWh - lastBurnedWh;
 
@@ -154,6 +187,7 @@ export async function processDevice(db: ReturnType<typeof adminDb>, deviceId: st
         lastBurnAt: Date.now(),
         walletAddress,
         deviceId,
+        energyScale: meterScale,
         rebaselinedAt: Date.now(),
       });
       // Same mirror as the normal-burn path -- without this, a meter reset
@@ -178,6 +212,7 @@ export async function processDevice(db: ReturnType<typeof adminDb>, deviceId: st
       lastBurnAt: Date.now(),
       walletAddress,
       deviceId,
+      energyScale: meterScale,
     });
 
     // Durable per-burn log for the Budget page's consumption chart --

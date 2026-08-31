@@ -167,9 +167,16 @@ export default function DashboardScreen() {
     }
   };
 
+  // Both sides of this subtraction have to be on the meter's LIFETIME scale.
+  // It used to read energyWh, which is this cycle's consumption and resets
+  // to zero at every midnight roll, while lastBurnedWh is a checkpoint on
+  // the cumulative counter -- so the difference stopped meaning anything as
+  // soon as a cycle rolled. energyTotalWh is absent on firmware older than
+  // 2026-08-31, in which case there is nothing honest to show and the badge
+  // stays hidden rather than displaying a number built from mixed scales.
   const unburnedWh =
-    reading?.energyWh != null && reading?.lastBurnedWh != null
-      ? Math.max(0, reading.energyWh - reading.lastBurnedWh)
+    reading?.energyTotalWh != null && reading?.lastBurnedWh != null
+      ? Math.max(0, reading.energyTotalWh - reading.lastBurnedWh)
       : null;
 
   const meterStatus: MeterStatus | null =
