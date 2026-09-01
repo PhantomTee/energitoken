@@ -13,12 +13,7 @@ const contractInfo: { address: string; abi: unknown } = require("../config/contr
 export const CONTRACT_ADDRESS: string = contractInfo.address;
 export const CONTRACT_ABI = contractInfo.abi as ethers.InterfaceAbi;
 
-// Ethereum Sepolia replaced Polygon Amoy on 2026-08-31. Amoy's faucets had
-// become effectively unobtainable without an existing mainnet balance, and
-// the oracle wallet was down to roughly nine transactions of gas with no way
-// to refill it. Sepolia's faucets are reachable, and its gas price at the
-// time of the switch was 1.0 gwei against Amoy's 37.5, so a single faucet
-// drip goes about thirty times further.
+// Ethereum Sepolia is the only chain this app talks to.
 const SEPOLIA_RPC_URL = process.env.EXPO_PUBLIC_SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com";
 export const CHAIN_ID = 11155111n;
 export const CHAIN_NAME = "Sepolia";

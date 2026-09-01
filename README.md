@@ -76,7 +76,7 @@ Meters are keyed by `/meters/{deviceId}` (a 6-hex-character code derived from th
 - **Contract:** `EnergiToken` (ENGY) at [`0x8493324De9578BF390092ed6c4a5b1033fBF8048`](https://sepolia.etherscan.io/address/0x8493324De9578BF390092ed6c4a5b1033fBF8048) on Ethereum Sepolia (chain ID `11155111`) — redeployed to add the on-chain `pendingBurn`/spendable-balance guard (double-spend fix, see Security notes below)
 - **Oracle/deployer wallet (testnet only):** `0xDC86E1E8A5C72cce432E99483A20B19802A47ccD`
 - **Web app + API:** [energitoken.vercel.app](https://energitoken.vercel.app) (auto-deploys from `main` via the Vercel GitHub integration)
-- **Network:** Ethereum Sepolia testnet (chain ID `11155111`) exclusively. Migrated from Polygon Amoy on 2026-08-31, because Amoy's faucets had become unobtainable without an existing mainnet balance and the oracle wallet could no longer be refuelled.
+- **Network:** Ethereum Sepolia testnet (chain ID `11155111`) exclusively.
 
 ---
 
