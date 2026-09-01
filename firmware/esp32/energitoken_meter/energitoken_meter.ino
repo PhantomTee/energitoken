@@ -298,7 +298,7 @@
  *  SECTION 2 — CONSTANTS
  * ===========================================================================*/
 // Relay-module drive polarity, selected at boot from the device's own ID by
-// selectBoardProfile() rather than set here by hand.
+// selectRelayPolarity() rather than set here by hand.
 //
 // The two physical meters take opposite drive levels: one energises its coil
 // on a logic low, the other on a logic high. This used to be a pair of
@@ -566,11 +566,8 @@ bool  prevRelayState[4] = { true, true, true, true };
 bool overridePresent[4] = { false, false, false, false };
 bool overrideValue[4]   = { false, false, false, false };
 
-// Which GPIO drives which TIER, indexed by tier (0 = critical .. 3 = luxury).
-// Not const: selectBoardProfile() rewrites it at boot for a board whose
-// harness lands the channels in a different order -- see that function.
-uint8_t RELAY_PINS[4] = { RELAY_R1_PIN, RELAY_R2_PIN,
-                          RELAY_R3_PIN, RELAY_R4_PIN };
+const uint8_t RELAY_PINS[4] = { RELAY_R1_PIN, RELAY_R2_PIN,
+                                RELAY_R3_PIN, RELAY_R4_PIN };
 const char*   TIER_NAME[4]  = { "Critical", "Essential", "Optional", "Luxury" };
 
 String   deviceID      = "";
@@ -878,44 +875,23 @@ void setRelay(uint8_t i, bool closed) {
  *  announced loudly instead of being applied quietly -- a new board with the
  *  opposite polarity would otherwise run inverted with no indication of why.
  * -------------------------------------------------------------------------*/
-void selectBoardProfile() {
-  struct Profile {
-    const char* id;
-    uint8_t     closedLevel;   // level that energises a coil
-    uint8_t     pins[4];       // GPIO per tier: critical, essential, optional, luxury
+void selectRelayPolarity() {
+  struct { const char* id; uint8_t closedLevel; } known[] = {
+    { "4BF6F0", LOW  },   // ESP-A: LOW energises the coil
+    { "F94098", HIGH },   // ESP-B: HIGH energises the coil
   };
-  static const Profile known[] = {
-    // ESP-A: coils energise LOW, harness lands the channels in tier order.
-    { "4BF6F0", LOW,
-      { RELAY_R1_PIN, RELAY_R2_PIN, RELAY_R3_PIN, RELAY_R4_PIN } },
-    // ESP-B: coils energise HIGH, and its harness swaps the channels in
-    // pairs -- the pin the design calls R2 lands on the physical channel
-    // carrying the critical load, and likewise for the optional/luxury pair.
-    // Commanding a tier therefore operated its partner: switching the
-    // essential tier off opened the critical one instead, while the display
-    // correctly reported what the firmware had been asked to do. Correcting
-    // it here rather than in the wiring keeps both boards on one firmware
-    // image, and keeps the mapping recorded next to the polarity it belongs
-    // with instead of living in somebody's memory of how that loom was made.
-    { "F94098", HIGH,
-      { RELAY_R2_PIN, RELAY_R1_PIN, RELAY_R4_PIN, RELAY_R3_PIN } },
-  };
-
   for (uint8_t k = 0; k < sizeof(known) / sizeof(known[0]); k++) {
     if (deviceID == known[k].id) {
       relayClosedLevel = known[k].closedLevel;
       relayOpenLevel   = (known[k].closedLevel == LOW) ? HIGH : LOW;
-      for (uint8_t i = 0; i < 4; i++) RELAY_PINS[i] = known[k].pins[i];
-      Serial.printf("[RELAY] %s: coil energises on %s; tier pins %u %u %u %u\n",
-                    known[k].id, relayClosedLevel == LOW ? "LOW" : "HIGH",
-                    RELAY_PINS[0], RELAY_PINS[1], RELAY_PINS[2], RELAY_PINS[3]);
+      Serial.printf("[RELAY] %s: coil energises on %s\n",
+                    known[k].id, relayClosedLevel == LOW ? "LOW" : "HIGH");
       return;
     }
   }
-  Serial.printf("[RELAY] WARNING: device %s is not in the board table; "
-                "assuming active-low and design pin order. Verify each tier "
-                "against the board before connecting mains.\n",
-                deviceID.c_str());
+  Serial.printf("[RELAY] WARNING: device %s not in the polarity table; "
+                "assuming active-low. Verify against the board before "
+                "connecting mains.\n", deviceID.c_str());
 }
 // Called from setup() AFTER loadNVS() and the balanceGated derivation that
 // follows it (see setup() below), specifically so this can check the real,
@@ -2400,12 +2376,12 @@ void setup() {
 
   // The device ID is derived from the MAC alone, so it is available this
   // early -- no WiFi, no NVS, nothing to wait for. It is computed here
-  // rather than further down because selectBoardProfile() needs it, and
+  // rather than further down because selectRelayPolarity() needs it, and
   // that has to run before initRelays() drives a pin for the first time:
   // driving them at the wrong polarity would energise every coil at boot
   // on the board whose polarity is inverted.
   deviceID = makeDeviceID();
-  selectBoardProfile();
+  selectRelayPolarity();
 
   initRelays();
   // Match checkRelayTransitions()'s baseline to the real post-boot state,
@@ -2428,7 +2404,7 @@ void setup() {
 
   // Serial2 is opened by the PZEM004Tv30 constructor; do not begin it again.
 
-  // deviceID is already set above, before selectBoardProfile().
+  // deviceID is already set above, before selectRelayPolarity().
   Serial.println("\nEnergiToken v2.0  device " + deviceID);
 
   lcdBoot();
