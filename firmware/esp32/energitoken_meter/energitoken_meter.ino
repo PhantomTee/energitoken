@@ -297,16 +297,23 @@
 /* ===========================================================================
  *  SECTION 2 — CONSTANTS
  * ===========================================================================*/
-// *** PER-BOARD *** -- the two physical meters have opposite relay-module
-// polarity. ESP-A (device 4BF6F0, confirmed via esp_base_mac_addr_get() --
-// see makeDeviceID()) is active-low: LOW energises the coil, which is what
-// these two lines are set for right now. ESP-B (device F94098) is the
-// opposite -- active-high, confirmed on the actual hardware 2026-08-27.
-// Flip both lines (swap LOW<->HIGH) before reflashing whichever board these
-// values don't currently match, and flip them back before ever reflashing
-// the other one again.
-#define RELAY_CLOSED    LOW     // active-low board (ESP-A): LOW energises the coil
-#define RELAY_OPEN      HIGH
+// Relay-module drive polarity, selected at boot from the device's own ID by
+// selectRelayPolarity() rather than set here by hand.
+//
+// The two physical meters take opposite drive levels: one energises its coil
+// on a logic low, the other on a logic high. This used to be a pair of
+// #defines that had to be edited before flashing each board and edited back
+// before flashing the other, which is a step that is silently skipped rather
+// than loudly failed. Flashing a board with the wrong value inverts every
+// relay decision on it: a commanded "off" energises the coil instead, so a
+// manual override appears to operate a different tier than the one asked
+// for, and the budget's own shedding runs backwards. On a board switching
+// live mains that is a hazard, not a cosmetic fault.
+//
+// The device ID is derived from the MAC and is available before any relay is
+// touched, so the board can simply decide for itself.
+uint8_t relayClosedLevel = LOW;    // level that energises the coil
+uint8_t relayOpenLevel   = HIGH;   // level that de-energises it
 
 #define THRESH_R4       70.0f
 #define THRESH_R3       85.0f
@@ -855,7 +862,36 @@ void saveWiFiCreds(const String& ssid, const String& pass) {
 void setRelay(uint8_t i, bool closed) {
   if (i > 3) return;
   relayState[i] = closed;
-  digitalWrite(RELAY_PINS[i], closed ? RELAY_CLOSED : RELAY_OPEN);
+  digitalWrite(RELAY_PINS[i], closed ? relayClosedLevel : relayOpenLevel);
+}
+
+/* ---------------------------------------------------------------------------
+ *  Picks the relay drive polarity for whichever board this firmware is
+ *  running on. Must be called before initRelays(), since that call is the
+ *  first thing to drive the pins.
+ *
+ *  A board not listed here keeps the active-low default and says so on the
+ *  serial console. That is a guess rather than a known value, so it is
+ *  announced loudly instead of being applied quietly -- a new board with the
+ *  opposite polarity would otherwise run inverted with no indication of why.
+ * -------------------------------------------------------------------------*/
+void selectRelayPolarity() {
+  struct { const char* id; uint8_t closedLevel; } known[] = {
+    { "4BF6F0", LOW  },   // ESP-A: LOW energises the coil
+    { "F94098", HIGH },   // ESP-B: HIGH energises the coil
+  };
+  for (uint8_t k = 0; k < sizeof(known) / sizeof(known[0]); k++) {
+    if (deviceID == known[k].id) {
+      relayClosedLevel = known[k].closedLevel;
+      relayOpenLevel   = (known[k].closedLevel == LOW) ? HIGH : LOW;
+      Serial.printf("[RELAY] %s: coil energises on %s\n",
+                    known[k].id, relayClosedLevel == LOW ? "LOW" : "HIGH");
+      return;
+    }
+  }
+  Serial.printf("[RELAY] WARNING: device %s not in the polarity table; "
+                "assuming active-low. Verify against the board before "
+                "connecting mains.\n", deviceID.c_str());
 }
 // Called from setup() AFTER loadNVS() and the balanceGated derivation that
 // follows it (see setup() below), specifically so this can check the real,
@@ -2338,6 +2374,15 @@ void setup() {
   loadNVS();
   balanceGated = !tokenBalKnown || tokenBal <= 0;
 
+  // The device ID is derived from the MAC alone, so it is available this
+  // early -- no WiFi, no NVS, nothing to wait for. It is computed here
+  // rather than further down because selectRelayPolarity() needs it, and
+  // that has to run before initRelays() drives a pin for the first time:
+  // driving them at the wrong polarity would energise every coil at boot
+  // on the board whose polarity is inverted.
+  deviceID = makeDeviceID();
+  selectRelayPolarity();
+
   initRelays();
   // Match checkRelayTransitions()'s baseline to the real post-boot state,
   // not the compile-time default -- otherwise a board that boots already
@@ -2359,7 +2404,7 @@ void setup() {
 
   // Serial2 is opened by the PZEM004Tv30 constructor; do not begin it again.
 
-  deviceID = makeDeviceID();
+  // deviceID is already set above, before selectRelayPolarity().
   Serial.println("\nEnergiToken v2.0  device " + deviceID);
 
   lcdBoot();
