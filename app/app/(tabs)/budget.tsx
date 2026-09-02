@@ -152,7 +152,31 @@ export default function BudgetScreen() {
   // raw on-chain one -- otherwise a household could plan a budget against
   // ENGY that's already spoken for by energy they've used but the oracle
   // hasn't burned yet, same distinction Dashboard and Transfer already make.
-  const availableUnits = spendableWh !== null ? tokensToUnits(spendableWh) : null;
+  /**
+   * Consumption settles on-chain only when the oracle runs, so the contract's
+   * spendable balance stands still between those writes. The meter's own
+   * counter does not: lifetime energy minus the last settled checkpoint is
+   * what has been used and not yet paid for, updated every few seconds.
+   *
+   * The larger of the two unsettled figures is taken, so this can only ever
+   * understate what is available -- see the same derivation on the Dashboard.
+   * Understating is the safe direction here too: the budget maths and the
+   * runway projection both read better as slightly pessimistic than as
+   * promising credit the contract would refuse to move.
+   */
+  const availableWh = useMemo(() => {
+    if (balanceWh === null) return null;
+    const chainUnsettled =
+      spendableWh !== null && balanceWh > spendableWh ? balanceWh - spendableWh : 0n;
+    const meterUnsettled =
+      reading?.energyTotalWh != null && reading?.lastBurnedWh != null
+        ? BigInt(Math.max(0, Math.floor(reading.energyTotalWh - reading.lastBurnedWh)))
+        : 0n;
+    const unsettled = chainUnsettled > meterUnsettled ? chainUnsettled : meterUnsettled;
+    return balanceWh > unsettled ? balanceWh - unsettled : 0n;
+  }, [balanceWh, spendableWh, reading?.energyTotalWh, reading?.lastBurnedWh]);
+
+  const availableUnits = availableWh !== null ? tokensToUnits(availableWh) : null;
   const currentBudgetUnits = reading?.budgetWh != null ? whToUnits(reading.budgetWh) : null;
   const usedUnits = reading?.energyWh != null ? whToUnits(reading.energyWh) : null;
 
@@ -327,7 +351,7 @@ export default function BudgetScreen() {
           <BudgetSummary
             percentUsed={percentUsed}
             availableUnits={availableUnits}
-            spendableWh={spendableWh === null ? null : Number(spendableWh)}
+            spendableWh={availableWh === null ? null : Number(availableWh)}
             currentBudgetUnits={currentBudgetUnits}
             usedUnits={usedUnits}
             cycleClock={cycleClock}
@@ -449,7 +473,7 @@ export default function BudgetScreen() {
           <BudgetSummary
             percentUsed={percentUsed}
             availableUnits={availableUnits}
-            spendableWh={spendableWh === null ? null : Number(spendableWh)}
+            spendableWh={availableWh === null ? null : Number(availableWh)}
             currentBudgetUnits={currentBudgetUnits}
             usedUnits={usedUnits}
             cycleClock={cycleClock}

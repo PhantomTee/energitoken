@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, Platform } from "react-native";
 import { router, useFocusEffect, Link } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -186,6 +186,40 @@ export default function DashboardScreen() {
       ? Math.max(0, reading.energyTotalWh - reading.lastBurnedWh)
       : null;
 
+  /**
+   * What the household can actually still use, updated as fast as the meter
+   * reports rather than as fast as the chain settles.
+   *
+   * The contract's own spendableBalanceOf() subtracts pendingBurn, but
+   * pendingBurn is written by the consumption oracle on its own schedule --
+   * every 30 minutes at best, and the cron behind it has been observed
+   * skipping for hours. Between those writes the on-chain figure does not
+   * move at all, so a household that consumed 3 Wh saw the same number it
+   * had before and reasonably concluded the meter was not counting.
+   *
+   * unburnedWh is the same quantity measured at the meter (lifetime counter
+   * minus the last settled checkpoint) and updates every time the device
+   * publishes, which is every few seconds.
+   *
+   * The larger of the two is used, never the average or the newer one: they
+   * disagree in both directions -- the meter leads between settlements, and
+   * pendingBurn can briefly lead just after a burn lands but before the
+   * meter's next publish. Taking the maximum means the figure shown is never
+   * more than what either source believes is actually available, so it can
+   * only ever understate what a household may spend. Understating is the
+   * safe direction: the contract rejects a transfer above its own spendable
+   * balance, so a display that ran ahead would offer transfers that revert.
+   */
+  const availableWh = useMemo(() => {
+    if (balanceWh === null) return null;
+    const chainUnsettled =
+      spendableWh !== null && balanceWh > spendableWh ? balanceWh - spendableWh : 0n;
+    const meterUnsettled =
+      unburnedWh == null ? 0n : BigInt(Math.max(0, Math.floor(unburnedWh)));
+    const unsettled = chainUnsettled > meterUnsettled ? chainUnsettled : meterUnsettled;
+    return balanceWh > unsettled ? balanceWh - unsettled : 0n;
+  }, [balanceWh, spendableWh, unburnedWh]);
+
   const meterStatus: MeterStatus | null =
     !hasDevice
       ? null
@@ -314,7 +348,7 @@ export default function DashboardScreen() {
               </View>
               <Text style={[typography.label, styles.walletLabel]}>Available Balance</Text>
               <Text style={[typography.dataMd, styles.walletValue]}>
-                {spendableWh === null ? "···" : tokensToUnits(spendableWh).toLocaleString()}
+                {availableWh === null ? "···" : tokensToUnits(availableWh).toLocaleString()}
                 <Text style={[typography.dataXs, styles.walletUnit]}> units</Text>
               </Text>
               <View style={styles.walletBadgeRow}>
@@ -345,13 +379,16 @@ export default function DashboardScreen() {
         <>
           {/* ── Balance -- first thing on the screen ── */}
           <View style={styles.balanceCard}>
-            <Text style={[typography.bodyStrong, styles.balanceCardTitle]}>Balance</Text>
+            <Text style={[typography.bodyStrong, styles.balanceCardTitle]}>Available</Text>
             <Text style={[typography.data, styles.balanceValue]}>
-              {balanceWh === null ? "···" : tokensToUnits(balanceWh).toLocaleString()}
+              {availableWh === null ? "···" : tokensToUnits(availableWh).toLocaleString()}
               <Text style={[typography.dataSm, styles.balanceValueUnit]}> units</Text>
             </Text>
             <Text style={[typography.dataSm, styles.balanceUnit]}>
-              ≈ {balanceWh === null ? "···" : balanceWh.toLocaleString()} ENGY (Wh)
+              {availableWh === null ? "···" : availableWh.toLocaleString()} Wh available
+              {balanceWh !== null && availableWh !== null && balanceWh > availableWh
+                ? ` · ${balanceWh.toLocaleString()} Wh held`
+                : ""}
             </Text>
             <View style={styles.balanceBadgeRow}>
               <PendingBurnBadge unburnedWh={unburnedWh} />
