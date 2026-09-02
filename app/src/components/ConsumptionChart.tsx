@@ -67,11 +67,12 @@ function axisLabel(t: number, range: ConsumptionRange): string {
   const d = new Date(t + WAT_OFFSET_MS);
   const hh = String(d.getUTCHours()).padStart(2, "0");
   const mm = String(d.getUTCMinutes()).padStart(2, "0");
-  if (range === "7d" || range === "14d") {
+  if (range === "7d" || range === "30d") {
+    // A week reads naturally by weekday; a month has too many for that, so
+    // it falls back to a date.
+    if (range === "30d") return `${d.getUTCDate()}/${d.getUTCMonth() + 1}`;
     const day = d.toLocaleDateString(undefined, { weekday: "short", timeZone: "UTC" });
-    return range === "14d"
-      ? `${d.getUTCDate()}/${d.getUTCMonth() + 1}`
-      : `${day} ${hh}:00`.replace(" 00:00", "");
+    return `${day} ${hh}:00`.replace(" 00:00", "");
   }
   return `${hh}:${mm}`;
 }

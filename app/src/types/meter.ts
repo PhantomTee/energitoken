@@ -23,6 +23,13 @@ export type MeterReading = {
    * (percentUsed, "used this cycle", getUnbudgetedWh). It is deliberately
    * NOT the figure the burn oracle settles against; see energyTotalWh. */
   energyWh: number;
+
+  /** Wh consumed since local midnight, published by firmware from 2026-09-02.
+   * Distinct from energyWh, which is scoped to the BUDGET cycle and therefore
+   * restarts whenever a household sets a budget -- correct for enforcement,
+   * wrong for telling someone what they used today. Absent on older firmware,
+   * in which case callers fall back to energyWh. */
+  energyTodayWh?: number;
   /** Watt-hours on the meter's lifetime cumulative register, which only
    * goes backwards if the PZEM module is reset or replaced. Optional: absent
    * until the device runs firmware from 2026-08-31 or later, and absent on a

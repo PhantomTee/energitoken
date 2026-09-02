@@ -77,7 +77,7 @@ export const relayTierDevices: Record<RelayTier, string> = {
 };
 
 export const relayTierThreshold: Record<RelayTier, string> = {
-  r1: "Always on",
+  r1: "Sheds at 100% used",
   r2: "Sheds at 95% used",
   r3: "Sheds at 85% used",
   r4: "Sheds at 70% used",

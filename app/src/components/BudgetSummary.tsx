@@ -77,7 +77,7 @@ export function BudgetSummary({
             )}
           </View>
           <View style={styles.statBlock}>
-            <Text style={[typography.label, styles.label]}>Used this cycle</Text>
+            <Text style={[typography.label, styles.label]}>Used today</Text>
             <Text style={[typography.dataMd, styles.value]}>
               {usedUnits === null ? "--" : usedUnits.toLocaleString()}
               <Text style={[typography.dataXs, styles.unit]}> units</Text>

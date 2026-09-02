@@ -5,15 +5,15 @@ import { apiRequest } from "../services/apiClient";
 /** The windows the chart offers. Each is paired server-side with a bucket
  * size, so a longer range returns fewer, wider points rather than a larger
  * payload -- see CONSUMPTION_RANGES in api/data.ts. */
-export const CONSUMPTION_RANGES = ["1h", "6h", "24h", "7d", "14d"] as const;
+export const CONSUMPTION_RANGES = ["1h", "6h", "24h", "7d", "30d"] as const;
 export type ConsumptionRange = (typeof CONSUMPTION_RANGES)[number];
 
 export const RANGE_LABELS: Record<ConsumptionRange, string> = {
   "1h": "1H",
   "6h": "6H",
-  "24h": "24H",
-  "7d": "7D",
-  "14d": "14D",
+  "24h": "Day",
+  "7d": "Week",
+  "30d": "Month",
 };
 
 export type ConsumptionPoint = {

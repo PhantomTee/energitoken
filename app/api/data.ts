@@ -117,6 +117,9 @@ const CONSUMPTION_RANGES: Record<string, { hours: number; bucketMin: number }> =
   "24h": { hours: 24,       bucketMin: 10 },
   "7d":  { hours: 24 * 7,   bucketMin: 60 },
   "14d": { hours: 24 * 14,  bucketMin: 180 },
+  // A month is the longest the meter's minute-level log retains, so this
+  // is the widest honest window. Six-hour buckets keep it to ~120 points.
+  "30d": { hours: 24 * 30,  bucketMin: 360 },
 };
 
 /**
@@ -217,14 +220,25 @@ async function getConsumption(req: Req, res: Res, walletAddress: string): Promis
       return { t, avgW: Math.round(avgW * 10) / 10, w: Math.round(spotMean * 10) / 10 };
     });
 
-  // Total across the window, from the first to the last energy reading that
-  // actually exists -- not a sum of the buckets, which would silently count
-  // an outage as zero rather than as unknown.
+  // Total across the window: the sum of POSITIVE differences between
+  // consecutive readings, not last-minus-first.
+  //
+  // Last-minus-first is only correct while the meter's lifetime counter is
+  // monotonic across the whole window, and it is not: the counter can be
+  // zeroed deliberately, or the module replaced. A window spanning a reset
+  // collapsed to whatever had accumulated since it -- which produced a 7-day
+  // total of 39 Wh sitting underneath a 24-hour total of 149 Wh, an
+  // impossibility, since the shorter window is contained in the longer one.
+  //
+  // Summing positive steps carries the energy from before the reset and
+  // simply skips the negative step across it. An outage still reads as
+  // nothing rather than as zero, because a gap contributes no steps at all.
   const withEnergy = windowed.filter((r) => r.e !== null);
-  const totalWh =
-    withEnergy.length >= 2
-      ? Math.max(0, (withEnergy[withEnergy.length - 1].e as number) - (withEnergy[0].e as number))
-      : 0;
+  let totalWh = 0;
+  for (let k = 1; k < withEnergy.length; k++) {
+    const step = (withEnergy[k].e as number) - (withEnergy[k - 1].e as number);
+    if (step > 0) totalWh += step;
+  }
 
   res.status(200).json({
     hasDevice: true,

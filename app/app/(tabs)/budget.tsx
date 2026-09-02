@@ -178,7 +178,13 @@ export default function BudgetScreen() {
 
   const availableUnits = availableWh !== null ? tokensToUnits(availableWh) : null;
   const currentBudgetUnits = reading?.budgetWh != null ? whToUnits(reading.budgetWh) : null;
-  const usedUnits = reading?.energyWh != null ? whToUnits(reading.energyWh) : null;
+  // What the household actually used today. energyWh is cycle-scoped and
+  // restarts the moment a budget is set, so a figure labelled "used today"
+  // built on it would silently reset mid-afternoon. energyTodayWh resets only
+  // at midnight. Older firmware does not publish it, so fall back rather than
+  // showing nothing.
+  const usedTodayWh = reading?.energyTodayWh ?? reading?.energyWh ?? null;
+  const usedUnits = usedTodayWh != null ? whToUnits(usedTodayWh) : null;
 
   const percentUsed =
     reading?.percentUsed ??
