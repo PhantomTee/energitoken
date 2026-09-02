@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Modal, View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, Platform, Linking, KeyboardAvoidingView } from "react-native";
+import { Modal, View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, Platform, KeyboardAvoidingView } from "react-native";
 import * as WebBrowser from "expo-web-browser";
 import { ethers } from "ethers";
 import { colors } from "../theme/colors";
@@ -105,8 +105,18 @@ export function TopUpModal({ visible, onClose, walletAddress, getSigner, onMinte
       );
 
       if (Platform.OS === "web") {
-        Linking.openURL(json.checkoutUrl);
-        onClose();
+        // Navigate this tab rather than opening another one. Linking.openURL
+        // becomes window.open on web, and this call happens after an awaited
+        // request -- by then the browser no longer counts it as part of the
+        // click that started it, so the popup is blocked and the user gets a
+        // blank tab. Trying again sometimes worked only because the browser
+        // had since granted the site popup permission.
+        //
+        // A checkout is meant to take the user away and bring them back: the
+        // provider returns to redirectUrl, which payment-complete.tsx already
+        // handles. Assigning location keeps that flow and cannot be blocked.
+        window.location.assign(json.checkoutUrl);
+        return;
       } else {
         setLoading(false);
         await WebBrowser.openBrowserAsync(json.checkoutUrl);

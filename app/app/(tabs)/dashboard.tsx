@@ -220,12 +220,54 @@ export default function DashboardScreen() {
     return balanceWh > unsettled ? balanceWh - unsettled : 0n;
   }, [balanceWh, spendableWh, unburnedWh]);
 
+  /**
+   * When THIS device first saw the current reading, on this device's clock.
+   *
+   * reading.updatedAt is stamped by the Firebase server; Date.now() is the
+   * phone's own clock. Subtracting one from the other measures the offset
+   * between two clocks, not the age of the reading -- so a phone running more
+   * than STALE_AFTER_MS slow reported "No signal from meter" permanently,
+   * from a meter that was publishing perfectly well. Phones with automatic
+   * time disabled routinely drift further than the 30s window allows, which
+   * is why this appeared on one handset and not another.
+   *
+   * Recording arrival locally puts both sides of the subtraction on the same
+   * clock, so any offset cancels out.
+   */
+  const [firstSeen, setFirstSeen] = useState<{ updatedAt: number; at: number } | null>(null);
+  useEffect(() => {
+    if (!reading) {
+      setFirstSeen(null);
+      return;
+    }
+    setFirstSeen((prev) =>
+      prev && prev.updatedAt === reading.updatedAt
+        ? prev
+        : { updatedAt: reading.updatedAt, at: Date.now() }
+    );
+  }, [reading]);
+
+  // Age of the reading measured entirely on this device's clock.
+  const readingAgeMs = firstSeen ? nowMs - firstSeen.at : null;
+
+  /**
+   * A reading that was already old when the app opened would look fresh above,
+   * because this device only just saw it. The server-clock comparison is still
+   * the only thing that can catch that, so it is kept -- but with a tolerance
+   * wide enough that ordinary clock drift cannot trip it. Five minutes absorbs
+   * any plausible skew while still catching a meter that has been off for
+   * hours.
+   */
+  const CLOCK_SKEW_TOLERANCE_MS = 5 * 60_000;
+  const plausiblyRecent =
+    reading != null && nowMs - reading.updatedAt < CLOCK_SKEW_TOLERANCE_MS;
+
   const meterStatus: MeterStatus | null =
     !hasDevice
       ? null
       : meterError
         ? "fault"
-        : reading && nowMs - reading.updatedAt < STALE_AFTER_MS
+        : reading && readingAgeMs !== null && readingAgeMs < STALE_AFTER_MS && plausiblyRecent
           ? "live"
           : "no-signal";
 
@@ -287,7 +329,7 @@ export default function DashboardScreen() {
           </Text>
           {meterStatus !== "fault" && reading && (
             <Text style={[typography.dataXs, styles.statusTimestamp]}>
-              Updated {formatSecondsAgo(reading.updatedAt, nowMs)}
+              Updated {formatSecondsAgo(firstSeen ? firstSeen.at : reading.updatedAt, nowMs)}
             </Text>
           )}
         </View>
