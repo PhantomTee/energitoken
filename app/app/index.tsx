@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Platform, AppState } from "react-native";
 import { Redirect } from "expo-router";
 import { useWallet } from "../src/hooks/useWallet";
@@ -25,6 +25,8 @@ type Destination = "/login" | "/unlock" | "/welcome" | "/landing" | PostAuthDest
 export default function Index() {
   const { isReady, isAuthenticated, walletAddress, logout, getSigner } = useWallet();
   const [destination, setDestination] = useState<Destination | null>(null);
+  // Null until the first run reads the one-shot login flag; see its use below.
+  const justLoggedInRef = useRef<boolean | null>(null);
   // Some Android OEM skins (observed: ColorOS/Oplus) aggressively freeze a
   // just-launched app's background work to save battery, including native
   // module callbacks like Privy's session-restore check. isReady can end up
@@ -50,7 +52,16 @@ export default function Index() {
 
     let cancelled = false;
 
-    if (!isAuthenticated || !walletAddress) {
+    // Authenticated, but the wallet has not resolved yet. This is a transient
+    // state part-way through login, not a logged-out one, and the two used to
+    // be handled by the same branch. Deciding anything here is wrong in both
+    // directions: on native it routes a user who has just logged in back to
+    // /login, and on the path below it would resolve their home by asking the
+    // backend which device belongs to the empty string. walletAddress is in
+    // this effect's dependency list, so returning simply waits for it.
+    if (isAuthenticated && !walletAddress) return;
+
+    if (!isAuthenticated) {
       // Welcome carousel is a native-only, first-install experience --
       // shown once, before the user has ever reached login.
       if (Platform.OS === "web") {
@@ -73,7 +84,18 @@ export default function Index() {
 
     (async () => {
       try {
-        const justLoggedIn = consumeJustLoggedIn();
+        // consumeJustLoggedIn() reads AND clears -- one decision per login.
+        // But this effect legitimately runs more than once per login, because
+        // isAuthenticated and walletAddress do not settle on the same render.
+        // The second run used to find the flag already spent, treat a fresh
+        // login as a cold start, fail the quick-auth window check (which no
+        // new device can pass) and force a logout -- putting the user back on
+        // /login to repeat the whole loop. Latching it per mount means the
+        // answer survives every re-run until this screen actually navigates.
+        if (justLoggedInRef.current === null) {
+          justLoggedInRef.current = consumeJustLoggedIn();
+        }
+        const justLoggedIn = justLoggedInRef.current;
 
         if (Platform.OS !== "web" && !justLoggedIn) {
           const withinWindow = await isWithinQuickAuthWindow();
