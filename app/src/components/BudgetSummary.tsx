@@ -117,7 +117,9 @@ const styles = StyleSheet.create({
     // on a narrow phone.
     flexWrap: "wrap",
   },
-  stats: { flex: 1, minWidth: 180, gap: spacing.md },
+  // Same reasoning as RelayIndicator's compact grid: beside the ring, a
+  // 180px floor does not fit a narrow phone and widened the page.
+  stats: { flex: 1, minWidth: 0, gap: spacing.md },
   statBlock: { gap: 2 },
   label: { color: colors.textSecondary },
   value: { color: colors.textPrimary },

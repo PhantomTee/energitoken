@@ -222,7 +222,10 @@ const styles = StyleSheet.create({
 
   // ── Compact (Dashboard "Relay Status") ──
   compactGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
-  compactItem: { flexBasis: "47%", flexGrow: 1, minWidth: 140 },
+  // No minWidth: a 140px floor on two 47% columns cannot fit inside a
+  // 360px viewport once the card padding is removed, so the row pushed
+  // the document wider than the screen instead of wrapping.
+  compactItem: { flexBasis: "47%", flexGrow: 1, minWidth: 0 },
   compactCard: {
     flexDirection: "row",
     justifyContent: "space-between",

@@ -34,9 +34,13 @@ import { unitsToWh } from "../services/units";
  */
 
 const CHART_HEIGHT = 190;
-/** The card's own horizontal padding, referenced rather than repeated so
- * the two cannot drift apart. */
-const CARD_PADDING = spacing.lg;
+/** Everything between the card's outer edge and its content: the padding on
+ * each side plus the 1px border. onLayout reports the outer width, so all of
+ * it has to come off before the SVG is sized, or the chart is drawn wider
+ * than the space it has and runs past the card edge -- unnoticeable on a wide
+ * screen, off the edge on a phone. Taken from the same constants the
+ * stylesheet uses so the two cannot drift apart. */
+const CARD_INSET = spacing.lg + 1;
 const PAD_LEFT = 44;
 const PAD_RIGHT = 12;
 const PAD_TOP = 14;
@@ -63,7 +67,7 @@ export function DailyUsageChart({
    * absorb it, and hidden on a wide screen.
    */
   const onLayout = (e: LayoutChangeEvent) =>
-    setWidth(Math.max(0, e.nativeEvent.layout.width - CARD_PADDING * 2));
+    setWidth(Math.max(0, e.nativeEvent.layout.width - CARD_INSET * 2));
 
   const hasBudget = budgetUnitsPerDay !== null && budgetUnitsPerDay > 0;
 
