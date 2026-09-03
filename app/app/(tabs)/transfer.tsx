@@ -381,15 +381,19 @@ export default function TransferScreen() {
           {unbudgetedWh === null ? "···" : `${unbudgetedWh.toLocaleString()} Wh`}
         </Text>
       </View>
-      {spendableWh !== null && unbudgetedWh !== null && spendableWh !== unbudgetedWh && (
+      {/* Both hints quote the CORRECTED spendable figure, not the chain's own.
+          Quoting spendableBalanceOf() here while the limit above is derived
+          from the meter would have the screen contradict itself whenever
+          settlement lags -- the very case these hints exist to explain. */}
+      {meterAwareSpendableWh !== null && unbudgetedWh !== null && meterAwareSpendableWh !== unbudgetedWh && (
         <Text style={[typography.caption, styles.spendableHint]}>
-          {spendableWh.toLocaleString()} ENGY spendable. The rest is today's remaining budget
+          {meterAwareSpendableWh.toLocaleString()} Wh spendable. The rest is today's remaining budget
           allowance, set aside so sending it wouldn't leave you short before your next top-up.
         </Text>
       )}
-      {balanceWh !== null && spendableWh !== null && balanceWh !== spendableWh && (
+      {balanceWh !== null && meterAwareSpendableWh !== null && balanceWh !== meterAwareSpendableWh && (
         <Text style={[typography.caption, styles.spendableHint]}>
-          On-chain balance is {balanceWh.toLocaleString()} ENGY. The difference is energy you've
+          On-chain balance is {balanceWh.toLocaleString()} Wh. The difference is energy you've
           already used that hasn't settled on-chain yet, so it can't be sent.
         </Text>
       )}
