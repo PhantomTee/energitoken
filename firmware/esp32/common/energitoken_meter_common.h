@@ -268,6 +268,13 @@
 #include <addons/RTDBHelper.h>
 #include <mbedtls/md.h>  // part of ESP-IDF -- no new library, used only for the meter's HMAC-SHA256 signature
 #include <time.h>        // NTP wall clock, used only for the cycle-rollover fallback (Section 6b)
+// Build credentials, kept out of the repository. __has_include so a clone
+// without the file reaches the guards below -- which name what is missing --
+// rather than failing on an unresolved #include.
+#if __has_include("secrets.h")
+  #include "secrets.h"
+#endif
+
 #include <esp_mac.h>     // esp_base_mac_addr_get() -- see makeDeviceID() in Section 6
 
 /* ===========================================================================
@@ -445,7 +452,21 @@ char WIFI_PASSWORD[65] = "testing123";
 // whole database, not just this device. Fill in locally from the Firebase
 // console before compiling/flashing -- never paste the real value here in
 // a commit, this repo is public.
-#define FB_SECRET   ""
+// FB_SECRET comes from secrets.h, included at the top of this file.
+
+// A blank secret is not a configuration choice, it is a broken build: the
+// meter associates with WiFi, reports itself healthy on its own display, and
+// then silently publishes nothing at all, because every Firebase call returns
+// early on a failed authentication. That failure looks identical to a network
+// outage from the outside and cost hours to find -- twice, the second time
+// because splitting this file out of the sketch reintroduced the blank.
+// sizeof a string literal counts its terminator, so an empty one is 1.
+#if !defined(FB_SECRET)
+  #error "FB_SECRET is not defined -- create firmware/esp32/common/secrets.h from the template described in its own header. It is gitignored, so a fresh clone will not have it."
+#endif
+static_assert(sizeof(FB_SECRET) > 1,
+              "FB_SECRET is empty -- the meter cannot authenticate to Firebase "
+              "and will publish nothing. Fill it in before flashing.");
 
 // This device's own HMAC-SHA256 key, unique to THIS board -- derived as
 // HMAC(masterSecret, deviceID) and computed once on the server side, never
@@ -465,7 +486,15 @@ char WIFI_PASSWORD[65] = "testing123";
 // NOT committed: fill in the per-board value locally before flashing (see
 // app/api/_lib/meterHmac.ts for how it's derived server-side) -- never
 // paste a real derived key here in a commit, this repo is public.
-#define METER_HMAC_KEY_HEX ""
+// Supplied by the board's own wrapper sketch, because it differs per device:
+// the server holds one master secret and derives each meter's key from its
+// device id, so a board only ever carries its own. Flashing with this blank
+// signs every reading with a zero key, the server rejects the signature, and
+// the oracle refuses to settle -- silently, since it correctly declines to
+// burn against a reading it cannot verify.
+#if !defined(METER_HMAC_KEY_HEX)
+  #error "METER_HMAC_KEY_HEX is not defined -- include this from energitoken_meter_espA or energitoken_meter_espB, which carry each board's derived key."
+#endif
 
 /* ===========================================================================
  *  SECTION 4 — OBJECTS AND STATE
@@ -567,6 +596,11 @@ int   todayYday        = -1;    // tm_yday the baseline belongs to
 // a .ino.
 void updateTodayEnergy();
 
+// Also defined further down, and also called above its definition -- by
+// applyBalanceGate(), which now gates on the net figure rather than the raw
+// mirrored balance.
+float availableBalanceWh();
+
 // millis() when this device last began a cycle -- used only by the local
 // fallback when no wall clock is available yet.
 uint32_t cycleLocalStart = 0;
@@ -643,6 +677,48 @@ float    tokenBal   = 0;
 // long WiFi/Firebase takes to reconnect, even with real credit on the wallet.
 bool     tokenBalKnown     = false;
 uint32_t topUpNoticeUntil  = 0;      // millis() deadline; live screen shows the top-up notice until then
+
+/* ---------------------------------------------------------------------------
+ *  Energy the oracle has already settled on-chain for this meter, mirrored to
+ *  meters/{id}/lastBurnedWh by api/oracle/burn.ts.
+ *
+ *  The meter writes energyTotalWh and never used to read this back, so it had
+ *  no way to know how much of what it had measured was still unpaid. Its
+ *  balance line therefore showed tokenBalance verbatim -- which is the
+ *  CONTRACT's spendable figure, balanceOf minus pendingBurn, and pendingBurn
+ *  only moves when the oracle runs. With settlement stalled the meter showed
+ *  183 Wh while the app, which subtracts the meter's own unsettled reading,
+ *  correctly showed 117.
+ *
+ *  Holding it here lets the display do the same subtraction the app does, so
+ *  the two agree without either waiting on the chain.
+ * -------------------------------------------------------------------------*/
+/* ---------------------------------------------------------------------------
+ *  Sub-watt-hour interpolation, for the percentage only.
+ *
+ *  The PZEM's energy register steps in whole watt-hours, so the budget
+ *  percentage moved in jumps the size of one Wh against the allowance --
+ *  against a 7 Wh budget that is fourteen points at a time, which reads as a
+ *  broken gauge rather than a meter measuring anything.
+ *
+ *  Between register ticks the module still reports instantaneous power, so
+ *  the energy consumed since the last tick can be estimated by integrating
+ *  it. That estimate fills in the gap and the gauge moves continuously.
+ *
+ *  Deliberately confined to the DISPLAYED percentage. meas.energy stays the
+ *  register's own value: it is what gets signed, published and settled
+ *  against, and an interpolated figure must never reach the oracle -- the
+ *  whole point of signing a reading is that it is the reading, not an
+ *  estimate. The interpolation is also capped at one watt-hour, so a
+ *  mis-reported power figure can drift the gauge by at most one step before
+ *  the next real tick corrects it.
+ * -------------------------------------------------------------------------*/
+float    subWh             = 0;      // Wh accumulated since the last register tick
+float    lastRegisterWh    = -1;     // register value that accumulation belongs to
+uint32_t lastSubSampleMs   = 0;
+
+float    lastBurnedWh      = 0;
+bool     lastBurnedKnown   = false;
 float    lastTopUpAmount   = 0;
 
 // Same transient-overlay mechanism as the top-up notice above, for the
@@ -852,6 +928,8 @@ void loadNVS() {
   todayBaselineWh   = prefs.getFloat("tdBase", 0.0f);
   todayBaselineSet  = prefs.getBool("tdSet", false);
   todayYday         = prefs.getInt("tdYday", -1);
+  lastBurnedWh      = prefs.getFloat("lBurn", 0.0f);
+  lastBurnedKnown   = prefs.getBool("lBurnK", false);
   prefs.end();
 
   // A value persisted by an older build (or a corrupted read) must not be
@@ -882,6 +960,8 @@ void saveNVS() {
   prefs.putFloat("tdBase", todayBaselineWh);
   prefs.putBool("tdSet",   todayBaselineSet);
   prefs.putInt("tdYday",   todayYday);
+  prefs.putFloat("lBurn",  lastBurnedWh);
+  prefs.putBool("lBurnK",  lastBurnedKnown);
   prefs.end();
 }
 
@@ -1087,7 +1167,17 @@ void clearAllOverrides() {
 
 void applyBalanceGate() {
   bool wasGated = balanceGated;
-  balanceGated = (!tokenBalKnown || tokenBal <= 0);
+  // Gates on what is actually AVAILABLE, not the raw mirrored balance: credit
+  // already spent on electricity the oracle has not yet settled is not credit
+  // the household still has. Gating on the raw figure meant a household could
+  // keep drawing power against tokens that were, in substance, already spent
+  // -- and the longer settlement stalled, the further past zero they could go.
+  //
+  // availableBalanceWh() falls back to the raw balance whenever there is no
+  // settlement checkpoint or no valid reading to subtract from, so a meter
+  // that cannot yet compute the net figure gates exactly as it did before
+  // rather than on a number it had to guess at.
+  balanceGated = (!tokenBalKnown || availableBalanceWh() <= 0);
 
   // Newly gated (not just still gated from last cycle): clear every manual
   // override. Otherwise a stale "forced on" override from before the
@@ -1216,9 +1306,24 @@ void runAlgorithm() {
   // Independent of the cycle above, and deliberately so -- see its comment.
   updateTodayEnergy();
 
-  // percentUsed = energyWh / budgetWh * 100
+  // Estimate the fraction of a watt-hour consumed since the register last
+  // ticked, so the gauge moves smoothly instead of in whole-Wh steps.
+  uint32_t nowMs = millis();
+  if (meas.energy != lastRegisterWh) {
+    lastRegisterWh  = meas.energy;
+    subWh           = 0;              // a real tick supersedes the estimate
+  } else if (lastSubSampleMs > 0 && meas.power > 0) {
+    float hours = (nowMs - lastSubSampleMs) / 3600000.0f;
+    subWh += meas.power * hours;
+    if (subWh > 1.0f) subWh = 1.0f;   // never run ahead of the next tick
+  }
+  lastSubSampleMs = nowMs;
+
+  // percentUsed = energyWh / budgetWh * 100, with the interpolated fraction
+  // added. cycleWh itself is left alone -- it is published and settled
+  // against, and must stay the register's own figure.
   budget.percent = (budget.totalWh > 0)
-                 ? (budget.cycleWh / budget.totalWh) * 100.0f
+                 ? ((budget.cycleWh + subWh) / budget.totalWh) * 100.0f
                  : 0.0f;
 
   // ---- control below this line; measurement above it is unconditional ----
@@ -1293,6 +1398,22 @@ void updateTodayEnergy() {
     saveNVS();
   }
   todayWh = used;
+}
+
+/* ---------------------------------------------------------------------------
+ *  Credit actually available to the household: the mirrored balance less the
+ *  energy this meter has measured but the oracle has not yet settled.
+ *
+ *  Matches what the app shows. Falls back to the raw balance when the meter
+ *  has no settlement checkpoint yet -- with nothing to subtract, the raw
+ *  figure is the honest one rather than a guess.
+ * -------------------------------------------------------------------------*/
+float availableBalanceWh() {
+  if (!lastBurnedKnown || !meas.everValid) return tokenBal;
+  float unsettled = meas.energy - lastBurnedWh;
+  if (unsettled <= 0) return tokenBal;
+  float avail = tokenBal - unsettled;
+  return avail > 0 ? avail : 0;
 }
 
 void startNewCycle(uint64_t stamp, const char* reason) {
@@ -1586,7 +1707,7 @@ void lcdLive() {
     // Wh, matching the unit the meter itself measures and pushes (energyWh)
     // and the "E:" figure one row down, so the two are directly comparable.
     // 1 ENGY == 1 Wh, so this is also the raw token count.
-    if (tokenBalKnown) snprintf(face, sizeof(face), "Bal:%.0f Wh", tokenBal);
+    if (tokenBalKnown) snprintf(face, sizeof(face), "Bal:%.0f Wh", availableBalanceWh());
     else               snprintf(face, sizeof(face), "Bal: --- Wh");
   } else {
     // Two spare columns on the right carry a stale marker once the sensor's
@@ -1700,7 +1821,7 @@ void lcdBalance() {
   char l[32];
   lcdRow(0, "Token balance");
   if (tokenBalKnown) {
-    snprintf(l, sizeof(l), "%.0f ENGY", tokenBal);
+    snprintf(l, sizeof(l), "%.0f ENGY", availableBalanceWh());
     lcdRow(1, l);
     snprintf(l, sizeof(l), "= %.0f Wh", tokenBal);
     lcdRow(2, l);
@@ -2340,6 +2461,18 @@ void pullConfig() {
   // applyBalanceGate() uses. The server writes a fresh cycleStartedAt in
   // the same request, so that block above already handles resetting
   // cycleWh/the baseline -- no need to duplicate that here.
+  // lastBurnedWh -- READ ONLY. Written by api/oracle/burn.ts each time it
+  // settles. Used only for display; the balance gate deliberately still keys
+  // off tokenBal, since changing what gates a household's power is a bigger
+  // decision than changing what a screen says.
+  if (json.get(result, "lastBurnedWh") && result.success) {
+    float v = result.floatValue;
+    if (v >= 0) {
+      lastBurnedWh    = v;
+      lastBurnedKnown = true;
+    }
+  }
+
   if (json.get(result, "budgetClearedAt") && result.success) {
     uint64_t v = (uint64_t)result.doubleValue;
     if (v > 0 && v != budget.budgetClearedAt) {
@@ -2490,6 +2623,9 @@ void setup() {
   // comparing against the compile-time default and wrongly treating an
   // already-gated board as "newly" gated on every ordinary reboot.
   loadNVS();
+  // Raw balance here on purpose: this runs before the first sensor read and
+  // before any lastBurnedWh has been pulled, so there is nothing to net off
+  // yet. applyBalanceGate() recomputes it properly on its first pass.
   balanceGated = !tokenBalKnown || tokenBal <= 0;
 
   initRelays();

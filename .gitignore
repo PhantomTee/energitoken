@@ -34,3 +34,9 @@ SECRETS.txt
 
 # PlatformIO build tree (generated; see platformio.ini)
 .pio/
+
+# Meter build credentials. The firmware reads these at compile time; they
+# are kept out of the repository so the source can be published without the
+# database key or the meter-signing keys. See common/secrets.h's own header
+# for how to recreate it.
+firmware/esp32/common/secrets.h

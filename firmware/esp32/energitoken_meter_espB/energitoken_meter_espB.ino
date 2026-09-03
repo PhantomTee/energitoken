@@ -15,4 +15,16 @@
  *  firmware rather than two that drift apart.
  * ===========================================================================*/
 #define BOARD_ESP_B
+
+// This board's own HMAC key, derived server-side as
+// HMAC-SHA256(METER_HMAC_MASTER_SECRET, "F94098"). The meter signs every
+// energy reading with it and the oracle refuses to settle against a reading
+// it cannot verify, so a wrong or blank key stops settlement silently --
+// the burn simply reports "Invalid meter signature" and does nothing.
+//
+// A board only ever carries its own key; the master secret stays server-side,
+// so reading one board's flash does not expose any other meter.
+#include "../common/secrets.h"
+#define METER_HMAC_KEY_HEX METER_HMAC_KEY_F94098
+
 #include "../common/energitoken_meter_common.h"
