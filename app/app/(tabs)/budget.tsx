@@ -13,7 +13,7 @@ import { useMeterData } from "../../src/hooks/useMeterData";
 import { useDailyConsumption, dayKeyLabel } from "../../src/hooks/useDailyConsumption";
 import { getEngyBalance, getSpendableBalance } from "../../src/services/contract";
 import { setBudgetWh, resetBudget, setMeterTokenBalance } from "../../src/services/budget";
-import { whToUnits, unitsToWh, tokensToUnits } from "../../src/services/units";
+import { whToUnits, unitsToWh, tokensToUnits, toWholeWh } from "../../src/services/units";
 import { useIsDesktopWeb } from "../../src/hooks/useIsDesktopWeb";
 import { MobileTopBar } from "../../src/components/MobileTopBar";
 
@@ -170,7 +170,7 @@ export default function BudgetScreen() {
       spendableWh !== null && balanceWh > spendableWh ? balanceWh - spendableWh : 0n;
     const meterUnsettled =
       reading?.energyTotalWh != null && reading?.lastBurnedWh != null
-        ? BigInt(Math.max(0, Math.floor(reading.energyTotalWh - reading.lastBurnedWh)))
+        ? toWholeWh(reading.energyTotalWh - reading.lastBurnedWh)
         : 0n;
     const unsettled = chainUnsettled > meterUnsettled ? chainUnsettled : meterUnsettled;
     return balanceWh > unsettled ? balanceWh - unsettled : 0n;

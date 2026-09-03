@@ -34,6 +34,9 @@ import { whToUnits } from "../services/units";
  */
 
 const CHART_HEIGHT = 190;
+/** The card's own horizontal padding, referenced rather than repeated so
+ * the two cannot drift apart. */
+const CARD_PADDING = spacing.lg;
 const PAD_LEFT = 44;
 const PAD_RIGHT = 12;
 const PAD_TOP = 14;
@@ -52,7 +55,15 @@ export function DailyUsageChart({
   budgetUnitsPerDay: number | null;
 }) {
   const [width, setWidth] = useState(0);
-  const onLayout = (e: LayoutChangeEvent) => setWidth(e.nativeEvent.layout.width);
+  /**
+   * onLayout reports the CARD's width, which includes its own horizontal
+   * padding on both sides. Drawing the SVG at that width inside the padded
+   * box made the chart wider than the space available to it, so it overflowed
+   * the card by two paddings -- visible on a phone, where there is no slack to
+   * absorb it, and hidden on a wide screen.
+   */
+  const onLayout = (e: LayoutChangeEvent) =>
+    setWidth(Math.max(0, e.nativeEvent.layout.width - CARD_PADDING * 2));
 
   const hasBudget = budgetUnitsPerDay !== null && budgetUnitsPerDay > 0;
   const dayUnits = days.map((d) => whToUnits(d.wh));

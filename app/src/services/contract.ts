@@ -156,7 +156,10 @@ export async function runTransferPreflight(
   spendableBalanceWh: bigint
 ): Promise<string | null> {
   if (amountWh <= 0) return "Enter an amount greater than 0.";
-  if (BigInt(Math.floor(amountWh)) > spendableBalanceWh) {
+  // Same reasoning as toWholeWh/parseAmountWh: BigInt() throws on a
+  // non-finite number, and this runs on a value derived from user input.
+  if (!Number.isFinite(amountWh)) return "Enter a valid whole number of watt-hours.";
+  if (BigInt(Math.max(0, Math.floor(amountWh))) > spendableBalanceWh) {
     return "Amount exceeds your spendable balance (energy already used but not yet settled on-chain can't be sent).";
   }
 

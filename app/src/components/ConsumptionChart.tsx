@@ -31,6 +31,9 @@ import {
  */
 
 const CHART_HEIGHT = 200;
+/** The card's own horizontal padding, referenced rather than repeated so
+ * the two cannot drift apart. */
+const CARD_PADDING = spacing.lg;
 const PAD_LEFT = 46;
 const PAD_RIGHT = 14;
 const PAD_TOP = 14;
@@ -99,7 +102,15 @@ export function ConsumptionChart({
   loading: boolean;
 }) {
   const [width, setWidth] = useState(0);
-  const onLayout = (e: LayoutChangeEvent) => setWidth(e.nativeEvent.layout.width);
+  /**
+   * onLayout reports the CARD's width, which includes its own horizontal
+   * padding on both sides. Drawing the SVG at that width inside the padded
+   * box made the chart wider than the space available to it, so it overflowed
+   * the card by two paddings -- visible on a phone, where there is no slack to
+   * absorb it, and hidden on a wide screen.
+   */
+  const onLayout = (e: LayoutChangeEvent) =>
+    setWidth(Math.max(0, e.nativeEvent.layout.width - CARD_PADDING * 2));
 
   const plot = useMemo(() => {
     const plotW = Math.max(0, width - PAD_LEFT - PAD_RIGHT);

@@ -28,13 +28,30 @@ export function tokensToUnits(tokens: bigint): number {
  * in the system actually commits to. No budget set at all (budgetWh/cycleWh
  * null, the default until a household opts in) reserves nothing.
  */
+/**
+ * Converts a measured, possibly fractional watt-hour figure to whole-Wh
+ * BigInt, without ever throwing.
+ *
+ * BigInt() raises a RangeError on a non-finite or non-integer number, and a
+ * throw inside a render takes the entire screen down -- the app closes rather
+ * than showing a wrong number. transfer.tsx already learned this once (see
+ * parseAmountWh), but the balance and pending-burn maths added later called
+ * BigInt() straight on the result of an arithmetic expression, so a single
+ * NaN anywhere upstream -- an absent field, a malformed value, a subtraction
+ * between mismatched types -- crashed the app instead of degrading.
+ */
+export function toWholeWh(value: number): bigint {
+  if (!Number.isFinite(value)) return 0n;
+  const whole = Math.max(0, Math.floor(value));
+  return Number.isSafeInteger(whole) ? BigInt(whole) : 0n;
+}
+
 export function getUnbudgetedWh(
   spendableWh: bigint,
   budgetWh: number | null,
   cycleWh: number | null
 ): bigint {
   if (budgetWh == null || cycleWh == null) return spendableWh;
-  const remainingWh = Math.max(0, Math.round(budgetWh - cycleWh));
-  const reserved = BigInt(remainingWh);
+  const reserved = toWholeWh(budgetWh - cycleWh);
   return reserved >= spendableWh ? 0n : spendableWh - reserved;
 }

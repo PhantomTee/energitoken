@@ -16,7 +16,7 @@ import { getEngyBalance, getSpendableBalance } from "../../src/services/contract
 import { setMeterTokenBalance } from "../../src/services/budget";
 import { useMeterData } from "../../src/hooks/useMeterData";
 import { writeDirectoryEntry } from "../../src/services/directory";
-import { tokensToUnits } from "../../src/services/units";
+import { tokensToUnits, toWholeWh } from "../../src/services/units";
 import { clearSessionToken } from "../../src/services/firebaseSession";
 import { useNotifications } from "../../src/hooks/useNotifications";
 import { usePushNotifications } from "../../src/hooks/usePushNotifications";
@@ -215,7 +215,7 @@ export default function DashboardScreen() {
     const chainUnsettled =
       spendableWh !== null && balanceWh > spendableWh ? balanceWh - spendableWh : 0n;
     const meterUnsettled =
-      unburnedWh == null ? 0n : BigInt(Math.max(0, Math.floor(unburnedWh)));
+      unburnedWh == null ? 0n : toWholeWh(unburnedWh);
     const unsettled = chainUnsettled > meterUnsettled ? chainUnsettled : meterUnsettled;
     return balanceWh > unsettled ? balanceWh - unsettled : 0n;
   }, [balanceWh, spendableWh, unburnedWh]);
