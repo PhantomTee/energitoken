@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, LayoutChangeEvent } from "react-native";
 import Svg, { Line, Rect, Text as SvgText } from "react-native-svg";
 import { colors } from "../theme/colors";
 import { typography, spacing, radius } from "../theme/typography";
-import { whToUnits } from "../services/units";
+import { unitsToWh } from "../services/units";
 
 /**
  * Daily consumption against the daily allowance.
@@ -66,49 +66,114 @@ export function DailyUsageChart({
     setWidth(Math.max(0, e.nativeEvent.layout.width - CARD_PADDING * 2));
 
   const hasBudget = budgetUnitsPerDay !== null && budgetUnitsPerDay > 0;
-  const dayUnits = days.map((d) => whToUnits(d.wh));
-  const worstDay = dayUnits.length > 0 ? Math.max(...dayUnits) : 0;
+
+  /**
+   * At most a week of bars, whatever period the screen is set to.
+   *
+   * The card used to draw one bar per day of the selected period, so choosing
+   * 30 days produced thirty bars a few pixels wide with most labels dropped --
+   * unreadable on a phone, and useless for the thing bars are actually good
+   * at, which is letting someone point at one day and recognise it. The long
+   * view belongs to the Consumption chart's Month range, which is built for
+   * it. This card answers "how did this week go".
+   */
+  const week = days.slice(-7);
+
+  /**
+   * Everything on this card was expressed in units, where one unit is a
+   * kilowatt-hour. A household drawing tens of watt-hours a day therefore read
+   * every bar, the axis and its own allowance as a three-decimal fraction of
+   * nothing -- 0.031 units -- which made a working chart look broken. The
+   * scale now follows the data, exactly as the consumption chart does.
+   */
+  const dayWh = week.map((d) => d.wh);
+  const allowanceWh = hasBudget ? unitsToWh(budgetUnitsPerDay!) : null;
+  const worstDay = dayWh.length > 0 ? Math.max(...dayWh) : 0;
   const anyUsage = worstDay > 0;
+  const useKwh = Math.max(worstDay, allowanceWh ?? 0) >= 2000;
+  const scale = (wh: number) => (useKwh ? wh / 1000 : wh);
+  const unitLabel = useKwh ? "kWh" : "Wh";
+  const fmt = (wh: number) => {
+    const v = scale(wh);
+    return v >= 100 ? Math.round(v).toString() : v.toFixed(v >= 10 ? 0 : 1);
+  };
+
+  /**
+   * The verdict, stated rather than left to be worked out. Reading this chart
+   * used to mean decoding a legend, mapping two colours onto bars, finding a
+   * faint dashed line and comparing seven heights against it. The chart should
+   * do that work; the bars are then evidence for a sentence, not a puzzle.
+   */
+  const daysOver = allowanceWh == null ? 0 : dayWh.filter((wh) => wh > allowanceWh).length;
+  const daysWithin = dayWh.length - daysOver;
+
+  /**
+   * Direction of travel: the most recent completed day against the average of
+   * the ones before it. Today is excluded because it is still accumulating --
+   * comparing a part-day against full days always reads as a fall.
+   */
+  const completed = dayWh.slice(0, -1);
+  const latest = completed.length > 0 ? completed[completed.length - 1] : null;
+  const earlier = completed.slice(0, -1);
+  const earlierAvg =
+    earlier.length > 0 ? earlier.reduce((a, b) => a + b, 0) / earlier.length : null;
+  const trendPct =
+    latest != null && earlierAvg != null && earlierAvg > 0
+      ? ((latest - earlierAvg) / earlierAvg) * 100
+      : null;
+  // Under five percent is noise on a household load, not a trend.
+  const trend: "up" | "down" | "flat" | null =
+    trendPct == null ? null : trendPct > 5 ? "up" : trendPct < -5 ? "down" : "flat";
+  const trendArrow = trend === "up" ? "↑" : trend === "down" ? "↓" : "→";
+  const trendColor =
+    trend === "up" ? colors.terracotta[500] : trend === "down" ? colors.success : colors.textSecondary;
 
   // Headroom above the taller of (worst day, allowance) so the peak bar and
   // the allowance line both sit inside the frame rather than on its edge.
-  const yMax = Math.max(worstDay, hasBudget ? budgetUnitsPerDay! : 0) * 1.15 || 1;
+  const yMax = Math.max(worstDay, allowanceWh ?? 0) * 1.15 || 1;
 
   const plotW = Math.max(0, width - PAD_LEFT - PAD_RIGHT);
   const plotH = CHART_HEIGHT - PAD_TOP - PAD_BOTTOM;
-  const yFor = (units: number) => PAD_TOP + (1 - units / yMax) * plotH;
+  const yFor = (wh: number) => PAD_TOP + (1 - wh / yMax) * plotH;
 
-  const slot = days.length > 0 ? plotW / days.length : 0;
+  const slot = week.length > 0 ? plotW / week.length : 0;
   const barW = slot * (1 - BAR_GAP_RATIO);
-  const labelEvery = Math.max(1, Math.ceil(days.length / MAX_LABELS));
+  const labelEvery = Math.max(1, Math.ceil(week.length / MAX_LABELS));
 
-  const gridUnits = [0, 0.5, 1].map((f) => yMax * f);
+  const gridWh = [0, 0.5, 1].map((f) => yMax * f);
 
-  const totalUnits = dayUnits.reduce((sum, u) => sum + u, 0);
-  const overDays = hasBudget ? dayUnits.filter((u) => u > budgetUnitsPerDay!).length : 0;
+  const totalWh = dayWh.reduce((sum, w) => sum + w, 0);
 
   return (
     <View style={styles.card} onLayout={onLayout}>
       <View style={styles.header}>
         <View style={styles.headerText}>
-          <Text style={[typography.h2, styles.title]}>Daily use vs allowance</Text>
-          <Text style={[typography.caption, styles.subtitle]}>
-            {anyUsage
-              ? `${totalUnits.toLocaleString(undefined, { maximumFractionDigits: 2 })} units over ${days.length} days` +
-                (hasBudget ? ` · ${overDays} day${overDays === 1 ? "" : "s"} over allowance` : "")
-              : `Last ${days.length} days`}
+          <Text style={[typography.h2, styles.title]}>This week's use</Text>
+          <Text style={[typography.bodyStrong, styles.verdict]}>
+            {!anyUsage
+              ? "No usage measured yet this week"
+              : hasBudget
+                ? `Within your allowance on ${daysWithin} of ${dayWh.length} day${dayWh.length === 1 ? "" : "s"}`
+                : `${fmt(totalWh)} ${unitLabel} used over ${dayWh.length} day${dayWh.length === 1 ? "" : "s"}`}
           </Text>
+          {anyUsage && (
+            <Text style={[typography.caption, styles.subtitle]}>
+              {hasBudget ? `${fmt(totalWh)} ${unitLabel} in total` : "Set a budget to compare against an allowance"}
+            </Text>
+          )}
         </View>
-        {hasBudget && (
-          <View style={styles.legend}>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendSwatch, { backgroundColor: colors.indigo[500] }]} />
-              <Text style={[typography.caption, styles.legendText]}>Within</Text>
-            </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendSwatch, { backgroundColor: colors.terracotta[500] }]} />
-              <Text style={[typography.caption, styles.legendText]}>Over</Text>
-            </View>
+        {/* Direction of travel, in place of the legend the colours used to
+            need. With the verdict stated in words above, the bar colours are
+            reinforcement rather than something to decode. */}
+        {trend !== null && (
+          <View style={styles.trend}>
+            <Text style={[typography.dataMd, { color: trendColor }]}>{trendArrow}</Text>
+            <Text style={[typography.caption, styles.trendLabel]}>
+              {trend === "flat"
+                ? "steady"
+                : `${Math.abs(Math.round(trendPct!))}% ${trend === "up" ? "higher" : "lower"}`}
+            </Text>
+            <Text style={[typography.caption, styles.trendSub]}>vs earlier days</Text>
           </View>
         )}
       </View>
@@ -124,37 +189,37 @@ export function DailyUsageChart({
                 one pass emitting a Fragment per row: react-native-svg renders
                 its children by mapping element types onto native views, and a
                 Fragment in that tree is not a shape it can map. */}
-            {gridUnits.map((units, i) => (
+            {gridWh.map((wh, i) => (
               <Line
                 key={`g${i}`}
                 x1={PAD_LEFT}
-                y1={yFor(units)}
+                y1={yFor(wh)}
                 x2={PAD_LEFT + plotW}
-                y2={yFor(units)}
+                y2={yFor(wh)}
                 stroke={colors.border}
                 strokeWidth={1}
               />
             ))}
-            {gridUnits.map((units, i) => (
+            {gridWh.map((wh, i) => (
               <SvgText
                 key={`gl${i}`}
                 x={PAD_LEFT - 6}
-                y={yFor(units) + 4}
+                y={yFor(wh) + 4}
                 fill={colors.textSecondary}
                 fontSize={10}
                 textAnchor="end"
               >
-                {units >= 10 ? Math.round(units).toString() : units.toFixed(1)}
+                {i === 0 ? "0" : fmt(wh)}
               </SvgText>
             ))}
 
-            {days.map((day, i) => {
-              const units = dayUnits[i];
-              const over = hasBudget && units > budgetUnitsPerDay!;
+            {week.map((day, i) => {
+              const wh = dayWh[i];
+              const over = allowanceWh != null && wh > allowanceWh;
               const x = PAD_LEFT + i * slot + (slot - barW) / 2;
               // A day with real-but-tiny usage still gets a visible sliver --
               // otherwise "used a little" and "used nothing" look the same.
-              const top = units > 0 ? Math.min(yFor(units), yFor(0) - 2) : yFor(0);
+              const top = wh > 0 ? Math.min(yFor(wh), yFor(0) - 2) : yFor(0);
               return (
                 <Rect
                   key={day.key}
@@ -171,29 +236,32 @@ export function DailyUsageChart({
             {/* The allowance itself -- drawn after the bars so it stays
                 readable where a bar crosses it. Absent entirely without a
                 budget, since there is then nothing to reference against. */}
-            {hasBudget && <Line
+            {allowanceWh != null && <Line
               x1={PAD_LEFT}
-              y1={yFor(budgetUnitsPerDay!)}
+              y1={yFor(allowanceWh)}
               x2={PAD_LEFT + plotW}
-              y2={yFor(budgetUnitsPerDay!)}
+              y2={yFor(allowanceWh)}
               stroke={colors.neutral[700]}
               strokeWidth={1.5}
               strokeDasharray="6 4"
             />}
-            {hasBudget && (
+            {/* Named AND valued on the line itself. It previously read
+                "allowance" in grey at the end of a hairline, which says
+                neither what it is nor what it is set to. */}
+            {allowanceWh != null && (
               <SvgText
                 x={PAD_LEFT + plotW}
-                y={yFor(budgetUnitsPerDay!) - 5}
+                y={yFor(allowanceWh) - 5}
                 fill={colors.neutral[700]}
                 fontSize={10}
                 textAnchor="end"
               >
-                allowance
+                {`Allowance ${fmt(allowanceWh)} ${unitLabel}/day`}
               </SvgText>
             )}
 
-            {days.map((day, i) =>
-              i % labelEvery === 0 || i === days.length - 1 ? (
+            {week.map((day, i) =>
+              i % labelEvery === 0 || i === week.length - 1 ? (
                 <SvgText
                   key={`l${day.key}`}
                   x={PAD_LEFT + i * slot + slot / 2}
@@ -226,9 +294,11 @@ const styles = StyleSheet.create({
   headerText: { flex: 1, gap: 2 },
   title: { color: colors.textPrimary },
   subtitle: { color: colors.textSecondary },
-  legend: { gap: spacing.xs },
-  legendItem: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
-  legendSwatch: { width: 10, height: 10, borderRadius: 2 },
-  legendText: { color: colors.textSecondary },
+  // The verdict carries the meaning the legend used to; the trend block
+  // replaces it in the same corner.
+  verdict: { color: colors.textPrimary },
+  trend: { alignItems: "flex-end", minWidth: 84 },
+  trendLabel: { color: colors.textPrimary, fontWeight: "600" },
+  trendSub: { color: colors.textSecondary },
   empty: { color: colors.textSecondary },
 });
