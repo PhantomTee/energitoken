@@ -111,8 +111,33 @@ export async function sendTransferTx(
   const iface = new ethers.Interface(CONTRACT_ABI);
   const data = iface.encodeFunctionData("transfer", [to, amountWh]);
 
+  // Gas is supplied explicitly, and has to be.
+  //
+  // The comment above describes omitting it so Privy fills it in, per its own
+  // documentation. It does not: a transfer sent without a gas field is signed
+  // with gasLimit 0 and rejected by the network as "intrinsic gas too low" --
+  // visible in the raw transaction, where the byte after the fee fields is
+  // 0x80, RLP for zero. Leaving it out fails as surely as the earlier problem
+  // of supplying a value that was dropped.
+  //
+  // Estimated rather than hardcoded so an ERC-20 transfer into a cold
+  // recipient slot (which costs more than into a warm one) is still covered,
+  // with headroom for the spendable-balance check the contract runs in its
+  // _update override. Unused gas is refunded, so overshooting costs nothing
+  // beyond a briefly higher balance requirement.
+  let gasHex: string;
+  try {
+    const estimate = await provider.estimateGas({ from, to: CONTRACT_ADDRESS, data });
+    gasHex = "0x" + ((estimate * 15n) / 10n).toString(16);
+  } catch {
+    // Estimation can fail for reasons that do not stop the transaction (a
+    // rate-limited public RPC, most often). A fixed ceiling comfortably above
+    // a token transfer is better than sending zero.
+    gasHex = "0x30d40"; // 200,000
+  }
+
   const hash: string = await (provider as ethers.BrowserProvider).send("eth_sendTransaction", [
-    { from, to: CONTRACT_ADDRESS, data },
+    { from, to: CONTRACT_ADDRESS, data, gas: gasHex },
   ]);
 
   return { hash, wait: () => provider.waitForTransaction(hash) };

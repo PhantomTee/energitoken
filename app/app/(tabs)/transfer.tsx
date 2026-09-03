@@ -36,7 +36,7 @@ import { exportTransactionsCsv } from "../../src/services/exportReport";
 import { useIsDesktopWeb } from "../../src/hooks/useIsDesktopWeb";
 import { displayNameFromEmail } from "../../src/services/displayName";
 import { useMeterData } from "../../src/hooks/useMeterData";
-import { getUnbudgetedWh, whToUnits } from "../../src/services/units";
+import { getUnbudgetedWh, whToUnits, toWholeWh } from "../../src/services/units";
 
 const TX_DIRECTION_META: Record<TxDirection, string> = {
   mint: "Purchased",
@@ -177,12 +177,45 @@ export default function TransferScreen() {
     }
   }, [walletAddress, deviceId, getSigner]);
 
-  // What's actually free to send: spendable balance minus today's
-  // remaining budget allowance (see getUnbudgetedWh). No budget set at all
-  // reserves nothing, so this equals spendableWh for most households.
+  /**
+   * The contract's spendable balance, corrected by what the meter itself
+   * reports as unsettled.
+   *
+   * spendableBalanceOf() subtracts pendingBurn, which only moves when the
+   * consumption oracle runs. While settlement is stalled -- and it has stalled
+   * for over a day -- pendingBurn sits at zero, so the chain considers energy
+   * already consumed to be fully spendable. This screen would then offer that
+   * amount, and the contract would revert the transfer at send time. The user
+   * sees a failure that the app could have prevented.
+   *
+   * The meter's own figure, lifetime measured minus last settled, needs no
+   * oracle. Taking the LARGER of the two unsettled amounts means this can only
+   * ever understate what is available, which is the safe direction here: the
+   * contract rejects anything above its own spendable balance, so a limit that
+   * ran ahead would promise transfers that cannot happen.
+   *
+   * Dashboard and Budget already derive their figures this way; this screen
+   * was the one still trusting the chain alone.
+   */
+  const meterAwareSpendableWh =
+    spendableWh === null || balanceWh === null
+      ? spendableWh
+      : (() => {
+          const chainUnsettled = balanceWh > spendableWh ? balanceWh - spendableWh : 0n;
+          const meterUnsettled =
+            reading?.energyTotalWh != null && reading?.lastBurnedWh != null
+              ? toWholeWh(reading.energyTotalWh - reading.lastBurnedWh)
+              : 0n;
+          const unsettled = chainUnsettled > meterUnsettled ? chainUnsettled : meterUnsettled;
+          return balanceWh > unsettled ? balanceWh - unsettled : 0n;
+        })();
+
+  // What's actually free to send: the figure above minus today's remaining
+  // budget allowance (see getUnbudgetedWh). No budget set at all reserves
+  // nothing, so this equals meterAwareSpendableWh for most households.
   const unbudgetedWh =
-    spendableWh !== null
-      ? getUnbudgetedWh(spendableWh, reading?.budgetWh ?? null, reading?.energyWh ?? null)
+    meterAwareSpendableWh !== null
+      ? getUnbudgetedWh(meterAwareSpendableWh, reading?.budgetWh ?? null, reading?.energyWh ?? null)
       : null;
 
   useFocusEffect(
@@ -289,7 +322,7 @@ export default function TransferScreen() {
         return;
       }
 
-      const preflightError = await runTransferPreflight(signer, amountWh, spendableWh ?? 0n);
+      const preflightError = await runTransferPreflight(signer, amountWh, meterAwareSpendableWh ?? 0n);
       if (preflightError) {
         setTxState("failed");
         setTxError(preflightError);
@@ -486,7 +519,7 @@ export default function TransferScreen() {
         <Text style={[typography.caption, styles.errorHint]}>
           {parsedAmountWh === null
             ? "Enter a whole number of Wh greater than 0."
-            : spendableWh !== null && parsedAmountWh > spendableWh
+            : meterAwareSpendableWh !== null && parsedAmountWh > meterAwareSpendableWh
               ? "Amount exceeds your spendable balance."
               : "That reaches into today's remaining budget allowance."}
         </Text>
