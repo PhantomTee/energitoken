@@ -47,12 +47,19 @@ export function BudgetRing({ percentUsed, size = 160 }: { percentUsed: number; s
           origin={`${size / 2}, ${size / 2}`}
         />
       </Svg>
-      <View style={[styles.center, { maxWidth: radiusPx * 1.6 }]}>
+      {/* No maxWidth on this box. It is pinned to all four edges so it spans
+          the ring exactly; constraining its width as well left it sized
+          smaller than the space it was positioned into, and an absolutely
+          positioned box with left AND right at zero cannot then be centred --
+          it settles against one edge, which is why the percentage sat off to
+          one side. The cap belongs on the text, which is what actually needed
+          bounding. */}
+      <View style={styles.center}>
         <Text
           style={[
             typography.data,
             styles.percentText,
-            { color: ringColor, fontSize: percentFontSize, lineHeight: percentFontSize * 1.05 },
+            { color: ringColor, fontSize: percentFontSize, lineHeight: percentFontSize * 1.05, maxWidth: radiusPx * 1.6 },
           ]}
           numberOfLines={1}
           adjustsFontSizeToFit

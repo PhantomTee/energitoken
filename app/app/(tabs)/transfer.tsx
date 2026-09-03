@@ -345,7 +345,7 @@ export default function TransferScreen() {
       <View style={styles.availablePill}>
         <Text style={[typography.caption, styles.availablePillLabel]}>Available to send:</Text>
         <Text style={[typography.dataSm, styles.availablePillValue]}>
-          {unbudgetedWh === null ? "···" : `${unbudgetedWh.toLocaleString()} ENGY`}
+          {unbudgetedWh === null ? "···" : `${unbudgetedWh.toLocaleString()} Wh`}
         </Text>
       </View>
       {spendableWh !== null && unbudgetedWh !== null && spendableWh !== unbudgetedWh && (
@@ -583,7 +583,7 @@ export default function TransferScreen() {
                     ]}
                   >
                     {tx.direction === "transfer-out" || tx.direction === "burn" ? "-" : "+"}
-                    {whToUnits(tx.amountWh).toLocaleString()} units
+                    {whToUnits(tx.amountWh).toLocaleString()} units ({tx.amountWh.toLocaleString()} Wh)
                   </Text>
                   <View style={styles.thStatus}>
                     <View style={styles.historyStatusPill}>
